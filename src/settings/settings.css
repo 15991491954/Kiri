@@ -4,53 +4,47 @@
   overflow-y: auto;
   background: var(--kiri-canvas);
   color: var(--kiri-label);
-  padding: 28px var(--kiri-space-page) 44px;
+  padding: 24px var(--kiri-space-page) 44px;
   box-sizing: border-box;
+  container-type: inline-size;
+  container-name: settings-page;
 }
 
 .kiri-settings__content {
-  width: min(100%, 760px);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
 }
 
-.kiri-settings__intro h1,
+.kiri-settings__columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; gap: 28px; }
+.kiri-settings__ocr-column { min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.kiri-settings__columns .kiri-settings-section__heading { min-height: 36px; align-items: flex-start; box-sizing: border-box; }
+.kiri-settings-section.kiri-settings-section--about { display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid var(--kiri-surface-border); padding-bottom: 24px; }
+.kiri-settings-section--about .kiri-version-row { flex-direction: column; align-items: stretch; gap: 16px; border: 0; border-radius: 0; background: transparent; padding: 0; min-height: 0; }
+@container settings-page (max-width: 940px) {
+  .kiri-settings__columns { grid-template-columns: 1fr; gap: 28px; }
+  .kiri-settings__columns .kiri-settings-section__heading { min-height: 0; }
+}
+
+.kiri-shortcut-actions, .kiri-storage-actions { max-width: 64%; }
+
 .kiri-settings-section h2,
-.kiri-settings-dialog h2 {
-  margin: 0;
-  color: var(--kiri-label);
-}
-
-.kiri-settings__intro h1 {
-  font-size: 24px;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
-}
-
-.kiri-settings__intro p,
+.kiri-settings-dialog h2 { margin: 0; color: var(--kiri-label); }
 .kiri-settings-section__heading p,
-.kiri-settings-dialog p {
-  margin: 5px 0 0;
-  color: var(--kiri-secondary-label);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.kiri-settings__eyebrow {
-  color: var(--kiri-accent-strong);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  margin-bottom: 5px;
-}
+.kiri-settings-dialog p { margin: 5px 0 0; color: var(--kiri-secondary-label); font-size: 13px; line-height: 1.5; }
+.kiri-settings-group { overflow: hidden; border: 1px solid var(--kiri-surface-border); border-radius: 10px; background: var(--kiri-card); }
+.kiri-settings-group > .kiri-settings-card { border: 0; border-radius: 0; }
+.kiri-settings-group > .kiri-settings-card + .kiri-settings-card { border-top: 1px solid var(--kiri-surface-border); }
 
 .kiri-settings-section {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: settings-section;
 }
 
 .kiri-settings-section__heading {
@@ -68,7 +62,7 @@
 .kiri-settings-card {
   background: var(--kiri-card);
   border: 1px solid var(--kiri-surface-border);
-  border-radius: var(--kiri-radius-card);
+  border-radius: 10px;
   box-shadow: none;
 }
 
@@ -77,7 +71,7 @@
 .kiri-version-row,
 .kiri-shortcut-row,
 .kiri-storage-row {
-  min-height: 72px;
+  min-height: 68px;
   padding: 14px 16px;
   box-sizing: border-box;
   display: flex;
@@ -102,7 +96,7 @@
 .kiri-shortcut-row strong,
 .kiri-storage-row strong,
 .ocr-engine-copy strong {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.25;
 }
 
@@ -113,7 +107,7 @@
 .kiri-storage-copy > span,
 .ocr-engine-copy > span:not(.ocr-engine-title-row) {
   color: var(--kiri-secondary-label);
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -201,12 +195,12 @@
 }
 
 .kiri-shortcut-actions .kiri-button {
-  min-height: 30px;
+  min-height: 36px;
   padding: 0 10px;
 }
 
 .kiri-storage-actions .kiri-button {
-  min-height: 30px;
+  min-height: 36px;
   padding: 0 10px;
   white-space: nowrap;
 }
@@ -259,13 +253,13 @@
   display: block;
   margin-bottom: 4px;
   color: var(--kiri-label);
-  font-size: 10.5px;
+  font-size: 13px;
 }
 
 .kiri-update-notes p {
   margin: 0;
   color: var(--kiri-secondary-label);
-  font-size: 10.5px;
+  font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -344,6 +338,8 @@
   background: var(--kiri-accent-strong);
 }
 
+.ocr-engine-copy strong { overflow-wrap: anywhere; }
+
 .ocr-engine-copy {
   min-width: 0;
   display: flex;
@@ -376,7 +372,7 @@
   border-radius: var(--kiri-radius-badge);
   background: var(--kiri-group-fill);
   color: var(--kiri-secondary-label);
-  font-size: 9.5px;
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -386,7 +382,7 @@
 }
 
 .ocr-engine-key-state {
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -412,22 +408,24 @@
 }
 
 .ocr-profile-empty {
-  min-height: 72px;
-  padding: 14px 18px;
+  min-height: 0;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 9px;
   color: var(--kiri-secondary-label);
-  font-size: 11.5px;
+  font-size: 13px;
   border-top: 1px solid var(--kiri-surface-border);
 }
+
+.ocr-profile-empty svg { width: 16px; height: 16px; flex-shrink: 0; }
 
 .ocr-privacy-note,
 .kiri-settings-key-note {
   margin: 0;
   color: var(--kiri-secondary-label);
-  font-size: 10.5px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -437,7 +435,7 @@
   border-radius: var(--kiri-radius-control);
   background: var(--kiri-accent-soft-alpha-10);
   color: var(--kiri-label);
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -457,12 +455,12 @@
   justify-content: center;
   gap: 9px;
   color: var(--kiri-secondary-label);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .kiri-settings-empty-state strong {
   color: var(--kiri-label);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .kiri-settings-spinner {
@@ -549,7 +547,7 @@
   border-radius: var(--kiri-radius-control);
   background: var(--kiri-card);
   color: var(--kiri-label);
-  font: 12px var(--kiri-font-ui);
+  font: 13px var(--kiri-font-ui);
   transition:
     border-color var(--kiri-motion-hover) ease-out,
     box-shadow var(--kiri-motion-hover) ease-out;
@@ -561,7 +559,7 @@
 
 .kiri-settings-field small {
   color: var(--kiri-disabled-label);
-  font-size: 9.5px;
+  font-size: 13px;
   font-weight: 450;
   line-height: 1.4;
 }
@@ -575,7 +573,7 @@
   padding: 9px 11px;
   border: 1px solid;
   border-radius: var(--kiri-radius-control);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
 .kiri-settings-dialog__actions {
@@ -594,15 +592,11 @@
 
 @media (max-width: 720px), (max-height: 560px) {
   .kiri-settings {
-    padding: 20px 18px 32px;
+    padding: 24px var(--kiri-space-page) 32px;
   }
 
   .kiri-settings__content {
     gap: 22px;
-  }
-
-  .kiri-settings__intro h1 {
-    font-size: 21px;
   }
 
   .kiri-settings-dialog {
@@ -687,10 +681,32 @@
 .kiri-language-select {
   max-width: 100%;
   min-width: 150px;
-  padding: 8px 30px 8px 12px;
+  padding: 8px 12px;
   border: 1px solid var(--kiri-surface-border);
   border-radius: 7px;
   background: var(--kiri-group-fill);
   color: inherit;
-  font: inherit;
+  font: 14px var(--kiri-font-ui);
+  min-height: 36px;
 }
+
+@container settings-section (max-width: 480px) {
+  .kiri-shortcut-row, .kiri-storage-row { align-items: stretch; flex-direction: column; }
+  .kiri-shortcut-actions, .kiri-storage-actions, .kiri-update-actions { justify-content: flex-start; max-width: none; }
+  .kiri-settings-section__heading { align-items: flex-start; }
+}
+
+.kiri-language-select:hover:not(:disabled) { background: var(--kiri-card); border-color: var(--kiri-secondary-label); }
+.kiri-language-menu { box-sizing: border-box; background: var(--kiri-card); color: var(--kiri-label); border-color: var(--kiri-surface-border); font-size: 14px; box-shadow: 0 4px 14px #0002; }
+.kiri-language-menu .kiri-choice-option { padding: 9px 10px; min-height: 36px; }
+.kiri-language-menu .kiri-choice-option:hover,
+.kiri-language-menu .kiri-choice-option:focus-visible,
+.kiri-language-menu .kiri-choice-option[aria-selected=true] { background: var(--kiri-group-fill); }
+
+.kiri-settings-section--about .kiri-version-title strong { font-size: 18px; }
+.kiri-settings-section--about .kiri-settings-badge { background: transparent; padding: 0; border-radius: 0; font-size: 14px; font-weight: 400; }
+.kiri-settings-section--about .kiri-update-copy > span { font-size: 14px; line-height: 1.6; }
+.kiri-settings-section--about .kiri-update-actions { justify-content: flex-start; }
+.kiri-settings-section--about .kiri-update-notes { border: 0; border-radius: 0; background: transparent; padding: 0; font-size: 14px; }
+.kiri-settings-section--about .kiri-update-notes strong { font-size: 14px; }
+.kiri-settings-section--about .kiri-update-notes p { font-size: 14px; line-height: 1.65; }

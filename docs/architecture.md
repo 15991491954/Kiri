@@ -70,7 +70,9 @@ reference window; a pin failure retains the completion card for retry (ADR 0081)
 Windows dispatches confirmation, resident feedback, and library-window
 presentation to one serial worker. WebView2 creation never blocks their IPC or
 native event callbacks, and repeated resident-window requests preserve order.
-Confirmation creation errors return to the caller. Permanent deletion and
+Confirmation creation errors return to the caller. Empty Trash in the main panel
+uses an in-WebView modal instead of creating a desktop-wide confirm window
+(ADR 0100); the existing async deletion command remains unchanged. Permanent deletion and
 empty-trash filesystem work use blocking workers; empty-trash chooses its
 deleted IDs and invalidates their thumbnails under the same generation barrier
 and library lock. `scripts/qa/confirmation-native.py` exercises real Windows
@@ -314,6 +316,15 @@ text or styling is changed. See ADRs 0088, 0090 and 0092.
 
 ## Managed library flow
 
+The main window uses a persistent destination sidebar and a shared workspace
+header for Library, Text History, QR Favorites, Trash and Settings. Contextual
+capture filters and search share a toolbar; batch actions occupy an in-flow row
+above the scrolling grid. Text and QR details consolidate actions with record
+metadata. Settings uses General and OCR columns when space allows, with About
+below OCR, and stacks those sections in narrow windows. Container queries follow
+the actual content/section width instead of the overall native window width
+(ADR 0098). This layout does not change capture, editor or native IPC policies.
+
 Library and Trash expose explicit Select captures, individual checkboxes and
 filtered Select All, alongside rubber-band selection. Normal card clicks retain
 direct opening. Batch mutations keep a retryable selection on failure and
@@ -548,14 +559,19 @@ downloaded replacement `.deb` packages and does not create signed updater
 artifacts or expose the in-app installer. The release page is its explicit
 manual update route.
 
-Settings reads the installed version from Tauri's application metadata and
-does not run a background updater. A visible **Check for Updates** action asks
-Tauri's official updater plugin to read a fixed HTTPS `latest.json` manifest.
+The main window owns one updater session across Settings navigation. It reads
+the installed version from Tauri metadata and checks a fixed HTTPS `latest.json`
+manifest when its native window is visible at startup or gains focus. Successful
+checks are cached for six hours per app session; failures may retry at the next
+activation after five minutes, without a periodic timer. Existing available or
+downloaded updates are retained rather than replaced by focus checks. Settings
+also offers an explicit check. A visible New update label beside Settings appears only when
+an update is available; offline failures remain quiet. See ADR 0099.
 The configured endpoint and updater public key are compiled into Kiri; release
 notes can supply display text but never an executable path, alternate endpoint,
 or public key.
 
-Check, download, and install are separate visible actions. Download progress
+Download, install, and macOS restart remain separate visible actions. Download progress
 uses the plugin's actual byte events and stays indeterminate when the server
 does not provide a length. The downloaded platform archive must pass minisign
 verification before the UI reaches its install-ready state. On macOS,
