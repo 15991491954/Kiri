@@ -27,7 +27,7 @@ process = None
 app_environment = library = native_log = None
 
 
-def find(name, timeout=35, scroll=False, scope=None):
+def find(name, timeout=35, scroll=False, scope=None, control_type="Button"):
     deadline = time.monotonic() + timeout
     previous = None
     stable = 0
@@ -38,7 +38,7 @@ def find(name, timeout=35, scroll=False, scope=None):
         for window in ([scope] if scope is not None else desktop.windows(process=process.pid, visible_only=True)):
             for control in window.descendants():
                 try:
-                    if (control.element_info.control_type != "Button" or
+                    if (control.element_info.control_type != control_type or
                             not re.fullmatch(name, control.window_text()) or not control.is_enabled()):
                         continue
                     if not control.is_visible() and scroll:
@@ -361,7 +361,7 @@ def quick_capture_acceptance():
             if title == "Watermark (W)":
                 # This tool deliberately opens its input from the toolbar.
                 # Existing input is excluded; finish/cancel before a blank pair.
-                find("Text content")
+                find("Text content", control_type="Edit")
                 keyboard.send_keys("{ESC}")
             mouse.double_click(coords=(400, 380))
             find("Pin Screenshot on Top", timeout=7)
