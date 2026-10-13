@@ -4,10 +4,13 @@ import test from "node:test";
 import { createLibraryHarness, deferred, nodes, settleRequests } from "./helpers/library-render-harness.mjs";
 
 const read = name => readFileSync(new URL(`../src/windows/${name}`, import.meta.url), "utf8");
-const source = 'import React from "react";\n' + read("useRecordingControlsLayout.ts")
-  .replace(/^import .* from "react";\n/m, "")
-  .replace(/^import .* from "..\/lib\/ipc";\n/m, "") + read("ControlPanelWindow.tsx")
-  .replace(/^import .* from "\.\/useRecordingControlsLayout";\n/m, "");
+function controlsSource(layout, panel) {
+  return 'import React from "react";\n' + layout
+    .replace(/^import .* from "react";\r?\n/m, "")
+    .replace(/^import .* from "..\/lib\/ipc";\r?\n/m, "") + panel
+    .replace(/^import .* from "\.\/useRecordingControlsLayout";\r?\n/m, "");
+}
+const source = controlsSource(read("useRecordingControlsLayout.ts"), read("ControlPanelWindow.tsx"));
 const recording = { isRecording: true, isPaused: false, isStarting: false,
   isTransitioning: false, isFinalizing: false, elapsedLabel: "02:17" };
 
@@ -41,7 +44,7 @@ function controls(options = {}) {
     },
     onScaleChanged: async callback => { scaleChanged = callback; return () => { scaleChanged = null; }; },
   };
-  const h = createLibraryHarness({}, source, {
+  const h = createLibraryHarness({}, options.source ?? source, {
     search: "?window=control-panel&session=recording-1",
     strictEffects: options.strictEffects,
     document: { fonts: { ready: Promise.resolve() } },
@@ -102,6 +105,22 @@ function controls(options = {}) {
 const surface = h => nodes(h.component.render()).find(node => node?.props?.className === "kiri-record-controls");
 const pointer = (x, y, button = false) => ({ pointerId: 1, button: 0, screenX: x, screenY: y,
   target: { closest: () => button }, preventDefault() {}, currentTarget: { setPointerCapture() {} } });
+
+for (const [name, lineEnding] of [["LF", "\n"], ["CRLF", "\r\n"]]) {
+  test(`real recording controls mount and act with ${name} source line endings`, async () => {
+    const normalized = file => read(file).replace(/\r?\n/g, lineEnding);
+    const h = controls({ source: controlsSource(
+      normalized("useRecordingControlsLayout.ts"), normalized("ControlPanelWindow.tsx"),
+    ) });
+    await h.ready();
+    assert.ok(h.attributes.has("data-layout-ready"));
+    assert.equal(h.layouts[0].request.sessionId, "recording-1");
+    const pause = nodes(h.component.render()).find(node => node?.props?.["aria-label"] === "Pause Recording");
+    pause.props.onClick();
+    assert.equal(h.calls().paused, 1);
+    h.component.unmount();
+  });
+}
 
 test("natural content size includes padding, accessibility scale, and coalesces identical measurements", async () => {
   const h = controls();

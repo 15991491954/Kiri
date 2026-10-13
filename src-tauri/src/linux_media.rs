@@ -2515,6 +2515,7 @@ mod tests {
         let start = Instant::now();
         let mut peaks = Vec::new();
         crate::linux_audio::microphone_check(
+            None,
             || start.elapsed() < Duration::from_millis(400),
             |_, peak| {
                 peaks.push(peak);
