@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, PeekMessageW,
     PostThreadMessageW, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowsHookExW,
     ShowWindow, TranslateMessage, UnhookWindowsHookEx, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE,
-    SW_RESTORE, SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WH_MOUSE_LL, WM_LBUTTONDOWN,
+    SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WH_MOUSE_LL, WM_LBUTTONDOWN,
     WM_QUIT, WM_RBUTTONDOWN,
 };
 
@@ -44,12 +44,14 @@ pub fn show_window_without_activation(app: &tauri::AppHandle, label: &str) {
         return;
     };
     unsafe {
+        // Tao does not observe this native visibility change. Capture hiding
+        // therefore also reconciles the actual HWND after updating Tao's flag.
         let _ = ShowWindow(HWND(hwnd.0 as *mut _), SW_SHOWNOACTIVATE);
     }
 }
 
-/// Hide through Tao (keeping its visibility state in sync), but do not freeze
-/// the desktop until both the UI queue and the compositor have applied it.
+/// Synchronize both Tao's visibility flag and the actual HWND before waiting
+/// for the compositor. Non-activating native shows do not update Tao's flag.
 pub fn hide_window_for_capture(window: &tauri::WebviewWindow) -> Result<()> {
     use windows::Win32::Graphics::Dwm::{
         DwmFlush, DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
@@ -90,7 +92,17 @@ pub fn hide_window_for_capture(window: &tauri::WebviewWindow) -> Result<()> {
     // hide() only queues a message off the UI thread. This getter is a
     // round-trip on the same queue, so it also acknowledges that hide ran.
     if window.is_visible()? {
-        bail!("Kiri's window could not be hidden before capture.");
+        // A toast shown through SW_SHOWNOACTIVATE can still have Tao's cached
+        // VISIBLE flag unset. Its false -> false hide is then a no-op, even
+        // though IsWindowVisible reports a visible HWND. Tao now agrees that
+        // it is hidden; apply that state to Win32 without showing or focusing
+        // anything merely to refresh the cache.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        }
+        if unsafe { IsWindowVisible(hwnd).as_bool() } {
+            bail!("Kiri's window could not be hidden before capture.");
+        }
     }
     unsafe { DwmFlush()? };
     Ok(())
