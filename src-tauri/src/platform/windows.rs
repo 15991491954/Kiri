@@ -48,6 +48,54 @@ pub fn show_window_without_activation(app: &tauri::AppHandle, label: &str) {
     }
 }
 
+/// Hide through Tao (keeping its visibility state in sync), but do not freeze
+/// the desktop until both the UI queue and the compositor have applied it.
+pub fn hide_window_for_capture(window: &tauri::WebviewWindow) -> Result<()> {
+    use windows::Win32::Graphics::Dwm::{
+        DwmFlush, DwmSetWindowAttribute, DWMWA_TRANSITIONS_FORCEDISABLED,
+    };
+
+    struct RestoreTransitions(HWND);
+    impl Drop for RestoreTransitions {
+        fn drop(&mut self) {
+            unsafe {
+                let enabled = windows::core::BOOL(0);
+                let _ = DwmSetWindowAttribute(
+                    self.0,
+                    DWMWA_TRANSITIONS_FORCEDISABLED,
+                    &enabled as *const _ as *const _,
+                    std::mem::size_of_val(&enabled) as u32,
+                );
+            }
+        }
+    }
+
+    if !window.is_visible()? {
+        return Ok(());
+    }
+    let hwnd = HWND(window.hwnd()?.0 as *mut _);
+    unsafe {
+        let disabled = windows::core::BOOL(1);
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &disabled as *const _ as *const _,
+            std::mem::size_of_val(&disabled) as u32,
+        )?;
+    }
+    // Only Kiri's owned windows are changed. Restore their normal transition
+    // policy on every exit; this never changes the user's system animation setting.
+    let _restore = RestoreTransitions(hwnd);
+    window.hide()?;
+    // hide() only queues a message off the UI thread. This getter is a
+    // round-trip on the same queue, so it also acknowledges that hide ran.
+    if window.is_visible()? {
+        bail!("Kiri's window could not be hidden before capture.");
+    }
+    unsafe { DwmFlush()? };
+    Ok(())
+}
+
 fn find_main_window(pid: u32) -> Option<HWND> {
     struct Search {
         pid: u32,

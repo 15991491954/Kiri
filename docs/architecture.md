@@ -53,8 +53,9 @@ unrestricted filesystem path.
 Each active screenshot has at most one pin window. It reads the saved flattened
 image through the existing local media route. Unpinning or closing that window
 does not change the library asset.
-macOS moves the image reference using captured pointer coordinates and serialized
-physical position updates; Windows and Linux retain native dragging (ADR 0095).
+macOS and Windows move the image reference using captured pointer coordinates
+and serialized physical position updates; Linux retains native dragging
+(ADRs 0095 and 0107).
 The screenshot toolbar also starts OCR through the existing explicit mode switch,
 reusing the committed selection and remote-consent flow.
 
@@ -133,6 +134,9 @@ reads after a newer change. See ADR 0079.
    portal (GNOME). Wayland supplies no window hit-test bounds. Frozen-image
    dimensions and monitor geometry must agree; multi-display Wayland capture
    remains unavailable rather than mapping a selection to an uncertain screen.
+   Before freezing the Windows desktop, Kiri hides its library without a DWM
+   transition, acknowledges the UI operation, and flushes the compositor. Failed
+   hiding restores prior visibility and cancels capture (ADR 0107).
    Capture startup is single-flight, so a repeated shortcut cannot enter a
    second native freeze. Windows gives the desktop frame eight seconds to
    arrive, then uses fast lossless PNG encoding and a direct

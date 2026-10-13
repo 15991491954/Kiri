@@ -1984,9 +1984,11 @@ pub fn start_capture(app: AppHandle) -> Result<CaptureContextDto, String> {
         .map(|(pid, name)| (Some(pid), name))
         .unwrap_or((None, None));
     let was_kiri_frontmost = pid == Some(std::process::id());
-    let hidden_windows = hide_library_windows(&app);
+    let hidden_windows = hide_library_windows(&app)?;
 
-    // Give the system a beat to settle after hiding Kiri windows.
+    // Windows acknowledges the hide and flushes DWM instead of guessing how
+    // long the native hide animation will take.
+    #[cfg(not(windows))]
     std::thread::sleep(std::time::Duration::from_millis(120));
 
     let display = match capture_backend::capture_active_display() {
@@ -2125,7 +2127,7 @@ fn linux_capture_preflight(app: &AppHandle) -> Result<LinuxCapturePrep, String> 
         .map(|(pid, name)| (Some(pid), name))
         .unwrap_or((None, None));
     let was_kiri_frontmost = pid == Some(std::process::id());
-    let hidden_windows = hide_library_windows(app);
+    let hidden_windows = hide_library_windows(app)?;
     Ok(LinuxCapturePrep {
         pid,
         name,
@@ -2285,20 +2287,32 @@ fn finish_frozen_capture(
     Ok(context)
 }
 
-fn hide_library_windows(app: &AppHandle) -> Vec<String> {
+fn hide_library_windows(app: &AppHandle) -> Result<Vec<String>, String> {
     let mut hidden = Vec::new();
     for (label, window) in app.webview_windows() {
-        if label == "toast" {
-            let _ = window.emit("toast-dismiss", ());
-            let _ = window.hide();
+        let is_toast = label == "toast";
+        if label.starts_with("library") && window.is_visible().unwrap_or(false) {
+            hidden.push(label);
+        } else if !is_toast {
             continue;
         }
-        if label.starts_with("library") && window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
-            hidden.push(label);
+        #[cfg(windows)]
+        let result = platform::windows::hide_window_for_capture(&window);
+        #[cfg(not(windows))]
+        let result = window.hide().map_err(anyhow::Error::from);
+        if let Err(error) = result {
+            restore_capture_origin(app, &hidden, false, None);
+            let message = format!("Screen capture could not start: {error}");
+            log::error!("start_capture: hide window failed: {error:#}");
+            emit_error(app, message.clone(), None);
+            return Err(message);
+        }
+        if is_toast {
+            // Clear renderer state only after native hiding is synchronized.
+            let _ = window.emit("toast-dismiss", ());
         }
     }
-    hidden
+    Ok(hidden)
 }
 
 fn restore_capture_origin(

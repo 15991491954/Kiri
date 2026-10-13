@@ -598,13 +598,60 @@ fn crop_rgba_to_bgra(
 }
 
 fn recording_draw_border_settings() -> DrawBorderSettings {
-    // IsBorderRequired is optional on supported Windows 10 builds. Asking to
-    // disable it unconditionally makes windows-capture reject the entire session.
-    match GraphicsCaptureApi::is_border_settings_supported() {
+    use windows::Graphics::Capture::{GraphicsCaptureAccess, GraphicsCaptureAccessKind};
+    use windows::Security::Authorization::AppCapabilityAccess::AppCapabilityAccessStatus;
+    use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
+
+    // This runs on the recorder startup worker, before either audio or video
+    // capture. Balance even S_FALSE: the worker may already have a WinRT apartment.
+    if let Err(error) = unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+        log::warn!("WindowsRecorder: capture-border WinRT initialization unavailable: {error}");
+        return DrawBorderSettings::Default;
+    }
+    struct WinRtGuard;
+    impl Drop for WinRtGuard {
+        fn drop(&mut self) {
+            unsafe { RoUninitialize() };
+        }
+    }
+    let _winrt = WinRtGuard;
+
+    recording_draw_border_settings_with(
+        || Ok(GraphicsCaptureApi::is_border_settings_supported()?),
+        || {
+            // Without this request Windows may accept IsBorderRequired(false)
+            // but still draw its monitor-wide yellow border. windows-capture only
+            // sets the property; it does not request the required access.
+            let access =
+                GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless)?
+                    .join()?;
+            log::info!(
+                "WindowsRecorder: borderless capture access status={}",
+                access.0
+            );
+            Ok(access == AppCapabilityAccessStatus::Allowed)
+        },
+    )
+}
+
+fn recording_draw_border_settings_with(
+    is_supported: impl FnOnce() -> Result<bool>,
+    request_access: impl FnOnce() -> Result<bool>,
+) -> DrawBorderSettings {
+    // The property and permission API are optional on older supported Windows.
+    // Never request access there, or make permission denial an encoding failure.
+    let access = is_supported().and_then(|supported| {
+        if supported {
+            request_access()
+        } else {
+            Ok(false)
+        }
+    });
+    match access {
         Ok(true) => DrawBorderSettings::WithoutBorder,
         Ok(false) => DrawBorderSettings::Default,
         Err(error) => {
-            log::warn!("WindowsRecorder: could not query capture-border support: {error}");
+            log::warn!("WindowsRecorder: keeping the system capture border: {error}");
             DrawBorderSettings::Default
         }
     }
@@ -664,6 +711,8 @@ impl WindowsRecorder {
 
         let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+        let draw_border = recording_draw_border_settings();
+
         // Start audio capture (system loopback + microphone) when requested.
         let audio = start_audio(&options, audio_tx, mic_tx, Arc::clone(&paused))?;
 
@@ -685,7 +734,7 @@ impl WindowsRecorder {
         let settings = Settings::new(
             monitor,
             cursor,
-            recording_draw_border_settings(),
+            draw_border,
             SecondaryWindowSettings::Default,
             recording_minimum_update_interval(),
             DirtyRegionSettings::Default,
@@ -919,6 +968,47 @@ fn audio_config_rank(config: &cpal::SupportedStreamConfig) -> (u8, u8, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_border_skips_permission_on_older_windows() {
+        let settings = recording_draw_border_settings_with(
+            || Ok(false),
+            || panic!("old Windows must not call the optional permission API"),
+        );
+        assert_eq!(settings, DrawBorderSettings::Default);
+    }
+
+    #[test]
+    fn recording_border_skips_permission_when_support_query_fails() {
+        let settings = recording_draw_border_settings_with(
+            || Err(anyhow!("support query unavailable")),
+            || panic!("an unavailable capability must not request permission"),
+        );
+        assert_eq!(settings, DrawBorderSettings::Default);
+    }
+
+    #[test]
+    fn recording_border_is_disabled_only_after_access_is_granted() {
+        assert_eq!(
+            recording_draw_border_settings_with(|| Ok(true), || Ok(true)),
+            DrawBorderSettings::WithoutBorder,
+        );
+        assert_eq!(
+            recording_draw_border_settings_with(|| Ok(true), || Ok(false)),
+            DrawBorderSettings::Default,
+        );
+    }
+
+    #[test]
+    fn recording_border_permission_failure_keeps_recording_available() {
+        assert_eq!(
+            recording_draw_border_settings_with(
+                || Ok(true),
+                || Err(anyhow!("borderless access unavailable")),
+            ),
+            DrawBorderSettings::Default,
+        );
+    }
 
     #[test]
     fn windows_capture_monitor_indices_are_one_based() {

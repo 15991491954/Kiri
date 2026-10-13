@@ -260,7 +260,55 @@ def direct_pin_acceptance(source, expected, region, user32):
     report["checks"].append("real annotated toolbar pin opens once after every overlay is destroyed; borderless native drag/resize/unpin/repin/close and ordinary Return completion work")
 
 
-def quick_capture_acceptance():
+def library_hidden_capture_acceptance(library_window, source, region, expected):
+    """The frozen image must contain the desktop behind a visible library.
+
+    IsWindowVisible alone misses the DWM hide animation captured by GDI.
+    Compare real exported pixels as well as Escape's visibility restoration.
+    """
+    native = Desktop(backend="win32").window(handle=library_window.handle)
+    original = native.rectangle()
+    errors = []
+    try:
+        native.move_window(40, 90, 960, 600)
+        for mode in ["cancel", "complete", "complete"]:
+            source.set_focus()
+            library_window.set_focus()
+            def library_covers_source():
+                actual = ImageGrab.grab(bbox=region).convert("RGB")
+                return sum(ImageStat.Stat(ImageChops.difference(actual, expected)).mean) / 3 > 10
+            wait_for("visible library covers the source before capture", library_covers_source)
+            keyboard.send_keys("^+a")
+            find("Screenshot")
+            wait_for("library is hidden during selection", lambda: not native.is_visible())
+            if mode == "cancel":
+                keyboard.send_keys("{ESC}")
+                wait_for("Escape restores the library", native.is_visible)
+                continue
+            drag_mouse(region[:2], region[2:])
+            find(re.escape("Done — Copy to clipboard · Return"))
+            keyboard.send_keys("{ENTER}")
+            find("Pin Screenshot on Top", timeout=7)
+            copied = ImageGrab.grabclipboard()
+            if not isinstance(copied, Image.Image) or copied.size != expected.size:
+                raise RuntimeError("Capture from the visible library did not copy the source region")
+            copied = copied.convert("RGB")
+            error = sum(ImageStat.Stat(ImageChops.difference(copied, expected)).mean) / 3
+            copied.save(output / f"library-hidden-capture-{len(errors)}.png")
+            if error > 1.5:
+                raise RuntimeError(f"Frozen screenshot contains library pixels or its hide animation: {error}")
+            errors.append(error)
+            wait_for("completion restores the previously visible library", native.is_visible)
+        report["library_hidden_capture"] = {"pixel_errors": errors,
+            "hidden_during_selection": True, "cancel_restores_library": True,
+            "completion_restores_library": True}
+        report["checks"].append("visible library is hidden without a frozen animation ghost; Escape and completion restore it")
+    finally:
+        native.move_window(original.left, original.top, original.width(), original.height())
+        source.set_focus()
+
+
+def quick_capture_acceptance(library_window):
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     user32.GetForegroundWindow.restype = wintypes.HWND
     user32.IsWindow.argtypes = [wintypes.HWND]
@@ -286,6 +334,7 @@ def quick_capture_acceptance():
         region = (70, 190, 650, 425)
         expected = before.crop(region).convert("RGB")
         expected.save(output / "quick-capture-source.png")
+        library_hidden_capture_acceptance(library_window, source, region, expected)
         if not user32.OpenClipboard(None):
             raise ctypes.WinError(ctypes.get_last_error())
         try:
@@ -565,7 +614,7 @@ def smoke(executable, update_button, label):
         keyboard.send_keys("{ESC}")
         report["checks"].append(f"{label} opens and cancels native capture")
         if label == "NSIS installation":
-            quick_capture_acceptance()
+            quick_capture_acceptance(settings.top_level_parent())
             batch_trash_acceptance(executable)
     except Exception:
         try:
