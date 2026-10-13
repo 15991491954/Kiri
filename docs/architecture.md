@@ -63,6 +63,8 @@ origin registry serves direct/completion pinning; changed dimensions or display
 geometry use the existing fitted fallback. Existing references keep their
 user-adjusted frame (ADR 0096). Wayland placement remains compositor-controlled.
 
+Blank screenshot double-clicks also complete with any annotation tool. Native click counts identify the pair; a gesture checkpoint removes only its transient marks and preserves previous annotations plus undo/redo. Existing marks, active inputs and non-capture editors keep their behavior (ADR 0103).
+
 The screenshot toolbar can request a direct pin through its existing capture
 confirmation. After the overlay is destroyed, Rust opens the saved image's
 reference window; a pin failure retains the completion card for retry (ADR 0081).

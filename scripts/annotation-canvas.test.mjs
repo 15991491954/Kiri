@@ -1616,3 +1616,95 @@ test("new mark IDs stay distinct with a frozen or backward clock and preserve lo
   assert.deepEqual((await h.ref.current.exportResult()).document, saved);
   h.component.unmount();
 });
+
+
+class CaptureTextArea {}
+function captureClick(h, detail, {target = h.live, x = 550, y = 310, move = null} = {}) {
+  const wrapper = () => nodes(h.component.render()).find(node => node?.props?.className === "annotation-canvas-root");
+  const event = {clientX: x, clientY: y, button: 0, pointerId: 1, detail, target,
+    nativeEvent: {clientX: x, clientY: y}, preventDefault() {}, stopPropagation() {this.stopped = true;}};
+  wrapper().props.onPointerDownCapture(event);
+  if (target === h.live) h.pointer("onPointerDown", x, y, {detail: 0});
+  if (move) { wrapper().props.onPointerMoveCapture({...event, clientX: move.x, clientY: move.y});
+    if (target === h.live) h.pointer("onPointerMove", move.x, move.y); }
+  wrapper().props.onPointerUpCapture({...event, clientX: move?.x ?? x, clientY: move?.y ?? y});
+  h.pointer("onPointerUp", move?.x ?? x, move?.y ?? y, {detail: 0});
+  wrapper().props.onClickCapture(event);
+  if (!event.stopped && target === h.live) h.mouse("onClick", x, y, detail);
+  h.component.render();
+}
+for (const tool of ["select", "pen", "rectangle", "line", "arrow", "text", "label", "callout", "mosaic", "watermark"]) {
+  test(`capture: blank native double-click with ${tool} keeps previous marks and removes gesture drafts`, async () => {
+    let finishes = 0;
+    const h = annotation(documentWith([text]), {tool, onFinishOnBlankDoubleClick: () => finishes++, globals: {HTMLTextAreaElement: CaptureTextArea}});
+    captureClick(h, 1);
+    const target = inlineEditor(h) ? new CaptureTextArea() : h.live;
+    captureClick(h, 2, {target});
+    assert.equal(finishes, 1);
+    assert.equal(inlineEditor(h), undefined);
+    assert.deepEqual((await h.ref.current.exportResult()).document.marks, [text]);
+    h.mouse("onDoubleClick", 550, 310, 2);
+    assert.equal(finishes, 1, "the later native dblclick cannot finish a second time");
+  });
+  test(`capture: ${tool} double-click after a drag does not finish`, () => {
+    let finishes = 0;
+    const h = annotation(documentWith([]), {tool, onFinishOnBlankDoubleClick: () => finishes++, globals: {HTMLTextAreaElement: CaptureTextArea}});
+    captureClick(h, 1, {move: {x: 570, y: 325}});
+    captureClick(h, 2);
+    assert.equal(finishes, 0);
+  });
+}
+test("capture: a moved second press and a tool change keep their own gestures", () => {
+  let finishes = 0;
+  const h = annotation(documentWith([]), {tool: "pen", onFinishOnBlankDoubleClick: () => finishes++});
+  captureClick(h, 1); captureClick(h, 2, {move: {x: 580, y: 330}});
+  assert.equal(finishes, 0); assert.equal(h.changes.at(-1).length, 2);
+  captureClick(h, 1); h.component.render({...h.props, tool: "rectangle"}); captureClick(h, 2);
+  assert.equal(finishes, 0);
+});
+test("capture: typed new text and existing text inputs own their clicks", () => {
+  let finishes = 0;
+  const h = annotation(documentWith([text]), {tool: "text", onFinishOnBlankDoubleClick: () => finishes++, globals: {HTMLTextAreaElement: CaptureTextArea}});
+  captureClick(h, 1); inlineEditor(h).props.onTextChange("keep this"); h.component.render();
+  captureClick(h, 2, {target: new CaptureTextArea()});
+  assert.equal(finishes, 0); assert.equal(inlineEditor(h).props.editing.text, "keep this");
+});
+test("saved-image editing has no capture gesture rollback", async () => {
+  const h = annotation(documentWith([text]), {tool: "pen"});
+  captureClick(h, 1); captureClick(h, 2);
+  assert.equal((await h.ref.current.exportResult()).document.marks.length, 3);
+});
+test("capture rollback preserves existing undo and redo when export must be retried", async () => {
+  let finishes = 0;
+  const h = annotation(documentWith([text]), {tool: "pen", onFinishOnBlankDoubleClick: () => finishes++});
+  h.pointer("onPointerDown", 300, 200); h.pointer("onPointerMove", 320, 215); h.pointer("onPointerUp", 320, 215);
+  const drawn = (await h.ref.current.exportResult()).document.marks[1];
+  h.ref.current.undo(); h.component.render();
+  captureClick(h, 1); captureClick(h, 2);
+  assert.equal(finishes, 1); assert.deepEqual((await h.ref.current.exportResult()).document.marks, [text]);
+  h.ref.current.redo(); h.component.render();
+  assert.deepEqual((await h.ref.current.exportResult()).document.marks, [text, drawn]);
+  h.ref.current.undo(); h.component.render(); assert.deepEqual(h.changes.at(-1), [text]);
+});
+
+test("capture: blank double-click may deselect an existing shape but never removes it", async () => {
+  let finishes = 0;
+  const h = annotation(documentWith([rectangle]), {tool: "rectangle", selectedMarkId: rectangle.id, onFinishOnBlankDoubleClick: () => finishes++});
+  captureClick(h, 1); captureClick(h, 2);
+  assert.equal(finishes, 1); assert.deepEqual((await h.ref.current.exportResult()).document.marks, [rectangle]);
+});
+test("capture: native double-click on an existing text still opens its editor", () => {
+  let finishes = 0;
+  const h = annotation(documentWith([text]), {tool: "text", onFinishOnBlankDoubleClick: () => finishes++});
+  captureClick(h, 1, {x: 100, y: 60}); captureClick(h, 2, {x: 100, y: 60});
+  h.mouse("onDoubleClick", 100, 60, 2);
+  assert.equal(finishes, 0); assert.equal(inlineEditor(h).props.editing.id, text.id);
+});
+test("capture: input/composition invalidates an empty first-click editor", () => {
+  let finishes = 0;
+  const h = annotation(documentWith([]), {tool: "text", onFinishOnBlankDoubleClick: () => finishes++, globals: {HTMLTextAreaElement: CaptureTextArea}});
+  captureClick(h, 1);
+  nodes(h.component.render()).find(node => node?.props?.className === "annotation-canvas-root").props.onInputCapture();
+  captureClick(h, 2, {target: new CaptureTextArea()});
+  assert.equal(finishes, 0); assert.ok(inlineEditor(h));
+});

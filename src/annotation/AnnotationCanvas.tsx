@@ -136,7 +136,7 @@ interface Props {
    * overlay finishes the screenshot; the editor leaves this unset.
    */
   onFinishAfterTextCommit?(): void;
-  /** Capture-only: Select tool double-clicks on unmarked canvas confirm the image. */
+  /** Capture-only: stationary blank double-clicks confirm with any annotation tool. */
   onFinishOnBlankDoubleClick?(): void;
 }
 
@@ -338,6 +338,22 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
       editingCalloutId: null as number | null });
     const calloutClickRef = useRef<{id: number; frame: CanvasFrame} | null>(null);
     const blankDoubleClickRef = useRef(false);
+    type CapturePress = {
+      start: Point; moved: boolean; eligible: boolean;
+      tool: Tool; marks: AnnotationMark[]; frame: CanvasFrame;
+      rollback(): void;
+    };
+    const capturePressRef = useRef<CapturePress | null>(null);
+    const captureFirstClickRef = useRef<CapturePress | null>(null);
+    const captureFirstReadyRef = useRef(false);
+    const captureCreatedEditRef = useRef<{id: number; text: string} | null>(null);
+    const clearCaptureClicks = () => {
+      captureFirstClickRef.current = null;
+      captureFirstReadyRef.current = false;
+      captureCreatedEditRef.current = null;
+    };
+    useEffect(clearCaptureClicks, [tool, initialDocument, documentRevision]);
+
     const watermarkEditIdRef = useRef<number | null>(null);
     const appearanceRef = useRef(appearance);
     appearanceRef.current = appearance;
@@ -1783,6 +1799,69 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         className="annotation-canvas-root"
         aria-busy={interactionDisabled}
         data-interaction-disabled={interactionDisabled || undefined}
+        onKeyDownCapture={clearCaptureClicks}
+        onInputCapture={clearCaptureClicks}
+        onPointerCancelCapture={clearCaptureClicks}
+        onPointerDownCapture={(event) => {
+          if (!onFinishOnBlankDoubleClick) return;
+              finishAppearanceAdjustment();
+          const canvas = canvasRef.current!;
+          const frame = canvas.getBoundingClientRect();
+          const point = viewPointToDocument({x: event.clientX - frame.left, y: event.clientY - frame.top}, frame, documentSize);
+          const selected = selectedIndexRef.current === null ? null : history.elements[selectedIndexRef.current];
+          const currentTool = toolRef.current;
+          capturePressRef.current = {
+            start: {x: event.clientX, y: event.clientY}, moved: false,
+            tool: currentTool, marks: history.elements.slice(), frame, rollback: history.checkpoint(),
+            eligible: event.button === 0 && event.target === canvas && !interactionsDisabled() && !editingRef.current &&
+              point.x >= 0 && point.y >= 0 && point.x <= documentSize.width && point.y <= documentSize.height &&
+              markIndexAt(history.elements, point, hitTestScale) === null &&
+              !(selected && selectionHandleAt(selected, point, hitTestScale.radial)),
+          };
+        }}
+        onPointerMoveCapture={(event) => {
+          const press = capturePressRef.current;
+          if (press && Math.hypot(event.clientX - press.start.x, event.clientY - press.start.y) >= 3) press.moved = true;
+        }}
+        onPointerUpCapture={(event) => {
+          const press = capturePressRef.current;
+          if (press && Math.hypot(event.clientX - press.start.x, event.clientY - press.start.y) >= 3) press.moved = true;
+        }}
+        onClickCapture={(event) => {
+          if (!onFinishOnBlankDoubleClick) return;
+          const press = capturePressRef.current;
+          if (event.detail === 1) {
+            clearCaptureClicks();
+            if (!press?.eligible || press.moved) return;
+            captureFirstClickRef.current = press;
+            captureFirstReadyRef.current = true;
+            const editor = editingRef.current;
+            captureCreatedEditRef.current = editor && !press.marks.some(mark => mark.id === editor.id)
+              ? {id: editor.id, text: editor.text} : null;
+            return;
+          }
+          const first = captureFirstClickRef.current;
+          if (event.button !== 0 || event.detail !== 2 || !first || !press || !captureFirstReadyRef.current ||
+            first.moved || press.moved || first.tool !== toolRef.current || interactionsDisabled()) { clearCaptureClicks(); return; }
+          // Pointerdown prevents native mouse-down defaults to preserve input
+          // focus. Click counts still arrive; use them rather than mousedown.
+          // A newly mounted untouched input belongs to the first canvas click.
+          const editor = editingRef.current;
+          const createdEdit = captureCreatedEditRef.current;
+          const newUntouchedEditor = editor && createdEdit?.id === editor.id && createdEdit.text === editor.text;
+          if ((event.target !== canvasRef.current && !(event.target instanceof HTMLTextAreaElement && newUntouchedEditor)) ||
+            (editor && !newUntouchedEditor)) { clearCaptureClicks(); return; }
+          const point = viewPointToDocument({x: event.clientX - first.frame.left, y: event.clientY - first.frame.top}, first.frame, documentSize);
+          if (markIndexAt(first.marks, point, documentUnitsPerViewPixel(first.frame, documentSize)) !== null ||
+            Math.hypot(event.clientX - first.start.x, event.clientY - first.start.y) >= 3) { clearCaptureClicks(); return; }
+          event.preventDefault(); event.stopPropagation();
+          clearCaptureClicks(); blankDoubleClickRef.current = false;
+          first.rollback();
+          interactionRef.current = {kind: "none"};
+          editingRef.current = null; setEditing(null); setDraft(null);
+          selectMark(null); syncMarks();
+          onFinishOnBlankDoubleClick();
+        }}
         style={{
           position: "relative",
           width: view.width,

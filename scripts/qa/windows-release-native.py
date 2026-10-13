@@ -350,6 +350,33 @@ def quick_capture_acceptance():
             "Escape closes the pinned reference without quitting Kiri",
         ])
         direct_pin_acceptance(source, expected, region, user32)
+        tool_results = {}
+        for title in ["Pen (P)", "Rectangle (R)", "Line (L)", "Arrow (A)", "Text (T)",
+                      "Numbered callout (N)", "Label bubble (B)", "Mosaic (M)", "Watermark (W)"]:
+            source.set_focus()
+            wait_for("source focus before tool capture", lambda: user32.GetForegroundWindow() == source.handle)
+            keyboard.send_keys("^+a"); find("Screenshot")
+            drag_mouse(region[:2], region[2:])
+            find(re.escape(title)).click_input()
+            if title == "Watermark (W)":
+                # This tool deliberately opens its input from the toolbar.
+                # Existing input is excluded; finish/cancel before a blank pair.
+                find("Text content")
+                keyboard.send_keys("{ESC}")
+            mouse.double_click(coords=(400, 380))
+            find("Pin Screenshot on Top", timeout=7)
+            copied = ImageGrab.grabclipboard()
+            if not isinstance(copied, Image.Image) or copied.size != expected.size:
+                raise RuntimeError(f"{title} blank double-click did not complete capture")
+            error = sum(ImageStat.Stat(ImageChops.difference(copied.convert("RGB"), expected)).mean) / 3
+            if error > 1.5:
+                raise RuntimeError(f"{title} double-click exported a gesture artifact: {error}")
+            if user32.GetForegroundWindow() != source.handle:
+                raise RuntimeError(f"{title} completion did not restore source focus")
+            copied.save(output / ("double-click-" + title.split(" (")[0].lower().replace(" ", "-") + ".png"))
+            tool_results[title] = {"source_mean_pixel_error": error, "source_focus_restored": True}
+        report["annotation_double_click"] = tool_results
+        report["checks"].append("every annotation tool completes a stationary blank native double-click without transient dots, mosaic, badges or text; source focus returns")
     except Exception:
         ImageGrab.grab().save(output / "quick-capture-failure.png")
         copied = ImageGrab.grabclipboard()

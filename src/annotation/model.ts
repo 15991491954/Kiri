@@ -251,6 +251,18 @@ export class AnnotationHistory {
     this.redoSteps = [];
   }
 
+  /** Roll back a speculative capture gesture without losing undo/redo. */
+  checkpoint(): () => void {
+    const visible = this.visible.slice();
+    const undo = this.undoSteps.slice();
+    const redo = this.redoSteps.slice();
+    return () => {
+      this.visible = visible.slice();
+      this.undoSteps = undo.slice();
+      this.redoSteps = redo.slice();
+    };
+  }
+
   append(element: AnnotationMark): void {
     const before = this.visible.slice();
     this.visible = [...this.visible, element];
