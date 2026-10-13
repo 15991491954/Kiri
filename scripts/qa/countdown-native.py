@@ -1,7 +1,9 @@
 """Native acceptance on an isolated Windows CI desktop; capture protection stays on."""
-import ctypes,json,os,re,subprocess,time
+import ctypes,hashlib,json,os,re,subprocess,time
+from ctypes import wintypes
 from pathlib import Path
 from pywinauto import Desktop,keyboard,mouse
+from PIL import ImageGrab
 import win32com.client
 from windows_crash_report import configure_crash_capture,collect_crash_details
 
@@ -9,10 +11,102 @@ if os.environ.get('GITHUB_ACTIONS')!='true':raise SystemExit('Use an isolated CI
 OUT=Path('countdown-native-review');OUT.mkdir(exist_ok=True)
 report={'success':False,'native':True,'checks':[]}
 configure_crash_capture(OUT)
-app=Path('src-tauri/target/release/kiri.exe').resolve()
+installed_exe=os.environ.get('KIRI_QA_INSTALLED_EXE')
+app=Path(installed_exe or 'src-tauri/target/release/kiri.exe').resolve()
+report['candidate']={'path':str(app),'source':'installed' if installed_exe else 'compiled fallback',
+    'sha256':hashlib.sha256(app.read_bytes()).hexdigest()}
 proc=subprocess.Popen([str(app)]);pid=proc.pid
 desktop=Desktop(backend='uia');source_window=None
-width=ctypes.windll.user32.GetSystemMetrics(0);height=ctypes.windll.user32.GetSystemMetrics(1)
+user32=ctypes.windll.user32
+# Keep hit testing, screenshots and HWND rectangles in the same physical units.
+# pywinauto may already have set process awareness; a thread override is explicit.
+user32.SetThreadDpiAwarenessContext.argtypes=[wintypes.HANDLE]
+user32.SetThreadDpiAwarenessContext.restype=wintypes.HANDLE
+user32.SetThreadDpiAwarenessContext(wintypes.HANDLE(-4))
+user32.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
+user32.GetWindowDisplayAffinity.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
+user32.IsWindow.argtypes=[wintypes.HWND]
+user32.IsWindowVisible.argtypes=[wintypes.HWND]
+user32.GetForegroundWindow.restype=wintypes.HWND
+user32.GetAncestor.argtypes=[wintypes.HWND,wintypes.UINT]
+user32.GetAncestor.restype=wintypes.HWND
+user32.WindowFromPoint.argtypes=[wintypes.POINT]
+user32.WindowFromPoint.restype=wintypes.HWND
+user32.MonitorFromWindow.argtypes=[wintypes.HWND,wintypes.DWORD]
+user32.MonitorFromWindow.restype=wintypes.HANDLE
+user32.GetDpiForWindow.argtypes=[wintypes.HWND]
+user32.GetDpiForWindow.restype=wintypes.UINT
+get_style=user32.GetWindowLongPtrW
+get_style.argtypes=[wintypes.HWND,ctypes.c_int]
+get_style.restype=ctypes.c_ssize_t
+class MonitorInfo(ctypes.Structure):
+ _fields_=[('size',wintypes.DWORD),('monitor',wintypes.RECT),('work',wintypes.RECT),('flags',wintypes.DWORD)]
+user32.GetMonitorInfoW.argtypes=[wintypes.HANDLE,ctypes.POINTER(MonitorInfo)]
+ENUM_WINDOWS=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)
+user32.EnumWindows.argtypes=[ENUM_WINDOWS,wintypes.LPARAM]
+width=user32.GetSystemMetrics(0);height=user32.GetSystemMetrics(1)
+def rectangle(rect):return [rect.left,rect.top,rect.right,rect.bottom]
+def window_rect(hwnd):
+ rect=wintypes.RECT()
+ if not user32.GetWindowRect(hwnd,ctypes.byref(rect)):raise RuntimeError('Could not read native window rectangle')
+ return rectangle(rect)
+def capture_affinity(hwnd):
+ affinity=wintypes.DWORD()
+ if not user32.GetWindowDisplayAffinity(hwnd,ctypes.byref(affinity)):raise RuntimeError('Could not read native capture protection')
+ return affinity.value
+def native_windows():
+ result=[]
+ @ENUM_WINDOWS
+ def visit(hwnd,_):
+  owner=wintypes.DWORD();user32.GetWindowThreadProcessId(hwnd,ctypes.byref(owner))
+  if owner.value==pid and user32.IsWindowVisible(hwnd):
+   result.append({'hwnd':int(hwnd),'rect':window_rect(hwnd),'extended_style':int(get_style(hwnd,-20))})
+  return True
+ if not user32.EnumWindows(visit,0):raise RuntimeError('Could not enumerate native windows')
+ return result
+def verify_recording_geometry(panel,selection):
+ hwnd=panel.handle;panel_rect=window_rect(hwnd);visible=native_windows()
+ matches=[w for w in visible if w['hwnd']!=hwnd and all(abs(a-b)<=2 for a,b in zip(w['rect'],selection))]
+ report['recording_geometry']={'selected_physical_rect':list(selection),'visible_windows':visible,
+     'controls':{'hwnd':int(hwnd),'rect':panel_rect}}
+ if len(matches)!=1:raise RuntimeError('Recording region window does not uniquely match the selected physical rectangle')
+ region=matches[0];region_hwnd=region['hwnd']
+ if not region['extended_style']&0x20:raise RuntimeError('Recording region lost WS_EX_TRANSPARENT click-through')
+ for target in [hwnd,region_hwnd]:
+  if capture_affinity(target)!=0x11:raise RuntimeError('Recording region or controls lost capture exclusion')
+ # Hit the painted border, not its transparent interior, while the safe sample
+ # fills the desktop. Input must reach the underlying source application.
+ x=round((selection[0]+selection[2])/2);y=selection[1]+1
+ hit=user32.WindowFromPoint(wintypes.POINT(x,y));hit_root=user32.GetAncestor(hit,2)
+ if hit_root!=source_window.handle:raise RuntimeError('Recording region border intercepts native input hit testing')
+ monitor=MonitorInfo();monitor.size=ctypes.sizeof(MonitorInfo)
+ if not user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd,2),ctypes.byref(monitor)):
+  raise RuntimeError('Could not read controls monitor work area')
+ work=rectangle(monitor.work);left,top,right,bottom=panel_rect
+ if left<work[0]-2 or top<work[1]-2 or right>work[2]+2 or bottom>work[3]+2:
+  raise RuntimeError('Recording controls extend outside their monitor work area')
+ dx=max(selection[0]-right,left-selection[2],0);dy=max(selection[1]-bottom,top-selection[3],0)
+ scale=(user32.GetDpiForWindow(hwnd) or 96)/96
+ if max(dx,dy)>16*scale+2:raise RuntimeError('Recording controls are detached from the selected region')
+ if min(right,selection[2])-max(left,selection[0])>2 and min(bottom,selection[3])-max(top,selection[1])>2:
+  raise RuntimeError('Controls obscure this selection despite ample surrounding desktop space')
+ report['recording_geometry'].update({'region':region,'work_area':work,'monitor_scale':scale,
+     'edge_hit_target':int(hit_root),'region_affinity':capture_affinity(region_hwnd),
+     'controls_affinity':capture_affinity(hwnd),'separation_physical':[dx,dy]})
+ report['checks'].append('native region matches selection, passes input through and stays capture-protected; controls stay adjacent and inside work area')
+ return [hwnd,region_hwnd]
+def save_safe_desktop(name):
+ # Only the disposable CI desktop with our maximized generated Notepad sample.
+ # Capture protection stays enabled, so protected windows are omitted by Windows.
+ ImageGrab.grab(bbox=(0,0,width,height)).save(OUT/name)
+ report.setdefault('screenshots',[]).append({'file':name,'capture_protection_enabled':True})
+def assert_closed(handles):
+ deadline=time.monotonic()+8
+ while time.monotonic()<deadline:
+  if all(not user32.IsWindow(hwnd) for hwnd in handles):return
+  time.sleep(.1)
+ raise RuntimeError('Recording region or control window survived stopping')
 def windows():return desktop.windows(process=pid,visible_only=True)
 def find(name,kind='Button',timeout=15):
  end=time.monotonic()+timeout
@@ -36,7 +130,7 @@ def begin():
  for step in range(1,21):
   ctypes.windll.user32.SetCursorPos(round(x1+(x2-x1)*step/20),round(y1+(y2-y1)*step/20));time.sleep(.035)
  mouse.release(coords=(x2,y2));find('Start Recording').click_input()
- return find('Cancel Countdown',timeout=12)
+ return find('Cancel Countdown',timeout=12),(x1,y1,x2,y2)
 def cancelled():
  time.sleep(3.5)
  if proc.poll() is not None:raise RuntimeError('Cancellation exited the application')
@@ -47,12 +141,12 @@ try:
  sample.write_text('An original local recording sample.\nCancel, then start a new recording.\n',encoding='utf-8')
  subprocess.Popen(['notepad.exe',str(sample)])
  source_window=desktop.window(title_re='.*kiri-countdown-check.*')
- source_window.wait('visible',timeout=20);source_window.set_focus();time.sleep(.5)
+ source_window.wait('visible',timeout=20);source_window.maximize();source_window.set_focus();time.sleep(.5)
  for mode in ['click','Escape']*3:
-  cancel=begin();parent=cancel.top_level_parent();h=parent.handle
+  cancel,_=begin();parent=cancel.top_level_parent();h=parent.handle
   if not parent.is_visible():raise RuntimeError('Countdown is not visible')
   if ctypes.windll.user32.GetForegroundWindow()!=h:raise RuntimeError('Countdown lacks native focus')
-  affinity=ctypes.c_uint()
+  affinity=wintypes.DWORD()
   ok=ctypes.windll.user32.GetWindowDisplayAffinity(h,ctypes.byref(affinity))
   if not ok or affinity.value!=0x11:raise RuntimeError('Countdown capture exclusion lost')
   if mode=='click':cancel.click_input()
@@ -60,7 +154,7 @@ try:
   cancelled();report['checks'].append(mode+' cancellation; visible, focused and capture-protected')
  library=Path(os.environ['APPDATA'])/'kiri'
  before_ids={a['id'] for a in json.loads((library/'library.json').read_text(encoding='utf-8'))} if (library/'library.json').exists() else set()
- cancel=begin();seen=set();deadline=time.monotonic()+4
+ cancel,selection=begin();seen=set();deadline=time.monotonic()+4
  while time.monotonic()<deadline:
   try:
    for t in cancel.top_level_parent().descendants(control_type='Text'):
@@ -71,12 +165,19 @@ try:
  report['observed_digits']=sorted(seen)
  if not {'1','2'}.issubset(seen):raise RuntimeError('Countdown digits did not advance visibly')
  pause=find('Pause Recording',timeout=35);stop=find('Stop and Save Recording');panel=stop.top_level_parent()
- affinity=ctypes.c_uint();ctypes.windll.user32.GetWindowDisplayAffinity(panel.handle,ctypes.byref(affinity))
+ affinity=wintypes.DWORD();ctypes.windll.user32.GetWindowDisplayAffinity(panel.handle,ctypes.byref(affinity))
  if affinity.value!=0x11:raise RuntimeError('Recording controls lost capture exclusion')
+ qa_started=time.monotonic()
+ recording_windows=verify_recording_geometry(panel,selection)
+ save_safe_desktop('recording-active-desktop.png')
+ qa_active_seconds=time.monotonic()-qa_started
  # Static source: WGC callbacks need not arrive at the configured frame rate.
  time.sleep(3);pause.click_input();time.sleep(2)
  find('Resume Recording').click_input();time.sleep(3)
  find('Stop and Save Recording').click_input();time.sleep(5)
+ assert_closed(recording_windows)
+ report['checks'].append('recording region and control HWNDs both close after stopping')
+ save_safe_desktop('recording-stopped-desktop.png')
  items=json.loads((library/'library.json').read_text(encoding='utf-8'))
  created=[a for a in items if a['id'] not in before_ids and a['kind']=='video']
  if len(created)!=1:raise RuntimeError('Static recording did not save exactly one video')
@@ -84,11 +185,12 @@ try:
  shell=win32com.client.Dispatch('Shell.Application')
  item=shell.NameSpace(str(path.parent)).ParseName(path.name)
  duration=float(item.ExtendedProperty('System.Media.Duration'))/10_000_000
- # Six measured active seconds plus up to the initial post-countdown second.
+ # Six measured active seconds, the measured geometry/screenshot checks, and
+ # up to the initial post-countdown second.
  # The deliberate two-second pause must not appear in the saved media.
- if not 6.0 <= duration <= 8.5:raise RuntimeError(f'Static recording duration {duration} is outside active elapsed bounds')
+ if not 6.0+qa_active_seconds <= duration <= 8.5+qa_active_seconds:raise RuntimeError(f'Static recording duration {duration} is outside active elapsed bounds')
  report['static_recording']={'media_duration':duration,'paused_seconds':2,
-     'measured_active_seconds':6,'file_size':path.stat().st_size}
+     'measured_active_seconds':6,'native_geometry_qa_seconds':qa_active_seconds,'file_size':path.stat().st_size}
  report['checks'].append('static desktop MP4 preserves active elapsed time and excludes its deliberate pause')
  report['checks'].append('countdown completed; recording started, paused, resumed and stopped')
  report['success']=True

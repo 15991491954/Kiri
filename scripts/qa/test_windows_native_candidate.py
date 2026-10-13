@@ -93,8 +93,9 @@ class CandidateTests(unittest.TestCase):
                 self.validate([path])
 
     def test_markdown_translation_changes_do_not_require_rebuilding(self):
-        self.validate(["README.md", "README_ZH.md", "README_JA.md", "docs/architecture.md"])
-        for path in ("docs/demos/flow.js", "public/icon.png", "README_ZH.md/escape", "vite.config.ts"):
+        self.validate(["README.md", "docs/readme/zh-CN.md", "docs/readme/ja.md",
+                       "docs/privacy/en.md", "docs/roadmap.md", "docs/architecture.md"])
+        for path in ("docs/demos/flow.js", "public/icon.png", "docs/readme/zh-CN.md/escape", "vite.config.ts"):
             with self.subTest(path=path), self.assertRaises(RuntimeError):
                 self.validate([path])
 

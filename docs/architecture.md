@@ -38,6 +38,7 @@ modules.
 | `overlay` | Active-display capture, selection, annotation, and OCR consent |
 | `countdown` | Recording countdown |
 | `control-panel` | Recording pause/resume/stop controls |
+| `recording-region` | Passive, capture-excluded recording region outline |
 | `ripple` | Optional recorded click highlight |
 | `editor-*` | Full screenshot editor |
 | `viewer-*` | Image, video, or GIF viewer |
@@ -146,7 +147,11 @@ reads after a newer change. See ADR 0079.
    overlay receives a capture-scoped, unguessable `kiri://` URL. The image is
    not written to disk.
 4. The overlay performs window hit testing, region selection, and annotation in
-   a fixed logical document coordinate space.
+   a fixed logical document coordinate space. macOS includes visible third-party
+   floating panels, including subtitle overlays, in addition to normal windows.
+   Window level and Quartz stacking order determine the frontmost candidate;
+   fully transparent helpers, desktop layers, and Kiri's own windows are excluded
+   (ADR 0106).
 5. Screenshot confirmation stages the validated annotation document and sends
    the rendered selected PNG with an owner-bound one-time token. Rust validates
    and decodes the PNG under capture-sized allocation limits. When marks exist,
@@ -456,6 +461,23 @@ separate from overlay completion and does not cancel another capture session.
 
 ## Recording and GIF flow
 
+Recording preparation offers MP4/GIF, Start, and four inline controls for system
+audio, microphone, pointer, and click highlights. It follows the selection and
+display edges without manual panel movement. Start always uses a three-second
+countdown. Screenshot size editing remains separate; preparation has no size
+editor or microphone-test entry. The microphone arrow lists actual input devices
+without opening an audio stream. Selection stores a native device identifier,
+does not change the system default, and fails explicitly if that input is
+unavailable instead of silently choosing another device.
+
+The recording control bar measures its translated content before native
+presentation and follows the selected region. It tries below, above, and beside
+the region before fitting into the monitor work area. Dragging only changes the
+current recording's position; serialized moves and layout updates prevent stale
+geometry from overriding a drag. The passive region outline is click-through and
+excluded alongside the controls. Older Windows capture-exclusion limitations
+retain the OS indicator, and Linux keeps tray/CLI controls. See ADR 0105.
+
 Platform capture produces BGRA video frames and optional PCM audio. macOS uses
 ScreenCaptureKit and sends those buffers to AVAssetWriter for a 30 fps H.264
 MP4 with optional AAC audio and explicit BT.709 color metadata, keeping playback
@@ -532,8 +554,8 @@ while an enabled click-ripple window is intentionally included.
 Linux uses tray pause/resume/stop actions or the explicit
 `--toggle-recording-pause` and `--stop-recording` commands. Its floating control
 panel is suppressed because portal capture cannot exclude it reliably. Optional
-system audio, microphone recording and the explicit microphone check use the
-local PulseAudio-compatible service; click highlights remain unavailable.
+system audio and microphone recording use the local PulseAudio-compatible
+service; click highlights remain unavailable.
 
 If a valid finalized MP4 cannot be imported because the active library is
 unavailable or rejects the write, Kiri moves it into a local recovery area
@@ -697,10 +719,10 @@ HOME/XDG directories. Screenshots of real test windows, clipboard pixels, and
 library persistence are distinct from GNOME Wayland/hardware acceptance; see
 [the Linux guide](linux.md).
 
-## Video trimming and microphone checks
+## Video editing
 
-The editing and microphone features in this section apply to macOS and Windows.
-Linux exposes video playback and GIF conversion only.
+The advanced editing features in this section apply to macOS and Windows.
+Linux supports video playback, basic cuts and MP4 export, and GIF conversion.
 
 The video viewer owns an ordered list of retained source intervals and timed
 normalized zoom/mask rectangles and independent annotation tracks. The screenshot
@@ -787,13 +809,6 @@ controller reference is released, preventing nested messages from accessing
 freed controller data. See `src-tauri/vendor/README.md` for provenance and the
 condition for removing this temporary backport.
 
-The explicit microphone check samples the system default input through cpal
-for at most five seconds, sends only device name and levels to the owning
-overlay, and never writes samples. It validates the capture session before and
-after permission requests. Cancellation and starting a recording invalidate the
-check, and closing the overlay ends it. Remembered microphone preferences do
-not automatically start this test.
-
 Clip order follows the submitted array; source intervals need not be chronological.
 Source-time effects remain attached to footage while the frontend projects their
 intersections into the continuous output timeline. Output duration is the sum of
@@ -833,11 +848,12 @@ Editor transport and export follow [ADR 0041](adr/0041-single-canvas-video-editi
 
 Linux audio is part of the GStreamer recording encoder, not the screen portal
 stream. Static capability checks inspect installed plugins without opening
-audio devices. Explicit recording or microphone-check actions resolve the local
+audio devices. Device selection and recording resolve the local
 PulseAudio-compatible service, including PipeWire's Pulse service. System audio
-is the default output's verified monitor; microphone capture requires the
-default non-monitor input. Kiri never substitutes one for the other or changes
-sound settings.
+is the default output's verified monitor; microphone capture uses the selected
+non-monitor input, or the default input when no device is explicitly selected.
+Kiri never substitutes one source type for the other, silently replaces a missing
+selected microphone, or changes sound settings.
 
 Recording starts the audio branches with the first accepted video frame. The
 shared clock with signed native latency, rate conversion, bounded PCM queues and one mixed AAC

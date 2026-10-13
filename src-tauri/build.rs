@@ -14,9 +14,11 @@ fn main() {
     #[cfg(target_os = "macos")]
     {
         println!("cargo:rerun-if-changed=src/macos_media.m");
+        println!("cargo:rerun-if-changed=src/macos_audio.m");
         println!("cargo:rerun-if-changed=src/video_export.m");
         cc::Build::new()
             .file("src/macos_media.m")
+            .file("src/macos_audio.m")
             .file("src/video_export.m")
             .flag("-fobjc-arc")
             .flag("-fmodules")

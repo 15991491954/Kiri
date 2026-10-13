@@ -37,6 +37,9 @@ use crate::record::{AudioChunkSender, AudioQueueSendError, AudioSampleFormat, Au
 
 use super::{CaptureHealth, CapturedDisplay};
 
+mod window_selection;
+mod audio;
+
 // ---------------------------------------------------------------------------
 // Permissions
 // ---------------------------------------------------------------------------
@@ -531,44 +534,22 @@ fn recording_filter_pointer(
 
 fn collect_window_rects(content: &SCShareableContent, display_id: CGDirectDisplayID) -> Vec<Rect> {
     let display_bounds = CGDisplayBounds(display_id);
-    let own_process_id = std::process::id() as i32;
-    let mut rects = Vec::new();
     let windows = unsafe { content.windows() };
-    for window in windows.iter() {
-        let is_on_screen = unsafe { window.isOnScreen() };
-        let layer = unsafe { window.windowLayer() };
-        if !is_on_screen || layer != 0 {
-            continue;
-        }
-        let owner_pid = unsafe { window.owningApplication() }
-            .map(|app| unsafe { app.processID() })
-            .unwrap_or(0);
-        if owner_pid == own_process_id {
-            continue;
-        }
+    let candidates = windows.iter().map(|window| {
         let frame = unsafe { window.frame() };
-        let min_x = frame.origin.x.max(display_bounds.origin.x);
-        let min_y = frame.origin.y.max(display_bounds.origin.y);
-        let max_x = (frame.origin.x + frame.size.width)
-            .min(display_bounds.origin.x + display_bounds.size.width);
-        let max_y = (frame.origin.y + frame.size.height)
-            .min(display_bounds.origin.y + display_bounds.size.height);
-        let width = max_x - min_x;
-        let height = max_y - min_y;
-        if width < 8.0 || height < 8.0 {
-            continue;
+        window_selection::Candidate {
+            id: unsafe { window.windowID() },
+            layer: unsafe { window.windowLayer() },
+            on_screen: unsafe { window.isOnScreen() },
+            owner_pid: unsafe { window.owningApplication() }
+                .map(|app| unsafe { app.processID() }).unwrap_or(0),
+            frame: Rect::new(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height),
         }
-        // SCWindow.frame and CGDisplayBounds share the same top-left, y-down
-        // coordinate space. Translate by the display origin without flipping
-        // y; a flip here would mirror hover and selection rectangles.
-        rects.push(Rect::new(
-            min_x - display_bounds.origin.x,
-            min_y - display_bounds.origin.y,
-            width,
-            height,
-        ));
-    }
-    rects
+    }).collect();
+    window_selection::candidate_rects(candidates,
+        Rect::new(display_bounds.origin.x, display_bounds.origin.y,
+            display_bounds.size.width, display_bounds.size.height),
+        std::process::id() as i32, &window_selection::visible_window_order())
 }
 
 fn cgimage_to_png(image: &CFRetained<CGImage>) -> Result<(Vec<u8>, i64, i64)> {
@@ -725,7 +706,7 @@ struct DelegateState {
     senders: Weak<DelegateSenders>,
     capture_health: Arc<CaptureHealth>,
     audio_format: OnceLock<AudioFormat>,
-    mic_format: OnceLock<AudioFormat>,
+    mic_normalizer: std::sync::Mutex<audio::MicrophoneNormalizer>,
     /// Set before the stream stops so late frame callbacks (already queued
     /// on the SCK queue) become no-ops instead of sending into a channel
     /// whose receiver is gone.
@@ -768,6 +749,10 @@ impl MacRecordingSession {
         if options.captures_microphone && !crate::platform::mic_supported() {
             bail!("Microphone recording requires macOS 15 or later.");
         }
+
+        let microphone_device_id = if options.captures_microphone {
+            crate::microphone::devices::macos_capture_id(options.microphone_device_id.as_deref())?
+        } else { None };
 
         let audio_spec = AudioSpec {
             sample_rate: 48_000,
@@ -848,6 +833,9 @@ impl MacRecordingSession {
                     // rejects microphone capture on older systems before the
                     // stream thread starts, so it is never sent there.
                     configuration.setCaptureMicrophone(true);
+                    if let Some(id) = &microphone_device_id {
+                        configuration.setMicrophoneCaptureDeviceID(Some(&NSString::from_str(id)));
+                    }
                 }
                 configuration.setExcludesCurrentProcessAudio(true);
                 configuration.setSampleRate(48_000);
@@ -864,7 +852,7 @@ impl MacRecordingSession {
                 senders: Arc::downgrade(&senders),
                 capture_health: stream_capture_health,
                 audio_format: OnceLock::new(),
-                mic_format: OnceLock::new(),
+                mic_normalizer: std::sync::Mutex::new(audio::MicrophoneNormalizer::default()),
                 stopped: std::sync::atomic::AtomicBool::new(false),
                 frames: std::sync::atomic::AtomicU64::new(0),
                 dropped_frames: std::sync::atomic::AtomicU64::new(0),
@@ -1233,27 +1221,14 @@ objc2::define_class!(
                 }
             } else if of_type == SCStreamOutputType::Microphone {
                 if let Some(tx) = &senders.mic_tx {
-                    let format = state.mic_format.get_or_init(|| {
-                        let format = audio_format_from(buffer).unwrap_or(AudioFormat {
-                            channels: 2,
-                            is_float: true,
-                            is_non_interleaved: false,
-                        });
-                        log::info!(
-                            "MacRecordingSession: microphone format ch={} float={} non_interleaved={}",
-                            format.channels,
-                            format.is_float,
-                            format.is_non_interleaved,
-                        );
-                        format
-                    });
-                    if let Some(bytes) = copy_audio_buffer(buffer) {
-                        let payload = if format.is_float && format.is_non_interleaved {
-                            deinterleave_f32(&bytes, format.channels, *format)
-                        } else {
-                            bytes
-                        };
-                        forward_audio_chunk(tx, payload, &state.dropped_mic_chunks, "microphone");
+                    match state.mic_normalizer.lock().unwrap().convert(buffer) {
+                        Ok(payload) if !payload.is_empty() => {
+                            forward_audio_chunk(tx, payload, &state.dropped_mic_chunks, "microphone");
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            state.capture_health.report_unexpected_stop(format!("Microphone audio conversion failed: {error}"));
+                        }
                     }
                 }
             } else if let Some(tx) = &senders.audio_tx {
@@ -1324,7 +1299,7 @@ mod recording_lifetime_tests {
             senders: Arc::downgrade(&senders),
             capture_health: Arc::new(CaptureHealth::default()),
             audio_format: OnceLock::new(),
-            mic_format: OnceLock::new(),
+            mic_normalizer: std::sync::Mutex::new(audio::MicrophoneNormalizer::default()),
             stopped: std::sync::atomic::AtomicBool::new(false),
             frames: std::sync::atomic::AtomicU64::new(0),
             dropped_frames: std::sync::atomic::AtomicU64::new(0),

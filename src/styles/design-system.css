@@ -963,63 +963,129 @@ button:active:not(:disabled) {
 .kiri-toolbar-segment:focus { outline:none; box-shadow:none; }
 .kiri-toolbar-segment:focus-visible { box-shadow:inset 0 0 0 1px #777; }
 
-.kiri-output-format {
-  height: 32px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.68);
-  font: 700 11.5px var(--kiri-font-ui);
-  cursor: pointer;
-  transition:
-    background var(--kiri-motion-hover) ease-out,
-    border-color var(--kiri-motion-hover) ease-out,
-    color var(--kiri-motion-hover) ease-out,
-    transform var(--kiri-motion-hover) ease-out;
+.kiri-record-options {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--kiri-surface-border-dark);
+  border-radius: 16px;
+  background: var(--kiri-elevated-dark);
+  color: var(--kiri-label-dark);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  cursor: default;
 }
-
-.kiri-output-format:hover:not([data-active]) {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+.kiri-record-options[data-adjusting] { pointer-events: none; }
+/* If a moved mode bar leaves less room than the fixed header and a usable
+   control row, let the whole panel scroll so no settings become unreachable. */
+.kiri-record-options[data-constrained] { overflow-y: auto; touch-action: pan-y; }
+.kiri-record-options[data-constrained] .kiri-record-options__scroll { flex: 0 0 auto; overflow: visible; }
+.kiri-record-options__header {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 14px;
 }
-
-.kiri-output-format[data-active] {
-  border-color: #ffffff;
-  background: #ffffff;
-  color: #000000;
-}
-
-.kiri-switch-row {
-  width: 100%;
-  min-height: 34px;
+.kiri-record-options button { cursor: pointer; }
+.kiri-record-options button:focus-visible { outline: 2px solid #ffffff; outline-offset: -3px; }
+.kiri-record-options button:disabled { cursor: default; opacity: 0.38; }
+.kiri-record-options__start {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 5px 10px;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 14px;
   border: 0;
+  border-radius: 9px;
+  background: var(--kiri-label-dark);
+  color: #111111;
+  font: 600 16px/1.3 var(--kiri-font-ui);
+  overflow-wrap: anywhere;
+}
+.kiri-record-options__start:hover { background: #dededc; }
+.kiri-record-options__start:active { background: #c9c9c7; }
+.kiri-record-options__start:focus-visible { outline-color: #111111; outline-offset: -4px; }
+.kiri-record-options__record-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.kiri-record-options__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--kiri-secondary-label-dark);
   background: transparent;
-  color: #ffffff;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background var(--kiri-motion-hover) ease-out,
-    opacity var(--kiri-motion-hover) ease-out,
-    transform var(--kiri-motion-hover) ease-out;
 }
-
-.kiri-switch-row:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+.kiri-record-options__icon:hover { background: #303030; color: #ffffff; }
+.kiri-record-options__scroll { touch-action: pan-y; min-height: 0; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }
+.kiri-record-options__body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; }
+.kiri-record-options__format-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.kiri-record-options__formats { display: inline-flex; padding: 3px; border-radius: 8px; background: #080808; }
+.kiri-record-options__format {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  min-width: 48px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kiri-secondary-label-dark);
+  font: 600 14px/1 var(--kiri-font-ui);
 }
-
-.kiri-switch-row:active:not(:disabled) {
-  transform: scale(0.985);
+.kiri-record-options__format[aria-pressed=true] { color: #111111; background: var(--kiri-label-dark); }
+.kiri-record-options__format:hover { color: #ffffff; background: #333333; }
+.kiri-record-options__format[aria-pressed=true]:hover { color: #111111; background: #dededc; }
+.kiri-record-options__format[aria-pressed=true]:focus-visible { outline-color: #111111; }
+.kiri-record-options__inputs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+.kiri-record-options__input-group { position: relative; min-width: 0; }
+.kiri-record-options__input {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 76px;
+  padding: 12px 3px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--kiri-label-dark);
+  font: 500 14px/1.35 var(--kiri-font-ui);
+  overflow-wrap: anywhere;
 }
-
-.kiri-switch-row:disabled {
-  cursor: default;
-  opacity: 0.4;
+.kiri-record-options__input:disabled { cursor: default; opacity: 0.38; }
+.kiri-record-options__input[aria-checked=false] { color: #a5a5a5; }
+.kiri-record-options__input-icon { position: relative; display: flex; flex-shrink: 0; }
+.kiri-record-options__input[aria-checked=false] .kiri-record-options__input-icon::after {
+  content: ""; position: absolute; left: -2px; top: 11px; width: 28px; height: 2px;
+  border-radius: 2px; background: currentColor; transform: rotate(45deg);
+  box-shadow: 0 -2px var(--kiri-elevated-dark), 0 2px var(--kiri-elevated-dark);
 }
+.kiri-record-options__input:hover:not(:disabled) { background: #292929; }
+.kiri-record-options__input:active:not(:disabled) { background: #333333; }
+.kiri-record-options__input-group[data-accessory] .kiri-record-options__input-icon { transform: translateX(-4px); }
+.kiri-record-options__microphone.kiri-choice-trigger {
+  position: absolute; top: 9px; left: calc(50% + 10px); width: 20px; height: 30px;
+  min-height: 0; padding: 0; justify-content: center; border: 0; border-radius: 5px;
+  background: transparent; color: #b8b8b8;
+}
+.kiri-record-options__microphone .kiri-choice-trigger-label { display: none; }
+.kiri-record-options__microphone.kiri-choice-trigger:hover { background: #383838; color: #fff; }
+.kiri-record-device-menu { font-size: 14px; box-shadow: 0 4px 14px #0003; }
+.kiri-record-device-menu .kiri-choice-option { min-height: 42px; padding: 10px 12px; }
+.kiri-record-device-menu .kiri-choice-option[aria-selected=true] { background: transparent; }
+.kiri-record-device-menu .kiri-choice-option:hover, .kiri-record-device-menu .kiri-choice-option:focus-visible { background: #353535; }
+.kiri-record-options__tray { margin: 0; color: var(--kiri-secondary-label-dark); font-size: 14px; line-height: 1.4; }
 
 /* Viewer and recording HUD controls. */
 .kiri-viewer-button {
@@ -1040,46 +1106,134 @@ button:active:not(:disabled) {
   color: var(--kiri-coral);
 }
 
+.kiri-record-controls-window {
+  /* Native placement sets this inline. Until then, initial keeps each var()
+     fallback active so the first measurement uses unconstrained content. */
+  --kiri-record-controls-max-width: initial;
+  display: inline-flex;
+  width: max-content;
+  min-width: min(96px, var(--kiri-record-controls-max-width, 96px));
+  max-width: var(--kiri-record-controls-max-width, none);
+  padding: 4px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.kiri-record-controls-window:not([data-layout-ready]) { visibility: hidden; }
+
+.kiri-record-controls {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 5px 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--kiri-surface-border);
+  border-radius: 10px;
+  background: var(--kiri-card);
+  color: var(--kiri-label);
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+}
+
+.kiri-record-controls:active { cursor: grabbing; }
+
+.kiri-record-controls-window[data-compact] .kiri-record-control-button__label { display: none; }
+.kiri-record-controls-window[data-compact] .kiri-record-control-button--stop {
+  width: 32px;
+  padding: 0;
+}
+.kiri-record-controls-window[data-narrow] .kiri-record-controls {
+  gap: 4px;
+  padding-inline: 4px;
+}
+.kiri-record-controls-window[data-narrow] .kiri-record-controls__grip,
+.kiri-record-controls-window[data-narrow] .kiri-record-controls__divider,
+.kiri-record-controls-window[data-minimal] .kiri-record-controls__time { display: none; }
+.kiri-record-controls-window[data-minimal] .kiri-record-controls { justify-content: center; }
+
+.kiri-record-controls__grip {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--kiri-disabled-label);
+  flex-shrink: 0;
+}
+
+.kiri-record-controls__time {
+  min-width: 6ch;
+  padding: 0 3px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: center;
+}
+
+.kiri-record-controls[data-paused] .kiri-record-controls__time {
+  color: var(--kiri-secondary-label);
+}
+
+.kiri-record-controls__divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--kiri-surface-border);
+}
+
 .kiri-record-control-button {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 32px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  gap: 7px;
   border: 1px solid transparent;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kiri-label);
+  font: 600 13px var(--kiri-font-ui);
   cursor: pointer;
-  transition:
-    background var(--kiri-motion-hover) ease-out,
-    color var(--kiri-motion-hover) ease-out,
-    opacity var(--kiri-motion-hover) ease-out,
-    transform var(--kiri-motion-hover) ease-out;
-}
-
-.kiri-record-control-button[data-danger] {
-  background: #ff3b30;
+  transition: background var(--kiri-motion-hover), opacity var(--kiri-motion-hover);
 }
 
 .kiri-record-control-button:hover:not(:disabled) {
-  background: #ffffff;
-  color: #000000;
-  transform: scale(1.04);
+  background: var(--kiri-group-fill);
 }
 
-.kiri-record-control-button[data-danger]:hover:not(:disabled) {
-  background: #ff4d42;
+.kiri-record-control-button--stop {
+  width: auto;
+  padding: 0 11px;
+  background: var(--kiri-coral);
   color: #ffffff;
 }
 
-.kiri-record-control-button:active:not(:disabled) {
-  transform: scale(0.92);
+.kiri-record-control-button--stop:hover:not(:disabled) {
+  background: #b6362f;
 }
 
-.kiri-record-control-button:disabled {
-  cursor: default;
-  opacity: 0.46;
+.kiri-record-control-button:active:not(:disabled) { opacity: 0.78; }
+.kiri-record-control-button:focus-visible { outline: 2px solid var(--kiri-label); outline-offset: 1px; }
+.kiri-record-control-button:disabled { cursor: default; opacity: 0.46; }
+
+.kiri-record-controls__spinner {
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border: 2px solid var(--kiri-surface-border);
+  border-top-color: var(--kiri-label);
+  border-radius: 50%;
+  animation: kiri-record-control-spin 0.9s linear infinite;
+}
+
+@keyframes kiri-record-control-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .kiri-record-controls__spinner { animation: none; }
 }
 
 /* Library actions that previously relied on pointer-event style mutation. */

@@ -56,4 +56,4 @@ Kiri 录屏会保存在素材库中。其他文件可通过「导入素材」添
 
 导出保留同步声音。macOS 片段变速保持音调，Windows 变速会同时改变音调。Windows 的画面效果目前要求源视频不含旋转标记，Kiri 录屏符合此条件。
 
-[返回 Kiri](../README_ZH.md)
+[返回 Kiri](readme/zh-CN.md)

@@ -16,8 +16,10 @@ BUILD_JOB = "Build, test and package Linux (Ubuntu 24.04 / X11)"
 ARTIFACT = "kiri-linux-deb"
 SHA = re.compile(r"[0-9a-f]{40}")
 ALLOWED_FILES = {
-    WORKFLOW, "AGENTS.md", "README.md", "README_ZH.md", "ROADMAP.md",
-    "CONTRIBUTING.md", "PRIVACY.md", "SECURITY.md",
+    WORKFLOW, "AGENTS.md", "README.md", "CONTRIBUTING.md", "SECURITY.md",
+    # Historical paths remain valid when comparing an older package checkout.
+    # Current translated overviews and policies are covered by docs/*.md below.
+    "README_ZH.md", "ROADMAP.md", "PRIVACY.md",
 }
 
 

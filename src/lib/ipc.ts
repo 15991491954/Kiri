@@ -95,6 +95,7 @@ export interface RecordingOptions {
   usesCountdown: boolean;
   capturesSystemAudio: boolean;
   capturesMicrophone: boolean;
+  microphoneDeviceId?: string | null;
   showsCursor: boolean;
   highlightsClicks: boolean;
 }
@@ -104,6 +105,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   usesCountdown: true,
   capturesSystemAudio: false,
   capturesMicrophone: false,
+  microphoneDeviceId: null,
   showsCursor: true,
   highlightsClicks: false,
 };
@@ -381,6 +383,9 @@ export const api = {
   cancelRecordingFlow: (sessionId: string) => invoke<void>("cancel_recording_flow", { sessionId }),
   beginRecording: (sessionId: string) => invoke<void>("begin_recording", { sessionId }),
   getRecordingState: () => invoke<RecordingState>("get_recording_state"),
+  positionRecordingControls: (request: {
+    sessionId: string; width: number; height: number; contentScale: number; preservePosition: boolean;
+  }) => invoke<{ maxWidth: number }>("position_recording_controls", request),
   pauseRecording: () => invoke<void>("pause_recording"),
   resumeRecording: () => invoke<void>("resume_recording"),
   stopRecording: () => invoke<void>("stop_recording"),
@@ -399,6 +404,7 @@ export const api = {
   openSettings: (action: string) => invoke<void>("open_settings", { action }),
   authorizeScreenshot: () => invoke<void>("authorize_screenshot"),
   quitApp: () => invoke<void>("quit_app"),
+  listMicrophoneDevices: () => invoke<{ id: string; name: string }[]>("list_microphone_devices"),
   getRecordingOptions: () => invoke<RecordingOptions>("get_recording_options"),
   setRecordingOptions: (options: RecordingOptions) =>
     invoke<void>("set_recording_options", { options }),

@@ -13,3 +13,10 @@ export function capturePanelLayout(
   modeSelector?: Rect | null,
   sizeControlsOpen?: boolean,
 ): { left: number; top: number; width: number; maxHeight: number };
+export function recordingPanelLayout(
+  selection: Rect,
+  bounds: Rect,
+  size: { width: number; height: number },
+  modeSelector?: Rect | null,
+  sizeControlsOpen?: boolean,
+): { left: number; top: number; width: number; maxHeight: number };

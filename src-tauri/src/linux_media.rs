@@ -660,7 +660,7 @@ struct PreparedEncoder {
 impl PreparedEncoder {
     fn new(config: &EncoderConfig, out_path: &Path) -> Result<Self> {
         let sources =
-            crate::linux_audio::selected_sources(config.audio.is_some(), config.mic.is_some())?;
+            crate::linux_audio::selected_sources_with_input(config.audio.is_some(), config.mic.is_some(), config.microphone_device_id.as_deref())?;
         Self::with_audio(config, out_path, AudioSetup::Devices(&sources))
     }
 
@@ -1546,6 +1546,7 @@ mod tests {
             bitrate: 1_000_000,
             audio: None,
             mic: None,
+            microphone_device_id: None,
         }
     }
 

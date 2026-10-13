@@ -2,7 +2,7 @@
 
 [简体中文](usage.zh-CN.md) · [English](usage.md) · [繁體中文](usage.zh-TW.md) · [日本語](usage.ja.md) · [Deutsch](usage.de.md) · [한국어](usage.ko.md) · **Français**
 
-[Retour au README](../README_FR.md)
+[Retour au README](readme/fr.md)
 
 ## Installation et mises à jour
 
@@ -32,7 +32,7 @@ Appuyez sur ⇧⌘A sous macOS ou Shift+Ctrl+A sous Windows / Linux X11, puis s�
 
 Choisissez Capture d’écran, Enregistrer ou OCR. La barre de capture propose aussi la reconnaissance QR. Entrée confirme une capture ; Échap annule. Les captures vont dans le presse-papiers et la bibliothèque locale. Vous pouvez changer le raccourci de capture dans les réglages sous macOS, Windows et X11.
 
-Avant de choisir un outil d’annotation, cliquez sur les curseurs de la barre de capture pour afficher les champs de largeur et de hauteur aux bords de la sélection. Les réglages d’enregistrement proposent le même bouton. Les valeurs utilisent les pixels de sortie, y compris sur Retina. Entrée ou quitter un champ applique sa valeur ; Échap ignore la saisie, et un deuxième Échap annule la capture. Les flèches ajustent d’un pixel, ou de dix avec Maj. Cliquez à nouveau sur les curseurs pour masquer les champs. Après le début de l’annotation, ils règlent son apparence.
+Avant de choisir un outil d’annotation, cliquez sur les curseurs de la barre de capture pour afficher les champs de largeur et de hauteur aux bords de la sélection. Les valeurs utilisent les pixels de sortie, y compris sur Retina. Entrée ou quitter un champ applique sa valeur ; Échap ignore la saisie, et un deuxième Échap annule la capture. Les flèches ajustent d’un pixel, ou de dix avec Maj. Cliquez à nouveau sur les curseurs pour masquer les champs. Après le début de l’annotation, ils règlent son apparence.
 
 Sous macOS, si vous changez la disposition des écrans, la résolution ou l’échelle après avoir choisi une zone, recommencez une capture avant d’enregistrer. Si l’enregistrement est en pause, arrêtez-le et enregistrez-le d’abord.
 
@@ -40,17 +40,41 @@ Pendant la saisie d’une annotation, Ctrl/Cmd+Z annule les modifications du tex
 
 Sous GNOME Wayland, si la première capture n’affiche pas de demande d’autorisation, ouvrez la bibliothèque et demandez l’accès depuis la bannière d’erreur. Autorisez les captures dans la boîte de dialogue GNOME, puis réessayez. Kiri supprime l’image d’autorisation. Consultez le [guide Linux](linux.md).
 
+Le panneau de préparation propose MP4 / GIF, Démarrer et quatre icônes côte à côte : son du système, microphone, pointeur et indicateurs de clic. Le démarrage lance toujours un compte à rebours de trois secondes ; les GIF sont sans son. Le panneau s’adapte à la sélection et aux bords de l’écran.
+
+La petite flèche à côté du microphone permet de choisir un périphérique d’entrée réel sans modifier celui par défaut du système. Si le périphérique choisi est indisponible ou déconnecté, Kiri affiche une erreur au lieu de changer de microphone silencieusement.
+
 ## Annotations de capture
 
 Sélectionnez une annotation existante pour modifier son style. La mosaïque propose le dessin libre, le rectangle et l’ellipse, avec pixellisation ou flou et intensité réglable. Filigrane (W) permet de saisir du texte directement sur l’image, puis de choisir un affichage unique ou répété et de régler l’opacité, l’angle et l’espacement. Les filigranes restent modifiables après enregistrement.
+
+Texte (T), Note numérotée (N) et Bulle de texte (B) ont chacun leur bouton dans les barres d’outils de capture et d’édition d’image. Choisissez la note numérotée, cliquez pour la placer et saisissez sa description directement sur l’image ; Retour ajoute une ligne. Déplacez séparément le numéro et le cadre transparent de la description, et réglez la taille, la couleur et le style plein ou contour.
+
+Cliquez une fois sur un texte, une note numérotée, une étiquette ou un filigrane existant pour le sélectionner, faites-le glisser pour le déplacer et double-cliquez pour le modifier. Supprimez une annotation sélectionnée avec `Delete`, `Backspace` ou **Supprimer l’annotation** ; annulez avec `⌘Z` / `Ctrl+Z`. Pendant la saisie, ces touches suppriment uniquement du texte.
+
+Pendant la saisie de texte, d’une description numérotée ou d’une légende, un premier geste sur une zone vide termine l’édition et retire la sélection ; le suivant utilise l’outil actif. Avec les outils de texte ou de forme, une sélection existante est aussi retirée avant qu’un autre geste crée une annotation. L’outil reste sélectionné. Le stylo et la mosaïque permettent de continuer à dessiner. Cliquer sur l’image pendant la saisie d’un filigrane termine celle-ci ; une nouvelle édition reprend le même filigrane.
+
+Les annotations se superposent dans leur ordre de création. Une mosaïque ajoutée ensuite traite les textes, formes et filigranes précédents ; les annotations ajoutées après apparaissent au-dessus. Déplacer ou modifier une annotation conserve sa position dans les calques.
+
+## Références et couleurs
+
+Un double-clic sur une partie sans annotation de la sélection termine aussi la capture ; le texte existant reste modifiable par double-clic. L’épingle de la barre d’outils enregistre et épingle l’image, comme Épingler sur la carte de fin. Faites glisser l’image pour la déplacer et son coin inférieur droit pour la redimensionner proportionnellement. Le survol affiche les commandes pour désépingler et fermer.
+
+En mode Capture, survolez l’écran pour agrandir les pixels d’origine et voir leurs coordonnées et leur couleur HEX. `⌘C` sur macOS ou `Ctrl+C` copie la couleur tout en conservant la sélection. La loupe disparaît pendant l’annotation.
 
 ## Conversion GIF
 
 Pour convertir un MP4 de la bibliothèque en GIF, Kiri vérifie d’abord le décodage vidéo, puis commence l’encodage GIF. Vous pouvez annuler pendant la vérification ou la conversion, et annuler plusieurs tâches ensemble. La vidéo d’origine reste conservée. L’annulation est indisponible dès que l’enregistrement final dans la bibliothèque commence.
 
+## Bibliothèque et retours
+
+La sélection multiple permet de cocher des éléments ou de tout sélectionner pour les déplacer dans la corbeille ; un clic ordinaire les ouvre toujours. La corbeille permet une restauration groupée et demande confirmation dans la fenêtre principale avant d’être vidée. Renommer modifie aussi le nom du fichier en gardant son type. Copier le fichier dans le menu contextuel sert à coller dans un dossier ; Copier colle toujours l’image.
+
+Pour signaler un problème, copiez les informations de l’application, du système et des écrans depuis Réglages → À propos. Les captures, identifiants et chemins personnels sont exclus.
+
 ## Confidentialité
 
-Les captures et le traitement des médias restent locaux. La reconnaissance distante est facultative et demande confirmation avant chaque envoi. Les captures modifiables conservent une image d’origine locale, y compris les pixels masqués par les annotations. Consultez la [politique de confidentialité](../PRIVACY.md).
+Les captures et le traitement des médias restent locaux. La reconnaissance distante est facultative et demande confirmation avant chaque envoi. Les captures modifiables conservent une image d’origine locale, y compris les pixels masqués par les annotations. Consultez la [politique de confidentialité](privacy/en.md).
 
 ## Autres documents
 

@@ -3732,7 +3732,7 @@ pub async fn start_recording_flow(
 
     crate::microphone::stop();
     let saved_options = request.options.normalized();
-    let mut options = saved_options;
+    let mut options = saved_options.clone();
     if options.output_format == RecordingOutputFormat::Gif {
         // GIF has no audio channel. Keep the saved MP4 preferences intact and
         // disable audio only for this capture session.
@@ -3766,6 +3766,14 @@ pub async fn start_recording_flow(
         }
     }
 
+    if options.captures_microphone {
+        if let Err(error) = crate::microphone::devices::validate_selection(options.microphone_device_id.as_deref()) {
+            let notice = recording_start_error_notice(&error.to_string(), false);
+            emit_error(&app, notice.clone(), None);
+            return Err(notice);
+        }
+    }
+
     let (
         screen_frame,
         backing_scale,
@@ -3789,7 +3797,7 @@ pub async fn start_recording_flow(
             app.get_webview_window(label)
                 .and_then(|window| window.current_monitor().ok().flatten())
         });
-        *state.saved_recording_options.lock().unwrap() = saved_options;
+        *state.saved_recording_options.lock().unwrap() = saved_options.clone();
         let mut recording = state.recording.lock().unwrap();
         *recording = RecordingFlow {
             session_id: uuid::Uuid::new_v4(),
@@ -3808,7 +3816,7 @@ pub async fn start_recording_flow(
                 ),
                 screen_frame: session.display.screen_frame,
                 backing_scale: session.display.backing_scale,
-                options,
+                options: options.clone(),
             }),
             ..Default::default()
         };
@@ -4022,7 +4030,7 @@ pub async fn cancel_recording_flow(app: AppHandle, session_id: uuid::Uuid) -> Re
 }
 
 fn close_recording_windows(app: &AppHandle) {
-    for label in ["countdown", "control-panel", "ripple"] {
+    for label in ["countdown", "control-panel", "recording-region", "ripple"] {
         if let Some(window) = app.get_webview_window(label) {
             let _ = window.close();
         }
@@ -4157,29 +4165,22 @@ fn recover_failed_resume(app: &AppHandle) {
 fn create_control_panel(
     app: &AppHandle,
     configuration: &RecordingConfiguration,
+    session_id: uuid::Uuid,
 ) -> Result<(), String> {
-    let frame = configuration.screen_frame;
-    // Newer product behavior places the draggable panel at the bottom-right;
-    // the frontend persists any position the user chooses afterwards.
-    let panel_x = frame.x + frame.width - 296.0 - 24.0;
-    let panel_y = frame.y + frame.height - 64.0 - 64.0;
-    log::info!(
-        "create_control_panel: screen_frame=({:.0},{:.0} {:.0}x{:.0}) → panel at ({:.0},{:.0})",
-        frame.x,
-        frame.y,
-        frame.width,
-        frame.height,
-        panel_x,
-        panel_y,
+    let region = recording_region_frame(configuration);
+    let frame = crate::core::recording_controls::controls_frame(
+        configuration.screen_frame, region, (296.0, 52.0), None,
     );
     let panel = WebviewWindowBuilder::new(
         app,
         "control-panel".to_string(),
-        WebviewUrl::App("index.html?window=control-panel".into()),
+        WebviewUrl::App(format!("index.html?window=control-panel&session={session_id}").into()),
     )
     .title("kiri")
-    .inner_size(296.0, 64.0)
-    .position(panel_x, panel_y)
+    .inner_size(frame.width, frame.height)
+    .position(frame.x, frame.y)
+    .visible(false)
+    .focused(false)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
@@ -4187,20 +4188,137 @@ fn create_control_panel(
     .shadow(false)
     .build()
     .map_err(|e| e.to_string())?;
-    let panel_frame = Rect::new(panel_x, panel_y, 296.0, 64.0);
     if let Err(error) =
-        platform::place_transient_window(&panel, panel_frame, configuration.backing_scale)
+        platform::place_transient_window(&panel, frame, configuration.backing_scale)
     {
         let _ = panel.close();
         return Err(error.to_string());
     }
     platform::set_window_capture_excluded(app, "control-panel", true);
-    // Keep the panel above every app window. It takes keyboard focus so the
-    // recording hotkeys work (Space = pause/resume, Esc = stop); the panel
-    // itself is the only window the user interacts with while recording.
-    platform::configure_transient_window(&panel, platform::TransientWindowRole::RecordingControls);
-    let _ = panel.show();
-    let _ = panel.set_focus();
+    // macOS transient policy orders the window front. Apply it only after
+    // the renderer has measured its translated controls, immediately below.
+    Ok(())
+}
+
+fn recording_region_frame(configuration: &RecordingConfiguration) -> Rect {
+    Rect::new(configuration.screen_frame.x + configuration.region.x,
+        configuration.screen_frame.y + configuration.region.y,
+        configuration.region.width, configuration.region.height)
+}
+
+#[tauri::command]
+pub fn position_recording_controls(
+    app: AppHandle, window: WebviewWindow, session_id: uuid::Uuid,
+    width: f64, height: f64, content_scale: f64, preserve_position: bool,
+) -> Result<RecordingControlsLayout, String> {
+    if window.label() != "control-panel" {
+        return Err("This command is unavailable from this window.".into());
+    }
+    if !width.is_finite() || !height.is_finite() || !content_scale.is_finite()
+        || !(96.0..=640.0).contains(&width) || !(40.0..=96.0).contains(&height)
+        || !(0.5..=8.0).contains(&content_scale) {
+        return Err("Invalid recording control dimensions.".into());
+    }
+    let configuration = {
+        let state = app.state::<AppState>();
+        let recording = state.recording.lock().unwrap();
+        if recording.session_id != session_id || recording.is_finalizing {
+            return Err("This recording is no longer active.".into());
+        }
+        recording.configuration.clone().ok_or("This recording is no longer active.")?
+    };
+    // Native monitor/window calls can dispatch to the UI thread; never keep
+    // the recording mutex while waiting for them.
+    let monitor = if preserve_position {
+        window.current_monitor().ok().flatten()
+    } else {
+        app.available_monitors().ok().and_then(|monitors| monitors.into_iter().find(|monitor| {
+            let p = monitor.position(); let s = monitor.size();
+            crate::core::recording_controls::monitor_contains_screen(
+                configuration.screen_frame, configuration.backing_scale,
+                Rect::new(f64::from(p.x), f64::from(p.y), f64::from(s.width), f64::from(s.height)),
+                monitor.scale_factor(),
+            )
+        }))
+    };
+    let scale = monitor.as_ref().map(Monitor::scale_factor).unwrap_or(configuration.backing_scale);
+    let work_area = monitor.as_ref().map(|monitor| {
+        let area = monitor.work_area();
+        Rect::new(f64::from(area.position.x) / scale, f64::from(area.position.y) / scale,
+            f64::from(area.size.width) / scale, f64::from(area.size.height) / scale)
+    }).unwrap_or(configuration.screen_frame);
+    let preferred = if preserve_position {
+        let position = window.outer_position().map_err(|error| error.to_string())?;
+        Some((f64::from(position.x) / scale, f64::from(position.y) / scale))
+    } else { None };
+    // WebView2 may include accessibility text scaling in its CSS pixel ratio.
+    // Measure rendered content, rather than assuming it equals monitor DPI.
+    let frame = crate::core::recording_controls::controls_frame(work_area,
+        recording_region_frame(&configuration), (width * content_scale / scale, height * content_scale / scale), preferred);
+    #[cfg(target_os = "macos")]
+    {
+        // Tao converts physical positions using the window's current scale,
+        // which may still belong to the display we are moving away from.
+        window.set_position(tauri::LogicalPosition::new(frame.x, frame.y)).map_err(|error| error.to_string())?;
+        window.set_size(tauri::LogicalSize::new(frame.width, frame.height)).map_err(|error| error.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_position(tauri::PhysicalPosition::new((frame.x * scale).round() as i32,
+            (frame.y * scale).round() as i32)).map_err(|error| error.to_string())?;
+        window.set_size(tauri::PhysicalSize::new((frame.width * scale).round() as u32,
+            (frame.height * scale).round() as u32)).map_err(|error| error.to_string())?;
+    }
+    if !window.is_visible().map_err(|error| error.to_string())? {
+        platform::configure_transient_window(&window, platform::TransientWindowRole::RecordingControls);
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+    let margin = 8.0_f64.min(work_area.width / 4.0).min(work_area.height / 4.0);
+    Ok(RecordingControlsLayout {
+        max_width: ((work_area.width - margin * 2.0).max(1.0) * scale / content_scale).floor(),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingControlsLayout {
+    max_width: f64,
+}
+
+#[cfg(not(target_os = "linux"))]
+fn create_recording_region(app: &AppHandle, configuration: &RecordingConfiguration) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        // Before Windows 10 2004, EXCLUDEFROMCAPTURE behaves like MONITOR,
+        // which would black out a full transparent region window in video.
+        // Keep the OS indicator on those systems instead of obscuring footage.
+        use windows::Wdk::System::SystemServices::RtlGetVersion;
+        use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
+        let mut version = OSVERSIONINFOW { dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32, ..Default::default() };
+        if unsafe { RtlGetVersion(&mut version) }.is_err() || version.dwBuildNumber < 19041 {
+            return Ok(());
+        }
+    }
+    let frame = recording_region_frame(configuration);
+    let window = WebviewWindowBuilder::new(app, "recording-region",
+        WebviewUrl::App("index.html?window=recording-region".into()))
+        .title("kiri").inner_size(frame.width, frame.height).position(frame.x, frame.y)
+        .visible(false).focused(false).focusable(false).decorations(false)
+        .transparent(true).always_on_top(true).skip_taskbar(true).shadow(false).build()
+        .map_err(|error| error.to_string())?;
+    let prepare = || -> Result<(), String> {
+        platform::place_transient_window(&window, frame, configuration.backing_scale).map_err(|error| error.to_string())?;
+        #[cfg(windows)]
+        {
+            window.set_content_protected(true).map_err(|error| error.to_string())?;
+            platform::windows::pin_webview_to_display_scale(&window, configuration.backing_scale);
+        }
+        window.set_ignore_cursor_events(true).map_err(|error| error.to_string())?;
+        platform::configure_transient_window(&window, platform::TransientWindowRole::RecordingRegion);
+        window.show().map_err(|error| error.to_string())
+    };
+    if let Err(error) = prepare() { let _ = window.close(); return Err(error); }
     Ok(())
 }
 
@@ -4286,6 +4404,9 @@ fn recording_channels(options: RecordingOptions) -> (RecorderSenders, EncoderRec
 }
 
 fn recording_encoder_error_notice(error: &str) -> String {
+    if error.contains(crate::microphone::devices::SELECTED_UNAVAILABLE) {
+        return crate::microphone::devices::SELECTED_UNAVAILABLE.into();
+    }
     #[cfg(target_os = "linux")]
     for message in [
         crate::linux_audio::AUDIO_UNAVAILABLE,
@@ -4301,6 +4422,9 @@ fn recording_encoder_error_notice(error: &str) -> String {
 }
 
 fn recording_start_error_notice(error: &str, resuming: bool) -> String {
+    if error.contains(crate::microphone::devices::SELECTED_UNAVAILABLE) {
+        return crate::microphone::devices::SELECTED_UNAVAILABLE.into();
+    }
     // Only known recovery guidance crosses the public notice boundary;
     // arbitrary native errors can contain implementation details.
     #[cfg(target_os = "macos")]
@@ -4350,7 +4474,7 @@ fn start_recorder(
             configuration.screen_frame,
             configuration.region,
             configuration.backing_scale,
-            configuration.options,
+            configuration.options.clone(),
             &ripple_excepted,
             senders.video,
             senders.system_audio,
@@ -4383,7 +4507,7 @@ fn start_recorder(
             display_identity,
             configuration.region,
             configuration.backing_scale,
-            configuration.options,
+            configuration.options.clone(),
             senders.video,
             senders.system_audio,
             senders.microphone,
@@ -4406,7 +4530,7 @@ fn start_recorder(
                 .ok_or("The captured Linux display could not be identified.")?,
             configuration.region,
             configuration.backing_scale,
-            configuration.options,
+            configuration.options.clone(),
             senders.video,
             senders.system_audio,
             senders.microphone,
@@ -4444,6 +4568,8 @@ fn start_encoder(
         bitrate: crate::record::bitrate_for(width, height),
         audio: recorder.system_audio_spec,
         mic: recorder.microphone_spec,
+        #[cfg(target_os = "linux")]
+        microphone_device_id: configuration.options.microphone_device_id.clone(),
     };
     match prepared {
         #[cfg(target_os = "macos")]
@@ -4609,7 +4735,12 @@ pub async fn begin_recording(app: AppHandle, session_id: Option<uuid::Uuid>) -> 
                     .map_err(|error| error.to_string())?;
             }
             #[cfg(not(target_os = "linux"))]
-            create_control_panel(&app, &configuration)?;
+            {
+                if let Err(error) = create_recording_region(&app, &configuration) {
+                    log::warn!("recording region indicator unavailable: {error}");
+                }
+                create_control_panel(&app, &configuration, session_id)?;
+            }
             if configuration.options.highlights_clicks {
                 create_ripple_window(&app, &configuration)?;
             }
@@ -4686,7 +4817,7 @@ pub async fn begin_recording(app: AppHandle, session_id: Option<uuid::Uuid>) -> 
         uuid::Uuid::new_v4().to_string().to_lowercase()
     ));
 
-    let (senders, receivers) = recording_channels(configuration.options);
+    let (senders, receivers) = recording_channels(configuration.options.clone());
     let mut started = match start_recorder(&app, &configuration, senders) {
         Ok(started) => started,
         Err(error) => {
@@ -4941,7 +5072,7 @@ pub async fn resume_recording(app: AppHandle) -> Result<(), String> {
         uuid::Uuid::new_v4().to_string().to_lowercase()
     ));
 
-    let (senders, receivers) = recording_channels(configuration.options);
+    let (senders, receivers) = recording_channels(configuration.options.clone());
     let mut started = match start_recorder(&app, &configuration, senders) {
         Ok(started) => started,
         Err(error) => {
@@ -5608,7 +5739,7 @@ fn require_known_frontend_window(window: &WebviewWindow) -> Result<(), String> {
     let label = window.label();
     if matches!(
         label,
-        "library" | "overlay" | "countdown" | "control-panel" | "ripple" | "confirm" | "toast"
+        "library" | "overlay" | "countdown" | "control-panel" | "recording-region" | "ripple" | "confirm" | "toast"
     ) || ["viewer-", "editor-"]
         .iter()
         .any(|prefix| label.starts_with(prefix))
@@ -5955,6 +6086,17 @@ mod command_security_tests {
         assert_eq!(super::recording_start_error_notice("No microphone input device is available.", false), "No microphone input device is available.");
         assert_eq!(super::recording_start_error_notice("The selected display is ambiguous. Select it again.", false), "The selected display is no longer available. Start a new capture.");
         assert!(super::recording_start_error_notice("The selected display is ambiguous. Select it again.", true).contains("Stop and save"));
+    }
+
+    #[test]
+    fn recording_notice_preserves_missing_selected_input_recovery() {
+        let message = crate::microphone::devices::SELECTED_UNAVAILABLE;
+        let wrapped = format!("starting input: {message}");
+        for resuming in [false, true] {
+            assert_eq!(super::recording_start_error_notice(&wrapped, resuming), message);
+        }
+        assert_eq!(super::recording_encoder_error_notice(&wrapped), message);
+        assert_eq!(super::recording_encoder_error_notice("private native failure"), "Could not start the video encoder.");
     }
 
     #[cfg(target_os = "macos")]
@@ -6392,7 +6534,7 @@ pub fn get_recording_options(app: AppHandle) -> Result<RecordingOptions, String>
     let options = {
         let state = app.state::<AppState>();
         let guard = state.saved_recording_options.lock().unwrap();
-        *guard
+        guard.clone()
     };
     Ok(options)
 }
@@ -6428,7 +6570,7 @@ pub fn set_recording_options(app: AppHandle, options: RecordingOptions) -> Resul
     let normalized = options.normalized();
     {
         let state = app.state::<AppState>();
-        *state.saved_recording_options.lock().unwrap() = normalized;
+        *state.saved_recording_options.lock().unwrap() = normalized.clone();
     }
     crate::state::save_recording_options(&app, &normalized);
     Ok(())

@@ -665,7 +665,7 @@ impl WindowsRecorder {
         let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         // Start audio capture (system loopback + microphone) when requested.
-        let audio = start_audio(options, audio_tx, mic_tx, Arc::clone(&paused))?;
+        let audio = start_audio(&options, audio_tx, mic_tx, Arc::clone(&paused))?;
 
         let cursor = if options.shows_cursor {
             CursorCaptureSettings::Default
@@ -743,7 +743,7 @@ impl PlatformRecorder for WindowsRecorder {
 }
 
 fn start_audio(
-    options: crate::core::policy::RecordingOptions,
+    options: &crate::core::policy::RecordingOptions,
     audio_tx: Option<AudioChunkSender>,
     mic_tx: Option<AudioChunkSender>,
     paused: Arc<std::sync::atomic::AtomicBool>,
@@ -766,9 +766,7 @@ fn start_audio(
 
     if options.captures_microphone {
         let tx = mic_tx.ok_or_else(|| anyhow!("The microphone pipe is unavailable."))?;
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| anyhow!("No microphone input device is available."))?;
+        let device = crate::microphone::devices::cpal_input_device(options.microphone_device_id.as_deref())?;
         let (stream, spec) = build_audio_stream(
             &device,
             AudioDeviceKind::Microphone,

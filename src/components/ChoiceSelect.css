@@ -3,7 +3,7 @@
 .kiri-choice-trigger:hover:not(:disabled) {background:#353535;border-color:#777;}
 .kiri-choice-trigger:disabled {opacity:.45;cursor:default;}
 .kiri-choice-trigger:focus-visible {outline:2px solid var(--kiri-label,#eee);outline-offset:2px;}
-.kiri-choice-menu {z-index:10000;overflow:auto;padding:5px;border:1px solid #505050;border-radius:9px;background:#222;color:#eee;box-shadow:0 8px 22px #0005;font:12px var(--kiri-font-ui);}
+.kiri-choice-menu {box-sizing:border-box;z-index:10000;overflow:auto;padding:5px;border:1px solid #505050;border-radius:9px;background:#222;color:#eee;box-shadow:0 8px 22px #0005;font:12px var(--kiri-font-ui);}
 .kiri-choice-option {display:flex;align-items:center;gap:12px;width:100%;padding:10px;border:0;border-radius:5px;text-align:left;background:transparent;color:inherit;font:inherit;cursor:pointer;}
 .kiri-choice-option:hover,.kiri-choice-option:focus-visible {background:#353535;outline:none;}
 .kiri-choice-option[aria-selected=true] {background:#303030;}
@@ -12,3 +12,5 @@
 .kiri-choice-description {font-size:11px;line-height:1.45;color:#b5b5b5;}
 .kiri-choice-trailing {font-size:10px;font-variant-numeric:tabular-nums;color:#aaa;white-space:nowrap;}
 .kiri-choice-check-hidden {visibility:hidden;}
+
+.kiri-choice-menu-header,.kiri-choice-menu-status {padding:10px 12px;color:#aaa;font-size:14px;line-height:1.4;}

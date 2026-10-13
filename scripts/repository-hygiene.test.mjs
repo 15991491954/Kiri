@@ -194,7 +194,7 @@ test("Markdown link paths ignore queries and anchors but preserve encoded filena
   assert.equal(existsSync(resolve(repositoryRoot, markdownTargetPath("missing-file.md?v=abc"))), false);
 });
 
-test("current Markdown links resolve inside the repository", () => {
+test("current Markdown and HTML documentation links resolve inside the repository", () => {
   const topLevelMarkdown = readdirSync(repositoryRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => join(repositoryRoot, entry.name));
@@ -205,8 +205,12 @@ test("current Markdown links resolve inside the repository", () => {
   const broken = [];
   for (const markdownPath of markdownFiles) {
     const markdown = readFileSync(markdownPath, "utf8");
-    for (const match of markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-      const destination = markdownTargetPath(match[1]);
+    const destinations = [
+      ...Array.from(markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g), match => match[1]),
+      ...Array.from(markdown.matchAll(/\b(?:href|src)=["']([^"']+)["']/g), match => match[1]),
+    ];
+    for (const target of destinations) {
+      const destination = markdownTargetPath(target);
       if (!destination || /^(?:[a-z]+:|\/)/i.test(destination)) continue;
       const resolved = resolve(dirname(markdownPath), decodeURIComponent(destination));
       if (!existsSync(resolved)) {

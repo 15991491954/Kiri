@@ -39,6 +39,7 @@ pub enum TransientWindowRole {
     CaptureOverlay,
     RecordingCountdown,
     RecordingControls,
+    RecordingRegion,
     CompletionFeedback,
     ClickRipple,
 }
@@ -56,11 +57,11 @@ impl TransientWindowRole {
         TransientWindowPolicy {
             can_join_all_spaces: true,
             full_screen_auxiliary: true,
-            stationary: matches!(self, Self::ClickRipple),
+            stationary: matches!(self, Self::ClickRipple | Self::RecordingRegion),
             // Preserve the existing native levels: capture UI and completion
             // feedback use the screen-saver level, while the click ripple
             // continues to rely on its always-on-top window configuration.
-            screen_saver_level: !matches!(self, Self::ClickRipple),
+            screen_saver_level: !matches!(self, Self::ClickRipple | Self::RecordingRegion),
         }
     }
 }
@@ -315,6 +316,7 @@ mod tests {
             TransientWindowRole::CaptureOverlay,
             TransientWindowRole::RecordingCountdown,
             TransientWindowRole::RecordingControls,
+            TransientWindowRole::RecordingRegion,
             TransientWindowRole::CompletionFeedback,
             TransientWindowRole::ClickRipple,
         ] {

@@ -166,15 +166,10 @@ impl Drop for PulseConnection {
     }
 }
 
-/// Resolve defaults once per segment. A monitor is matched by the server's
-/// monitor_of_sink metadata, never by its name, suffix or enumeration order.
-pub fn selected_sources(system: bool, microphone: bool) -> Result<Vec<AudioSource>> {
-    if !system && !microphone {
-        return Ok(Vec::new());
-    }
-    if !supported() {
-        bail!(AUDIO_UNAVAILABLE);
-    }
+/// Enumerate and resolve source identities through the same local Pulse server
+/// used by recording, keeping monitor sources separate from microphones.
+fn discover_sources() -> Result<(Vec<AudioSource>, Option<String>, Option<String>)> {
+    if !supported() { bail!(AUDIO_UNAVAILABLE); }
     let mut connection = PulseConnection::new()?;
     let defaults = Rc::new(RefCell::new(None));
     let result = defaults.clone();
@@ -216,14 +211,45 @@ pub fn selected_sources(system: bool, microphone: bool) -> Result<Vec<AudioSourc
             }
         });
     connection.complete(operation)?;
-    let result = select_sources(
-        &sources.borrow(),
-        sink.as_deref(),
-        input.as_deref(),
-        system,
-        microphone,
-    );
-    result
+    let sources = sources.borrow().clone();
+    Ok((sources, sink, input))
+}
+
+pub fn microphone_devices() -> Result<Vec<crate::microphone::devices::MicrophoneDevice>> {
+    let (sources, _, _) = discover_sources()?;
+    Ok(sources.into_iter().filter(|source| source.monitor_of.is_none()).map(|source| {
+        crate::microphone::devices::MicrophoneDevice {
+            id: format!("pulse:{}", source.name), name: source.description,
+        }
+    }).collect())
+}
+
+#[cfg(test)]
+pub fn selected_sources(system: bool, microphone: bool) -> Result<Vec<AudioSource>> {
+    selected_sources_with_input(system, microphone, None)
+}
+
+pub fn selected_sources_with_input(system: bool, microphone: bool, selected: Option<&str>) -> Result<Vec<AudioSource>> {
+    if !system && !microphone { return Ok(Vec::new()); }
+    let (sources, sink, default_input) = discover_sources()?;
+    select_sources_with_input(&sources, sink.as_deref(), default_input.as_deref(), system, microphone, selected)
+}
+
+fn select_sources_with_input(sources: &[AudioSource], sink: Option<&str>, default_input: Option<&str>,
+    system: bool, microphone: bool, selected: Option<&str>) -> Result<Vec<AudioSource>> {
+    let input = if microphone {
+        match selected {
+            Some(id) => {
+                let name = id.strip_prefix("pulse:").ok_or_else(|| anyhow!(crate::microphone::devices::SELECTED_UNAVAILABLE))?;
+                if !sources.iter().any(|source| source.name == name && source.monitor_of.is_none()) {
+                    bail!(crate::microphone::devices::SELECTED_UNAVAILABLE);
+                }
+                Some(name)
+            }
+            None => default_input,
+        }
+    } else { None };
+    select_sources(sources, sink, input, system, microphone)
 }
 
 fn select_sources(
@@ -913,13 +939,14 @@ impl RecordingAudio {
 
 /// Same resolved non-monitor source as recording; no PCM is written to disk.
 pub fn microphone_check(
+    device_id: Option<&str>,
     mut current: impl FnMut() -> bool,
     mut level: impl FnMut(String, f32) -> Result<()>,
 ) -> Result<()> {
     if !current() {
         return Ok(());
     }
-    let source = selected_sources(false, true)?
+    let source = selected_sources_with_input(false, true, device_id)?
         .pop()
         .context(MICROPHONE_UNAVAILABLE)?;
     let mut capture = NativeCapture::new(std::slice::from_ref(&source))?;
@@ -1197,6 +1224,19 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn selected_microphone_overrides_default_without_accepting_monitor_or_missing_input() {
+        let sources = [source("builtin", None), source("usb", None), source("output", Some("speakers"))];
+        let selected = select_sources_with_input(&sources, Some("speakers"), Some("builtin"), true, true, Some("pulse:usb")).unwrap();
+        assert_eq!(selected.iter().map(|source| source.name.as_str()).collect::<Vec<_>>(), vec!["output", "usb"]);
+        for id in ["pulse:gone", "pulse:output", "usb", "avfoundation:usb"] {
+            assert!(select_sources_with_input(&sources, None, Some("builtin"), false, true, Some(id)).is_err());
+        }
+        let default = select_sources_with_input(&sources, None, Some("builtin"), false, true, None).unwrap();
+        assert_eq!(default[0].name, "builtin");
+        assert!(select_sources_with_input(&sources, None, Some("builtin"), false, false, Some("pulse:gone")).unwrap().is_empty());
+    }
+
     #[test]
     fn muted_or_absent_input_is_not_silently_recorded() {
         let mut mic = source("mic", None);

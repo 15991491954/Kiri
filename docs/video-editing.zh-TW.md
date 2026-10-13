@@ -57,4 +57,4 @@ Kiri 錄影會儲存在素材庫中。其他檔案可通過「匯入素材」新
 
 匯出保留同步聲音。macOS 片段變速保持音高，Windows 變速會同時改變音高。Windows 的畫面效果目前要求源影片不含旋轉標記，Kiri 錄影符合此條件。
 
-[返回 Kiri](../README_ZH_TW.md)
+[返回 Kiri](readme/zh-TW.md)

@@ -55,4 +55,4 @@ Kleine Quellen werden nie vergrößert. Die Dateigröße hängt von Quelle und b
 
 Exporte behalten synchronen Ton. Linux normalisiert auf 48 kHz Stereo-AAC, wendet die Videoausrichtung an und bewahrt variable Bildraten sowie gehaltene Bilder mit ihren Anzeigedauern. macOS erhält bei Geschwindigkeitsänderungen die Tonhöhe; Windows ändert sie mit der Geschwindigkeit. Videoeffekte auf Windows erfordern derzeit Quellen ohne Rotationsmetadaten. Kiri-Aufnahmen erfüllen diese Voraussetzung.
 
-[Benutzung](usage.de.md) · [Zurück zu Kiri](../README_DE.md)
+[Benutzung](usage.de.md) · [Zurück zu Kiri](readme/de.md)
