@@ -537,12 +537,14 @@ fn collect_window_rects(content: &SCShareableContent, display_id: CGDirectDispla
     let windows = unsafe { content.windows() };
     let candidates = windows.iter().map(|window| {
         let frame = unsafe { window.frame() };
+        let owner = unsafe { window.owningApplication() };
         window_selection::Candidate {
             id: unsafe { window.windowID() },
             layer: unsafe { window.windowLayer() },
             on_screen: unsafe { window.isOnScreen() },
-            owner_pid: unsafe { window.owningApplication() }
-                .map(|app| unsafe { app.processID() }).unwrap_or(0),
+            owner_pid: owner.as_ref().map(|app| unsafe { app.processID() }).unwrap_or(0),
+            owner_bundle_id: owner.as_ref()
+                .map(|app| unsafe { app.bundleIdentifier() }.to_string()).unwrap_or_default(),
             frame: Rect::new(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height),
         }
     }).collect();

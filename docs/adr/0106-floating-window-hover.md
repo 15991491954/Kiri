@@ -13,12 +13,14 @@ them or required a manual region.
 
 - Include visible third-party windows at every nonnegative level. Do not require
   a title, keyboard focus, or a standard-window accessibility role.
-- Use window level and Quartz front-to-back order for overlapping candidates.
-  If Quartz metadata is unavailable, retain the ScreenCaptureKit order within
-  each level.
+- Use Quartz front-to-back order and require candidates to be in that visible
+  snapshot. If Quartz metadata is unavailable altogether, fall back to window
+  level and stable ScreenCaptureKit order within each level.
 - Keep excluding Kiri's own process, ownerless or hidden windows, desktop layers,
   fully transparent helpers, and rectangles smaller than eight logical pixels
-  after clipping to the selected display.
+  after clipping to the selected display. Exclude Dock, Window Manager and other
+  system chrome: their screen-sized, positive-level helper windows can have
+  alpha one while being mostly transparent and must not intercept app selection.
 - Keep the existing single hover outline and manual selection behavior. Do not
   change screenshot pixels, recording content filters, or privacy permissions.
 

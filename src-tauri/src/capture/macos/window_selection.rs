@@ -15,6 +15,7 @@ pub(super) struct Candidate {
     pub id: u32,
     pub layer: isize,
     pub owner_pid: i32,
+    pub owner_bundle_id: String,
     pub on_screen: bool,
     pub frame: Rect,
 }
@@ -62,20 +63,22 @@ pub(super) fn candidate_rects(
             && window.layer >= 0
             && window.owner_pid > 0
             && window.owner_pid != own_pid
-            && stacking
-                .get(&window.id)
-                .is_none_or(|(_, alpha)| *alpha > 0.0)
+            // Dock and other desktop UI can publish screen-sized helper windows
+            // with alpha=1 even when their pixels are mostly transparent. Their
+            // positive levels must not steal hover from actual app windows.
+            && !is_system_chrome(&window.owner_bundle_id)
+            && (order.is_empty()
+                || stacking.get(&window.id).is_some_and(|(_, alpha)| *alpha > 0.0))
     });
-    // Nonzero layers include ordinary floating panels and subtitle overlays
-    // at the screen-saver level. Same-layer windows follow Quartz front to back;
-    // stable sorting retains SCK order if Quartz metadata is unavailable.
+    // Quartz is the authoritative visible stacking order. Only fall back to
+    // layer and stable SCK order when that snapshot is unavailable altogether.
     windows.sort_by_key(|window| {
         (
-            Reverse(window.layer),
             stacking
                 .get(&window.id)
                 .map(|(index, _)| *index)
                 .unwrap_or(usize::MAX),
+            Reverse(window.layer),
         )
     });
     windows
@@ -100,6 +103,18 @@ pub(super) fn candidate_rects(
         .collect()
 }
 
+fn is_system_chrome(bundle_id: &str) -> bool {
+    matches!(
+        bundle_id,
+        "com.apple.dock"
+            | "com.apple.WindowManager"
+            | "com.apple.systemuiserver"
+            | "com.apple.controlcenter"
+            | "com.apple.notificationcenterui"
+            | "com.apple.screencaptureui"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +124,7 @@ mod tests {
             id,
             layer,
             owner_pid: 20,
+            owner_bundle_id: "io.yuxino.mimi".into(),
             on_screen: true,
             frame: Rect::new(100.0 + f64::from(id), 100.0, 300.0, 120.0),
         }
@@ -181,6 +197,63 @@ mod tests {
             &[(8, 0.0), (9, 0.2)],
         );
         assert_eq!(rects, vec![window(9, 1000).frame]);
+    }
+
+    #[test]
+    fn system_desktop_helpers_do_not_steal_normal_app_or_floating_panel_hits() {
+        let mut dock = window(1, 20);
+        dock.owner_bundle_id = "com.apple.dock".into();
+        dock.frame = DISPLAY;
+        let mut chrome = window(2, 0);
+        chrome.owner_bundle_id = "com.google.Chrome".into();
+        chrome.frame = Rect::new(100.0, 50.0, 1200.0, 800.0);
+        let mut mimi = window(3, 1000);
+        mimi.frame = Rect::new(300.0, 400.0, 500.0, 100.0);
+        let rects = candidate_rects(
+            vec![dock, chrome, mimi],
+            DISPLAY,
+            99,
+            &[(3, 1.0), (1, 1.0), (2, 1.0)],
+        );
+        let hit = |x, y| {
+            rects
+                .iter()
+                .find(|r| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+                .copied()
+        };
+        assert_eq!(
+            hit(400.0, 450.0),
+            Some(Rect::new(300.0, 400.0, 500.0, 100.0))
+        );
+        assert_eq!(
+            hit(200.0, 200.0),
+            Some(Rect::new(100.0, 50.0, 1200.0, 800.0))
+        );
+        assert_eq!(hit(20.0, 20.0), None);
+    }
+
+    #[test]
+    fn stale_sck_helpers_missing_from_the_visible_snapshot_are_not_selectable() {
+        let mut stale = window(1, 1000);
+        stale.frame = DISPLAY;
+        assert_eq!(
+            candidate_rects(vec![stale, window(2, 0)], DISPLAY, 99, &[(2, 1.0)]),
+            vec![window(2, 0).frame]
+        );
+        for bundle in [
+            "com.apple.dock",
+            "com.apple.WindowManager",
+            "com.apple.systemuiserver",
+            "com.apple.controlcenter",
+            "com.apple.notificationcenterui",
+            "com.apple.screencaptureui",
+        ] {
+            let mut helper = window(1, 20);
+            helper.owner_bundle_id = bundle.into();
+            assert!(candidate_rects(vec![helper], DISPLAY, 99, &[]).is_empty());
+        }
+        assert!(!is_system_chrome("com.apple.Safari"));
+        assert!(!is_system_chrome("com.apple.finder"));
     }
 
     #[test]
