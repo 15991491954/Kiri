@@ -27,7 +27,7 @@ process = None
 app_environment = library = native_log = None
 
 
-def find(name, timeout=35, scroll=False, scope=None):
+def find(name, timeout=35, scroll=False, scope=None, control_type="Button"):
     deadline = time.monotonic() + timeout
     previous = None
     stable = 0
@@ -38,7 +38,7 @@ def find(name, timeout=35, scroll=False, scope=None):
         for window in ([scope] if scope is not None else desktop.windows(process=process.pid, visible_only=True)):
             for control in window.descendants():
                 try:
-                    if (control.element_info.control_type != "Button" or
+                    if (control.element_info.control_type != control_type or
                             not re.fullmatch(name, control.window_text()) or not control.is_enabled()):
                         continue
                     if not control.is_visible() and scroll:
@@ -350,6 +350,34 @@ def quick_capture_acceptance():
             "Escape closes the pinned reference without quitting Kiri",
         ])
         direct_pin_acceptance(source, expected, region, user32)
+        tool_results = {}
+        for title in ["Pen (P)", "Rectangle (R)", "Line (L)", "Arrow (A)", "Text (T)",
+                      "Numbered callout (N)", "Label bubble (B)", "Mosaic (M)", "Watermark (W)"]:
+            source.set_focus()
+            wait_for("source focus before tool capture", lambda: user32.GetForegroundWindow() == source.handle)
+            keyboard.send_keys("^+a"); find("Screenshot")
+            drag_mouse(region[:2], region[2:])
+            find(re.escape(title)).click_input()
+            if title == "Watermark (W)":
+                find("Edit watermark").click_input()
+                # This tool deliberately opens its input from the toolbar.
+                # Existing input is excluded; finish/cancel before a blank pair.
+                find("Text content", control_type="Edit")
+                keyboard.send_keys("{ESC}")
+            mouse.double_click(coords=(400, 380))
+            find("Pin Screenshot on Top", timeout=7)
+            copied = ImageGrab.grabclipboard()
+            if not isinstance(copied, Image.Image) or copied.size != expected.size:
+                raise RuntimeError(f"{title} blank double-click did not complete capture")
+            error = sum(ImageStat.Stat(ImageChops.difference(copied.convert("RGB"), expected)).mean) / 3
+            if error > 1.5:
+                raise RuntimeError(f"{title} double-click exported a gesture artifact: {error}")
+            if user32.GetForegroundWindow() != source.handle:
+                raise RuntimeError(f"{title} completion did not restore source focus")
+            copied.save(output / ("double-click-" + title.split(" (")[0].lower().replace(" ", "-") + ".png"))
+            tool_results[title] = {"source_mean_pixel_error": error, "source_focus_restored": True}
+        report["annotation_double_click"] = tool_results
+        report["checks"].append("every annotation tool completes a stationary blank native double-click without transient dots, mosaic, badges or text; source focus returns")
     except Exception:
         ImageGrab.grab().save(output / "quick-capture-failure.png")
         copied = ImageGrab.grabclipboard()
@@ -375,8 +403,20 @@ def batch_trash_acceptance(executable):
     # above other apps. Its native window overlaps the Library tab, so wait
     # for the real completion deadline before one physical navigation click.
     def completion_card_visible():
-        for window in desktop.windows(process=process.pid, visible_only=True):
-            for control in window.descendants():
+        # UIA can report a vanished toast with no control type during teardown.
+        # Keep waiting for a stable observation, rather than treating it as gone.
+        try:
+            windows = desktop.windows(process=process.pid, visible_only=True)
+        except KeyError as error:
+            if error.args != (None,): raise
+            return True
+        for window in windows:
+            try:
+                controls = window.descendants()
+            except KeyError as error:
+                if error.args != (None,): raise
+                return True
+            for control in controls:
                 try:
                     if control.window_text() == "Pin Screenshot on Top" and control.is_visible():
                         return True
@@ -569,7 +609,9 @@ try:
                 (output / "kiri-native.log").write_bytes(native_log.read_bytes())
     report["success"] = True
 except Exception as error:
-    report["error"] = str(error)[:1500]
+    import traceback
+    traceback.print_exc()
+    report["error"] = f"{type(error).__name__}: {error}"[:1500]
 finally:
     stop()
     (output / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

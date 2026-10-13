@@ -136,16 +136,30 @@ async def main():
                 await page.locator('#overlay').wait_for(state='detached')
                 assert await confirms() == 2
 
-                frame = await capture()
-                await drag((200, 160), (1050, 570))
-                await frame.get_by_title('Pen (P)', exact=True).click()
-                await page.mouse.dblclick(750, 400)
-                assert await confirms() == 2
-                await cancel()
+                tools = ['Pen (P)', 'Rectangle (R)', 'Line (L)', 'Arrow (A)', 'Text (T)',
+                         'Numbered callout (N)', 'Label bubble (B)', 'Mosaic (M)', 'Watermark (W)']
+                for index, title in enumerate(tools):
+                    frame = await capture()
+                    await drag((200, 160), (1050, 570))
+                    await frame.get_by_title(title, exact=True).click()
+                    if title == 'Watermark (W)':
+                        await frame.get_by_role('button', name='Edit watermark', exact=True).click()
+                        field = frame.get_by_role('textbox', name='Text content', exact=True)
+                        await field.wait_for()
+                        await field.press('Escape')
+                        await field.wait_for(state='detached')
+                    await page.mouse.dblclick(750, 400)
+                    await page.locator('#overlay').wait_for(state='detached')
+                    assert await confirms() == 3 + index, title
+                    assert await page.evaluate('JSON.parse(state.pendingAnnotation.documentJson).marks.length') == 0, title
+                    asset_id = await page.evaluate('state.assets[0].id')
+                    output = Image.open(io.BytesIO(MEDIA[asset_id][0])).convert('RGB')
+                    assert output.getextrema() == ((200, 200), (200, 200), (200, 200)), title
+                captures_after_tools = 2 + len(tools)
                 for mode in ['Record', 'OCR']:
                     await capture(mode)
                     await page.mouse.dblclick(400, 250)
-                    assert await confirms() == 2
+                    assert await confirms() == captures_after_tools
                     assert await page.evaluate("state.calls.filter(x => x.c === 'start_recording_flow').length") == 0
                     await cancel()
 
@@ -234,14 +248,14 @@ async def main():
                 await editor.get_by_role('button', name='Cancel (Esc)', exact=True).click()
                 await page.locator('#editor').wait_for(state='detached')
                 assert await page.evaluate('state.editorSaveCalls') == 1
-                assert await confirms() == 2
+                assert await confirms() == captures_after_tools
                 assert not errors, errors
                 (OUT / 'quick-capture-check.json').write_text(json.dumps({
                     'native': False, 'passed': ['window double-click confirms once',
                     'completion pins saved asset', 'pin error and retry', 'three-language action layout',
                     'outside/handle/toolbar/annotation guards', 'text double-click edits',
                     'editing gesture does not confirm', 'Select blank canvas confirms',
-                    'drawing tools do not confirm', 'OCR and recording guards',
+                    'every annotation tool finishes a blank native double-click without gesture marks or pixels', 'OCR and recording guards',
                     'saved editor blank/shape double-click does not save or close',
                     'saved text double-click edits without capture completion',
                     'text Enter leaves saved editor open', 'saved editor dirty-close guard',

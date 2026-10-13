@@ -204,3 +204,5 @@ development.
 - [ADR 0101: Tray activation, support information and pin boundaries](adr/0101-tray-support-information-and-pin-frame.md) — Windows left-click activation, explicit support-info copying and a persistent neutral pin outline.
 
 - [ADR 0102: Visible recording startup failures](adr/0102-visible-recording-startup-failures.md) — session-safe failure cards and optional Windows capture-border capability checks.
+
+- [ADR 0103: Annotation tool double-click completion](adr/0103-annotation-tool-double-click-completion.md)

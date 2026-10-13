@@ -51,7 +51,7 @@ In Settings → About, **Copy Info** copies Kiri and OS versions, architecture, 
 
 1. Press `⇧⌘A` on macOS or `Shift+Ctrl+A` on Windows / Linux X11, then select a window or drag a region.
 2. Choose Screenshot, Record, or OCR. After selecting a screenshot region, you can also start OCR directly from its toolbar.
-3. Press `Enter` or double-click an unmarked area inside the selection to finish a screenshot; `Esc` cancels. While annotating, switch to the Select tool first; double-clicking text still edits it. Screenshots are copied to your clipboard and saved in the library. Click the toolbar’s pin icon to save and pin in one step, or choose **Pin** on the completion card. The reference has a thin border and can be dragged and resized proportionally from its lower-right corner. Hover to unpin or close it.
+3. Press `Enter` or double-click an unmarked area inside the selection to finish a screenshot; `Esc` cancels. Any annotation tool can finish on a blank double-click; existing text and active inputs keep their editing behavior. Screenshots are copied to your clipboard and saved in the library. Click the toolbar’s pin icon to save and pin in one step, or choose **Pin** on the completion card. The reference has a thin border and can be dragged and resized proportionally from its lower-right corner. Hover to unpin or close it.
 
 Annotations stack in creation order. A later mosaic processes earlier text, shapes and watermarks; annotations added afterward appear above it. Moving or editing a mark keeps its original layer.
 
