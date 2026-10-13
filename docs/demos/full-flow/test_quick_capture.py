@@ -143,6 +143,7 @@ async def main():
                     await drag((200, 160), (1050, 570))
                     await frame.get_by_title(title, exact=True).click()
                     if title == 'Watermark (W)':
+                        await frame.get_by_role('button', name='Edit watermark', exact=True).click()
                         field = frame.get_by_role('textbox', name='Text content', exact=True)
                         await field.wait_for()
                         await field.press('Escape')

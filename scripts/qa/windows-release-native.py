@@ -359,6 +359,7 @@ def quick_capture_acceptance():
             drag_mouse(region[:2], region[2:])
             find(re.escape(title)).click_input()
             if title == "Watermark (W)":
+                find("Edit watermark").click_input()
                 # This tool deliberately opens its input from the toolbar.
                 # Existing input is excluded; finish/cancel before a blank pair.
                 find("Text content", control_type="Edit")
@@ -402,8 +403,20 @@ def batch_trash_acceptance(executable):
     # above other apps. Its native window overlaps the Library tab, so wait
     # for the real completion deadline before one physical navigation click.
     def completion_card_visible():
-        for window in desktop.windows(process=process.pid, visible_only=True):
-            for control in window.descendants():
+        # UIA can report a vanished toast with no control type during teardown.
+        # Keep waiting for a stable observation, rather than treating it as gone.
+        try:
+            windows = desktop.windows(process=process.pid, visible_only=True)
+        except KeyError as error:
+            if error.args != (None,): raise
+            return True
+        for window in windows:
+            try:
+                controls = window.descendants()
+            except KeyError as error:
+                if error.args != (None,): raise
+                return True
+            for control in controls:
                 try:
                     if control.window_text() == "Pin Screenshot on Top" and control.is_visible():
                         return True
@@ -596,7 +609,9 @@ try:
                 (output / "kiri-native.log").write_bytes(native_log.read_bytes())
     report["success"] = True
 except Exception as error:
-    report["error"] = str(error)[:1500]
+    import traceback
+    traceback.print_exc()
+    report["error"] = f"{type(error).__name__}: {error}"[:1500]
 finally:
     stop()
     (output / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
