@@ -345,11 +345,9 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
     };
     const capturePressRef = useRef<CapturePress | null>(null);
     const captureFirstClickRef = useRef<CapturePress | null>(null);
-    const captureFirstReadyRef = useRef(false);
     const captureCreatedEditRef = useRef<{id: number; text: string} | null>(null);
     const clearCaptureClicks = () => {
       captureFirstClickRef.current = null;
-      captureFirstReadyRef.current = false;
       captureCreatedEditRef.current = null;
     };
     useEffect(clearCaptureClicks, [tool, initialDocument, documentRevision]);
@@ -1801,6 +1799,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         data-interaction-disabled={interactionDisabled || undefined}
         onKeyDownCapture={clearCaptureClicks}
         onInputCapture={clearCaptureClicks}
+        onCompositionStartCapture={clearCaptureClicks}
         onPointerCancelCapture={clearCaptureClicks}
         onPointerDownCapture={(event) => {
           if (!onFinishOnBlankDoubleClick) return;
@@ -1834,14 +1833,13 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             clearCaptureClicks();
             if (!press?.eligible || press.moved) return;
             captureFirstClickRef.current = press;
-            captureFirstReadyRef.current = true;
             const editor = editingRef.current;
             captureCreatedEditRef.current = editor && !press.marks.some(mark => mark.id === editor.id)
               ? {id: editor.id, text: editor.text} : null;
             return;
           }
           const first = captureFirstClickRef.current;
-          if (event.button !== 0 || event.detail !== 2 || !first || !press || !captureFirstReadyRef.current ||
+          if (event.button !== 0 || event.detail !== 2 || !first || !press ||
             first.moved || press.moved || first.tool !== toolRef.current || interactionsDisabled()) { clearCaptureClicks(); return; }
           // Pointerdown prevents native mouse-down defaults to preserve input
           // focus. Click counts still arrive; use them rather than mousedown.

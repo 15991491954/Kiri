@@ -1704,7 +1704,7 @@ test("capture: input/composition invalidates an empty first-click editor", () =>
   let finishes = 0;
   const h = annotation(documentWith([]), {tool: "text", onFinishOnBlankDoubleClick: () => finishes++, globals: {HTMLTextAreaElement: CaptureTextArea}});
   captureClick(h, 1);
-  nodes(h.component.render()).find(node => node?.props?.className === "annotation-canvas-root").props.onInputCapture();
+  nodes(h.component.render()).find(node => node?.props?.className === "annotation-canvas-root").props.onCompositionStartCapture();
   captureClick(h, 2, {target: new CaptureTextArea()});
   assert.equal(finishes, 0); assert.ok(inlineEditor(h));
 });
