@@ -12,7 +12,7 @@ import time
 
 from pywinauto import Desktop, keyboard, mouse
 from PIL import Image, ImageChops, ImageGrab, ImageStat
-from pin_native_checks import annotated_capture_evidence, borderless_geometry_evidence, capture_origin_evidence, pin_lifecycle_evidence, pin_open_log_marker, proportional_resize_evidence
+from pin_native_checks import annotated_capture_evidence, borderless_geometry_evidence, capture_origin_evidence, pin_content_evidence, pin_lifecycle_evidence, pin_open_log_marker, pin_outline_evidence, proportional_resize_evidence
 from windows_qa_profile import isolated_windows_profile
 
 
@@ -137,6 +137,16 @@ def outer_bounds(window):
     return rect.left, rect.top, rect.right, rect.bottom
 
 
+def window_scale(window):
+    user32 = ctypes.windll.user32
+    user32.GetDpiForWindow.argtypes = [wintypes.HWND]
+    user32.GetDpiForWindow.restype = wintypes.UINT
+    dpi = user32.GetDpiForWindow(window.handle)
+    if not dpi:
+        raise RuntimeError("Could not read the pinned window's display DPI")
+    return dpi / 96.0
+
+
 def drag_mouse(start, end, native=False):
     mouse.press(coords=start)
     time.sleep(0.3 if native else 0.15)
@@ -191,8 +201,8 @@ def direct_pin_acceptance(source, expected, region, user32):
     def initial_image_painted():
         actual = ImageGrab.grab(bbox=before).convert("RGB")
         expected_image = captured.resize(actual.size, Image.Resampling.LANCZOS)
-        error = sum(ImageStat.Stat(ImageChops.difference(actual, expected_image)).mean) / 3
-        return {"mean_pixel_error": error} if error <= 3 else None
+        evidence = pin_content_evidence(actual, expected_image, window_scale(pin))
+        return evidence if evidence["mean_pixel_error"] <= 3 else None
     report["pin_ready"] = wait_for("actual annotated pin image painted before drag", initial_image_painted)
     ImageGrab.grab().save(output / "direct-pin-ready-for-drag.png")
     start = ((before[0] + before[2]) // 2, (before[1] + before[3]) // 2)
@@ -221,8 +231,8 @@ def direct_pin_acceptance(source, expected, region, user32):
         bounds = client_bounds(pin)
         actual = ImageGrab.grab(bbox=bounds).convert("RGB")
         reference = captured.resize(actual.size, Image.Resampling.LANCZOS)
-        error = sum(ImageStat.Stat(ImageChops.difference(actual, reference)).mean) / 3
-        return {"mean_pixel_error": error} if error <= 3 else None
+        evidence = pin_content_evidence(actual, reference, window_scale(pin))
+        return evidence if evidence["mean_pixel_error"] <= 3 else None
     visible = wait_for("annotated reference stays above another app", visible_image)
     ImageGrab.grab().save(output / "direct-pin-moved-resized.png")
     pin.set_focus()
@@ -323,19 +333,14 @@ def quick_capture_acceptance():
                     continue
                 actual = ImageGrab.grab(bbox=(bounds.left, bounds.top, bounds.right, bounds.bottom)).convert("RGB")
                 reference = copied.convert("RGB").resize(actual.size, Image.Resampling.LANCZOS)
-                diff = ImageChops.difference(actual, reference)
-                mean = sum(ImageStat.Stat(diff).mean) / 3
-                if mean <= 3:
-                    return {"bounds": [bounds.left, bounds.top, bounds.right, bounds.bottom], "mean_pixel_error": mean}
+                evidence = pin_content_evidence(actual, reference, window_scale(pin_window))
+                if evidence["mean_pixel_error"] <= 3:
+                    return {"bounds": [bounds.left, bounds.top, bounds.right, bounds.bottom], **evidence}
             return None
         visible = wait_for("pinned image above another foreground app", visible_pinned_image)
         actual = ImageGrab.grab(bbox=tuple(visible["bounds"])).convert("RGB")
         reference = copied.convert("RGB").resize(actual.size, Image.Resampling.LANCZOS)
-        corners = [(0, 0), (actual.width - 1, 0), (0, actual.height - 1), (actual.width - 1, actual.height - 1)]
-        contrast = [max(abs(a-b) for a,b in zip(actual.getpixel(point), reference.getpixel(point))) for point in corners]
-        if max(contrast) < 25:
-            raise RuntimeError("Pinned reference has no visible boundary against its source")
-        report["pin_outline"] = {"corner_contrast": contrast, "visible": True}
+        report["pin_outline"] = pin_outline_evidence(actual, reference, window_scale(pin_window))
 
         ImageGrab.grab().save(output / "quick-capture-pinned.png")
         pin_window.set_focus()

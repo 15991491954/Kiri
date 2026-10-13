@@ -916,16 +916,9 @@ try:
     drag_region(recording_region)
     click_control("MP4")
     screenshot("recording-options.png")
-    # Exercise the startup race: no countdown must still unmap the selection
-    # before the very first captured frame. The decoder below checks all frames.
-    countdown, _ = wait_for_control("3-second countdown")
-    if countdown.get_state_set().contains(Atspi.StateType.CHECKED):
-        click_control("3-second countdown")
-    def countdown_is_off():
-        control = visible_control("3-second countdown")
-        return control and not control[0].get_state_set().contains(Atspi.StateType.CHECKED)
-    wait_for("countdown disabled", countdown_is_off)
-    report["recording_countdown_enabled"] = False
+    # The fixed countdown must unmap before the first captured frame. The
+    # decoder below still checks every exported frame for selection controls.
+    report["recording_countdown_enabled"] = True
     for label, requested in (("System audio", system_audio), ("Microphone", False)):
         control, _ = wait_for_control(label)
         if control.get_state_set().contains(Atspi.StateType.CHECKED) != requested:
@@ -936,6 +929,7 @@ try:
     report["audio_options"] = {"system_audio": system_audio, "microphone": False}
     staged_before = recording_files(".kiri-media-*.mp4")
     click_control("Start Recording")
+    wait_for_control("Cancel Countdown")
     # Pointer stays outside the selected region, including during countdown.
     command("xdotool", "mousemove", "--sync", "1200", "760")
     wait_for("countdown and overlay close before recording", lambda: overlay() is None, timeout=15)
@@ -1086,9 +1080,6 @@ try:
     open_capture()
     click_control("Record")
     drag_region(recording_region)
-    countdown, _ = wait_for_control("3-second countdown")
-    if not countdown.get_state_set().contains(Atspi.StateType.CHECKED):
-        click_control("3-second countdown")
     before_countdown = assets()
     staged_before = recording_files(".kiri-media-*.mp4")
     click_control("Start Recording")

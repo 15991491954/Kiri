@@ -167,6 +167,50 @@ mod tests {
     }
 
     #[test]
+    fn visible_quartz_order_wins_over_reported_window_levels() {
+        let mut chrome = window(1, 0);
+        chrome.owner_bundle_id = "com.google.Chrome".into();
+        let floating = window(2, 1000);
+        let rects = candidate_rects(
+            vec![floating, chrome, window(3, 3)],
+            DISPLAY,
+            99,
+            &[(1, 1.0), (3, 1.0), (2, 1.0)],
+        );
+        // A level-based sort would put the floating panel first, even though
+        // the visible snapshot says Chrome is in front at this capture.
+        assert_eq!(
+            rects,
+            vec![
+                window(1, 0).frame,
+                window(3, 3).frame,
+                window(2, 1000).frame
+            ]
+        );
+    }
+
+    #[test]
+    fn normal_apps_remain_selectable_with_or_without_quartz_metadata() {
+        for bundle in [
+            "com.google.Chrome",
+            "com.apple.Safari",
+            "com.apple.finder",
+            "app.yuxino.mimi",
+            "", // A valid owner PID can belong to an unbundled application.
+        ] {
+            for order in [vec![], vec![(1, 1.0)]] {
+                let mut app = window(1, 0);
+                app.owner_bundle_id = bundle.into();
+                assert_eq!(
+                    candidate_rects(vec![app], DISPLAY, 99, &order),
+                    vec![window(1, 0).frame],
+                    "bundle={bundle}, order={order:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn excludes_own_hidden_desktop_transparent_and_invalid_windows() {
         let mut own = window(1, 1000);
         own.owner_pid = 99;
