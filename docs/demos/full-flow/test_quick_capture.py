@@ -150,7 +150,7 @@ async def main():
                     await page.mouse.dblclick(750, 400)
                     await page.locator('#overlay').wait_for(state='detached')
                     assert await confirms() == 3 + index, title
-                    assert await page.evaluate('state.pendingAnnotation.document.marks.length') == 0, title
+                    assert await page.evaluate('JSON.parse(state.pendingAnnotation.documentJson).marks.length') == 0, title
                     asset_id = await page.evaluate('state.assets[0].id')
                     output = Image.open(io.BytesIO(MEDIA[asset_id][0])).convert('RGB')
                     assert output.getextrema() == ((200, 200), (200, 200), (200, 200)), title
