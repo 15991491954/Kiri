@@ -476,7 +476,12 @@ def screen_share(approve, label, desktop_reference):
         return matching_frames >= 2
 
     wait_for(f"{label} ScreenCast chooser closes", chooser_closed)
-    return started
+    desktop_restored = time.monotonic()
+    measurements["consent_to_desktop_seconds"] = round(desktop_restored - started, 4)
+    # The consent click precedes chooser dismissal and PipeWire startup. Use
+    # the observed desktop restoration as the QA boundary, not as a claim
+    # about the encoder's first frame.
+    return desktop_restored
 
 
 def begin_recording():
@@ -512,7 +517,7 @@ def recording_acceptance():
         begin_recording()
     first_started = screen_share(True, "initial-recording", initial_desktop)
     # filesink buffers small, static recordings until EOS. Measure from the
-    # consent click and prove frames/timing by decoding the finalized MP4.
+    # observed desktop restoration; decode the finalized MP4 independently.
     pause(3)
     screenshot("recording-running.png")
     pause_requested = time.monotonic()

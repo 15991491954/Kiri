@@ -11,7 +11,7 @@ pub enum RecordingOutputFormat {
     Gif,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingOptions {
     #[serde(default)]
@@ -19,6 +19,8 @@ pub struct RecordingOptions {
     pub uses_countdown: bool,
     pub captures_system_audio: bool,
     pub captures_microphone: bool,
+    #[serde(default)]
+    pub microphone_device_id: Option<String>,
     pub shows_cursor: bool,
     pub highlights_clicks: bool,
 }
@@ -30,6 +32,7 @@ impl Default for RecordingOptions {
             uses_countdown: true,
             captures_system_audio: false,
             captures_microphone: false,
+            microphone_device_id: None,
             shows_cursor: true,
             highlights_clicks: false,
         }
@@ -37,13 +40,19 @@ impl Default for RecordingOptions {
 }
 
 impl RecordingOptions {
-    /// Mirrors `RecordingOptions.normalized`: disabling the cursor also
-    /// disables the click highlight.
-    pub fn normalized(mut self) -> Self {
-        if !self.shows_cursor {
-            self.highlights_clicks = false;
+    /// Keep a fixed preparation countdown and disable click highlighting when
+    /// the cursor is hidden, including preferences saved by older versions.
+    pub fn normalized(&self) -> Self {
+        let mut normalized = self.clone();
+        // Preparation always gives the user three seconds to return to the source.
+        // Migrate older saved false values as well as direct IPC requests.
+        normalized.uses_countdown = true;
+        normalized.microphone_device_id = self.microphone_device_id.as_deref()
+            .filter(|id| !id.is_empty()).map(str::to_owned);
+        if !normalized.shows_cursor {
+            normalized.highlights_clicks = false;
         }
-        self
+        normalized
     }
 }
 
@@ -186,6 +195,27 @@ mod tests {
         assert_eq!(options.output_format, RecordingOutputFormat::Mp4);
         assert!(options.captures_system_audio);
         assert!(options.captures_microphone);
+        assert_eq!(options.microphone_device_id, None);
+        assert!(options.normalized().uses_countdown);
+    }
+
+    #[test]
+    fn selected_microphone_and_fixed_countdown_survive_preference_roundtrip() {
+        let options = RecordingOptions {
+            uses_countdown: false,
+            microphone_device_id: Some("avfoundation:stable-device".into()),
+            captures_microphone: false,
+            ..Default::default()
+        };
+        let normalized = options.normalized();
+        assert!(normalized.uses_countdown);
+        assert_eq!(normalized.microphone_device_id.as_deref(), Some("avfoundation:stable-device"));
+        assert!(!normalized.captures_microphone);
+        let encoded = serde_json::to_string(&normalized).unwrap();
+        let decoded: RecordingOptions = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, normalized);
+        let empty = RecordingOptions { microphone_device_id: Some(String::new()), ..Default::default() };
+        assert_eq!(empty.normalized().microphone_device_id, None);
     }
 
     #[test]

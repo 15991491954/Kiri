@@ -1,6 +1,7 @@
 //! Explicit, bounded microphone checks. PCM is inspected in memory and never saved.
+pub mod devices;
 #[cfg(not(target_os = "linux"))]
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use serde::Serialize;
 #[cfg(not(target_os = "linux"))]
 use std::sync::atomic::AtomicU32;
@@ -51,6 +52,7 @@ pub async fn microphone_check(
     app: AppHandle,
     window: WebviewWindow,
     on_level: tauri::ipc::Channel<MicrophoneLevel>,
+    device_id: Option<String>,
 ) -> Result<(), String> {
     let label = window.label().to_owned();
     let id = {
@@ -95,6 +97,7 @@ pub async fn microphone_check(
         #[cfg(target_os = "linux")]
         {
             crate::linux_audio::microphone_check(
+                device_id.as_deref(),
                 || {
                     GENERATION.load(Ordering::SeqCst) == generation
                         && capture_is_current(&app, &label, id)
@@ -112,9 +115,7 @@ pub async fn microphone_check(
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let device = cpal::default_host()
-                .default_input_device()
-                .ok_or("No microphone input device is available.")?;
+            let device = devices::cpal_input_device(device_id.as_deref()).map_err(|error| error.to_string())?;
             let name = device
                 .description()
                 .map_err(|e| e.to_string())?

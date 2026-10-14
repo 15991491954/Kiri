@@ -15,7 +15,8 @@ import {
   type RecordingOptions,
 } from "../lib/ipc";
 import { t } from "../i18n";
-import MicrophoneCheck from "./MicrophoneCheck";
+import RecordingMicrophoneSelect from "./RecordingMicrophoneSelect";
+import { Mic, MousePointer2, MousePointerClick, Volume2 } from "lucide-react";
 import { isTextComposition } from "../annotation/text-composition.js";
 import type { Point, Rect } from "../annotation/geom";
 import {
@@ -48,10 +49,19 @@ import { KiriIcon, type IconName } from "../components/KiriIcons";
 import { QrOverlay } from "../qr/QrOverlay";
 import { RemoteOcrConsent } from "../ocr/RemoteOcrConsent";
 import { kiriResourceUrl } from "../lib/kiri-resource-url.js";
-import { capturePanelLayout, captureToolbarPosition } from "./toolbar-layout.js";
+import { capturePanelLayout, captureToolbarPosition, recordingPanelLayout } from "./toolbar-layout.js";
 import { CaptureSizeControls } from "./CaptureSizeControls";
 import { resizeCapturePixels } from "./capture-size.js";
 import { CaptureColorPicker, useCaptureColorPicker } from "./CaptureColorPicker";
+
+function recordingStartError(error: unknown): string {
+  const message = String(error);
+  for (const known of [
+    "The selected microphone is unavailable. Choose another microphone and try again.",
+    "Microphone access is off. Enable Kiri in System Settings to record your microphone.",
+  ]) if (message.includes(known)) return known;
+  return "Could not start screen recording.";
+}
 
 type Phase =
   | "mode-select"
@@ -144,6 +154,7 @@ export function OverlayWindow() {
   const [ocrFailed, setOcrFailed] = useState(false);
   const [preparedOcr, setPreparedOcr] = useState<PreparedOcrRequestDto | null>(null);
   const [remoteOcrFailed, setRemoteOcrFailed] = useState(false);
+  const [recordSelectionRevision, setRecordSelectionRevision] = useState(0);
   const [recordOptions, setRecordOptions] = useState<RecordingOptions>(DEFAULT_RECORDING_OPTIONS);
   const [micSupported, setMicSupported] = useState(true);
   const [platformCaps, setPlatformCaps] = useState<PlatformCapabilitiesDto>({
@@ -562,6 +573,7 @@ export function OverlayWindow() {
     const onEscape = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (isTextComposition(e)) return;
+      if (document.querySelector('.kiri-record-options__microphone[aria-expanded="true"]')) return;
       if (e.target instanceof Element && e.target.closest(".kiri-capture-dimension-input")) return;
       if (e.target instanceof Element && e.target.closest(".kiri-callout-description textarea")) return;
       e.preventDefault();
@@ -627,7 +639,8 @@ export function OverlayWindow() {
         }
         if (ph === "record-options" && selectionRef.current) {
           // Spec (recording §2.2): Start Recording is bound to Return.
-          void api.startRecordingFlow(selectionRef.current, recordOptionsRef.current).catch(() => {});
+          setAnnotationError(null);
+          void api.startRecordingFlow(selectionRef.current, recordOptionsRef.current).catch(error => setAnnotationError(recordingStartError(error)));
           return;
         }
         if (ph === "selecting" && selectionRef.current && isValidSelection(selectionRef.current, 3)) {
@@ -845,6 +858,7 @@ export function OverlayWindow() {
       setPhase("ocr-preparing");
       void runOcr(sel);
     } else {
+      setRecordSelectionRevision(value => value + 1);
       setPhase("record-options");
     }
   }
@@ -1234,15 +1248,8 @@ export function OverlayWindow() {
           top={DEFAULT_HINT_TOP}
         />
       )}
-      {phase === "selecting" && mode !== "screenshot" && selection && !drag && (
-        <HintLabel
-          text={
-            mode === "record"
-              ? t("Adjust the region · Recording settings below")
-              : t("Release to recognize text")
-          }
-          top={DEFAULT_HINT_TOP}
-        />
+      {phase === "selecting" && mode === "ocr" && selection && !drag && (
+        <HintLabel text={t("Release to recognize text")} top={DEFAULT_HINT_TOP} />
       )}
       {phase === "ocr-result" && (
         <OcrPanel
@@ -1274,6 +1281,8 @@ export function OverlayWindow() {
       {/* Recording options */}
       {phase === "record-options" && selection && (
         <RecordOptionsPanel
+          key={recordSelectionRevision}
+          selectionAdjusting={!!drag || !!resizeHandle || !!moveDrag}
           anchor={selection}
           bounds={bounds}
           modeSelectorBounds={modeSelectorBounds}
@@ -1283,14 +1292,15 @@ export function OverlayWindow() {
           clickHighlightsSupported={platformCaps.clickHighlights}
           trayRecordingControls={platformCaps.manualUpdates}
           sizeControlsOpen={sizeControlsOpen}
-          onToggleSize={() => setSizeControlsOpen(open => !open)}
           onChange={(next) => {
             // Spec (recording §3): persist each toggle change immediately.
+            setAnnotationError(null);
             setRecordOptions(next);
             void api.setRecordingOptions(next).catch(() => {});
           }}
           onStart={() => {
-            void api.startRecordingFlow(selection, recordOptions).catch(() => {});
+            setAnnotationError(null);
+            void api.startRecordingFlow(selection, recordOptions).catch(error => setAnnotationError(recordingStartError(error)));
           }}
           onCancel={cancel}
         />
@@ -1643,40 +1653,33 @@ export function RecordOptionsPanel(props: {
   anchor: Rect;
   bounds: Rect;
   modeSelectorBounds?: Rect | null;
+  selectionAdjusting?: boolean;
   options: RecordingOptions;
   micSupported: boolean;
   systemAudioSupported: boolean;
   clickHighlightsSupported: boolean;
   trayRecordingControls: boolean;
   sizeControlsOpen: boolean;
-  onToggleSize(): void;
   onChange(options: RecordingOptions): void;
   onStart(): void;
   onCancel(): void;
 }) {
-  const {
-    anchor,
-    bounds,
-    modeSelectorBounds,
-    options,
-    micSupported,
-    systemAudioSupported,
-    clickHighlightsSupported,
-    trayRecordingControls,
-    sizeControlsOpen,
-    onToggleSize,
-    onChange,
-    onStart,
-    onCancel,
-  } = props;
+  const { anchor, bounds, modeSelectorBounds, selectionAdjusting, options, micSupported,
+    systemAudioSupported, clickHighlightsSupported, trayRecordingControls,
+    sizeControlsOpen, onChange, onStart, onCancel } = props;
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [measuredHeight, setMeasuredHeight] = useState(0);
+  const [measuredHeight, setMeasuredHeight] = useState(200);
+  const settledAnchor = useRef(anchor);
+  // Keep the panel stationary and pass pointer input through while the region
+  // is being moved/resized. Re-anchor once on release, not on every drag frame.
+  if (!selectionAdjusting) settledAnchor.current = anchor;
   const measurePanel = () => {
     const element = panelRef.current;
     if (!element) return;
     const scroll = scrollRef.current;
-    const hiddenContent = scroll ? Math.max(0, scroll.scrollHeight - scroll.clientHeight) : 0;
+    const hiddenContent = Math.max(0, (element.scrollHeight ?? 0) - (element.clientHeight ?? 0))
+      + (scroll ? Math.max(0, scroll.scrollHeight - scroll.clientHeight) : 0);
     const height = Math.ceil(element.getBoundingClientRect().height + hiddenContent);
     setMeasuredHeight(current => current === height ? current : height);
   };
@@ -1691,237 +1694,80 @@ export function RecordOptionsPanel(props: {
     return () => observer.disconnect();
   }, []);
   const gifOutput = options.outputFormat === "gif";
-  const toggle = (
-    key:
-      | "usesCountdown"
-      | "capturesSystemAudio"
-      | "capturesMicrophone"
-      | "showsCursor"
-      | "highlightsClicks",
-  ) => {
-    const next = { ...options, [key]: !options[key] };
+  const toggle = (key: "capturesSystemAudio" | "capturesMicrophone" | "showsCursor" | "highlightsClicks") => {
+    const next = { ...options, usesCountdown: true, [key]: !options[key] };
     if (key === "showsCursor" && !next.showsCursor) next.highlightsClicks = false;
     onChange(next);
   };
-  const { left, top, width: panelWidth, maxHeight } = capturePanelLayout(
-    anchor, bounds, { width: 360, height: measuredHeight }, modeSelectorBounds, sizeControlsOpen,
-  );
+  const layout = recordingPanelLayout(settledAnchor.current, bounds,
+    { width: 380, height: measuredHeight }, modeSelectorBounds, sizeControlsOpen);
+  const unavailable = t("Unavailable on this platform");
   return (
-    <div
-      ref={panelRef}
-      className="kiri-hud"
-      onPointerDown={(e) => e.stopPropagation()}
-      style={{
-        position: "absolute",
-        left,
-        top,
-        zIndex: 8,
-        padding: 14,
-        width: panelWidth,
-        maxHeight,
-        overflow: "hidden",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        borderRadius: 16,
-        boxShadow: "0 16px 42px rgba(0,0,0,0.22)",
-      }}
-    >
-      <div ref={scrollRef} style={{ minHeight: 0, flex: "1 1 auto", overflowY: "auto", overflowX: "hidden" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 26,
-                height: 26,
-                display: "grid",
-                placeItems: "center",
-                borderRadius: 8,
-                background: "#fff",
-                color: "#000",
-              }}
-            >
-              <KiriIcon name="record.circle" size={14} />
-            </span>
-            <span style={{ font: "700 13px var(--kiri-font-ui)" }}>{t("Record Region")}</span>
+    <div ref={panelRef} className="kiri-record-options" role="region" aria-label={t("Record Region")}
+      data-adjusting={selectionAdjusting || undefined}
+      data-constrained={layout.maxHeight < 168 || undefined}
+      style={{ left: layout.left, top: layout.top, width: layout.width, maxHeight: layout.maxHeight }}
+      onPointerDown={event => event.stopPropagation()}
+      onPointerMove={event => event.stopPropagation()}
+      onPointerUp={event => event.stopPropagation()}>
+      <div className="kiri-record-options__header">
+        <div className="kiri-record-options__format-row">
+          <div className="kiri-record-options__formats" role="group" aria-label={t("Recording format")}>
+            {(["mp4", "gif"] as const).map(format => (
+              <button key={format} type="button" className="kiri-record-options__format"
+                aria-pressed={options.outputFormat === format}
+                title={format === "gif" ? t("GIF · 12 fps · 720 px long edge · No audio") : t("MP4 · 30 fps · Saved locally")}
+                onClick={() => onChange({ ...options, usesCountdown: true, outputFormat: format })}>
+                {t(format === "mp4" ? "MP4" : "GIF")}
+              </button>
+            ))}
           </div>
-          <div
-            role="group"
-            aria-label={t("Recording format")}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 4,
-              padding: 4,
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.14)",
-            }}
-          >
-            {(["mp4", "gif"] as const).map((format) => {
-              const selected = options.outputFormat === format;
-              return (
-                <button
-                  key={format}
-                  type="button"
-                  className="kiri-output-format"
-                  data-active={selected || undefined}
-                  aria-pressed={selected}
-                  onClick={() => onChange({ ...options, outputFormat: format })}
-                >
-                  {t(format === "mp4" ? "MP4" : "GIF")}
-                </button>
-              );
-            })}
-          </div>
-          <div
-            style={{
-              color: "rgba(255,255,255,0.72)",
-              font: "500 10.5px/1.4 var(--kiri-font-ui)",
-              padding: "7px 9px",
-              borderRadius: 9,
-              background: "rgba(255,255,255,0.055)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            {gifOutput
-              ? t("GIF · 12 fps · 720 px long edge · No audio")
-              : t("MP4 · 30 fps · Saved locally · Never uploaded")}
-          </div>
-          <div
-            style={{
-              overflow: "hidden",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.11)",
-              background: "rgba(255,255,255,0.035)",
-            }}
-          >
-            <ToggleRow
-              label={t("3-second countdown")}
-              checked={options.usesCountdown}
-              onToggle={() => toggle("usesCountdown")}
-            />
-            {!gifOutput && (
-              <>
-                <ToggleRow
-                  divider
-                  label={t("System audio")}
-                  suffix={systemAudioSupported ? undefined : t("Unavailable on this platform")}
-                  checked={options.capturesSystemAudio}
-                  onToggle={() => toggle("capturesSystemAudio")}
-                  disabled={!systemAudioSupported}
-                />
-                <ToggleRow
-                  divider
-                  label={t("Microphone")}
-                  suffix={micSupported ? undefined : t("Unavailable on this platform")}
-                  checked={options.capturesMicrophone}
-                  onToggle={() => toggle("capturesMicrophone")}
-                  disabled={!micSupported}
-                />
-                {options.capturesMicrophone && micSupported && <MicrophoneCheck />}
-              </>
-            )}
-            <ToggleRow
-              divider
-              label={t("Show pointer")}
-              checked={options.showsCursor}
-              onToggle={() => toggle("showsCursor")}
-            />
-            <ToggleRow
-              divider
-              label={t("Highlight clicks")}
-              suffix={clickHighlightsSupported ? undefined : t("Unavailable on this platform")}
-              checked={options.highlightsClicks}
-              onToggle={() => toggle("highlightsClicks")}
-              disabled={!options.showsCursor || !clickHighlightsSupported}
-            />
-          </div>
-          {trayRecordingControls && <p style={{ margin: "8px 0", fontSize: 12 }}>{t("Use the tray menu to pause, resume, or stop recording.")}</p>}
+          <button type="button" className="kiri-record-options__icon" aria-label={t("Cancel")} title={t("Cancel")}
+            onClick={onCancel}><KiriIcon name="xmark" size={18} /></button>
         </div>
-      </div>
-      <div style={{ display: "flex", flexShrink: 0, gap: 8 }}>
-        <ToolButton icon="slider.horizontal.3" title={t("Resize selection")}
-          active={sizeControlsOpen} expanded={sizeControlsOpen} onClick={onToggleSize} />
-        <button type="button" className="kiri-primary-button" style={{ flex: 1, minWidth: 0, minHeight: 38, borderRadius: 10, overflowWrap: "anywhere" }} onClick={onStart}>
+        <button type="button" className="kiri-record-options__start" onClick={onStart}>
+          <span className="kiri-record-options__record-dot" aria-hidden="true" />
           {gifOutput ? t("Start GIF Recording") : t("Start Recording")}
         </button>
-        <button
-          type="button"
-          className="kiri-icon-button kiri-icon-button--hud"
-          aria-label={t("Cancel")}
-          title={t("Cancel")}
-          style={{
-            width: 38,
-            height: 38,
-            flexShrink: 0,
-            borderRadius: 10,
-          }}
-          onClick={onCancel}
-        >
-          <KiriIcon name="xmark" size={12} />
-        </button>
+      </div>
+      <div ref={scrollRef} className="kiri-record-options__scroll">
+        <div className="kiri-record-options__body">
+          <div className="kiri-record-options__inputs">
+            <RecordInput label={t("System audio")} checked={!gifOutput && systemAudioSupported && options.capturesSystemAudio}
+              disabled={gifOutput || !systemAudioSupported}
+              title={gifOutput ? t("GIF · 12 fps · 720 px long edge · No audio") : !systemAudioSupported ? unavailable : undefined}
+              onToggle={() => toggle("capturesSystemAudio")}
+              icon={<Volume2 size={24} />} />
+            <RecordInput label={t("Microphone")} checked={!gifOutput && micSupported && options.capturesMicrophone}
+              disabled={gifOutput || !micSupported}
+              title={gifOutput ? t("GIF · 12 fps · 720 px long edge · No audio") : !micSupported ? unavailable : undefined}
+              onToggle={() => toggle("capturesMicrophone")}
+              icon={<Mic size={24} />}
+              accessory={<RecordingMicrophoneSelect options={options} disabled={gifOutput || !micSupported} onChange={onChange} />} />
+            <RecordInput label={t("Pointer")} checked={options.showsCursor}
+              onToggle={() => toggle("showsCursor")} icon={<MousePointer2 size={24} />} />
+            <RecordInput label={t("Click highlight")} checked={options.showsCursor && clickHighlightsSupported && options.highlightsClicks}
+              disabled={!options.showsCursor || !clickHighlightsSupported}
+              title={!clickHighlightsSupported ? unavailable : !options.showsCursor ? t("Enable pointer to highlight clicks") : undefined}
+              onToggle={() => toggle("highlightsClicks")} icon={<MousePointerClick size={24} />} />
+          </div>
+          {trayRecordingControls && <p className="kiri-record-options__tray">{t("Use the tray menu to pause, resume, or stop recording.")}</p>}
+        </div>
       </div>
     </div>
   );
 }
 
-function ToggleRow(props: {
-  label: string;
-  checked: boolean;
-  onToggle(): void;
-  disabled?: boolean;
-  suffix?: string;
-  divider?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className="kiri-switch-row"
-      role="switch"
-      aria-checked={props.checked}
-      disabled={props.disabled}
-      onClick={props.onToggle}
-      style={{
-        borderTop: props.divider ? "1px solid rgba(255,255,255,0.08)" : "none",
-      }}
-    >
-      <span style={{ minWidth: 0, overflowWrap: "anywhere", font: "550 12px var(--kiri-font-ui)" }}>
-        {props.label}
-        {props.suffix && (
-          <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 10.5, marginLeft: 6 }}>
-            {props.suffix}
-          </span>
-        )}
-      </span>
-      <div
-        style={{
-          width: 34,
-          height: 20,
-          borderRadius: 10,
-          background: props.checked ? "#fff" : "rgba(255,255,255,0.2)",
-          position: "relative",
-          flexShrink: 0,
-          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)",
-          transition: "background 0.16s ease-out",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: 2,
-            left: props.checked ? 16 : 2,
-            width: 16,
-            height: 16,
-            borderRadius: "50%",
-            background: props.checked ? "#000" : "#fff",
-            transition: "left 0.16s ease-out, background 0.16s ease-out",
-          }}
-        />
-      </div>
+function RecordInput(props: { label: string; checked: boolean; disabled?: boolean; title?: string;
+  onToggle(): void; icon: React.ReactNode; accessory?: React.ReactNode }) {
+  return <div className="kiri-record-options__input-group" data-accessory={!!props.accessory || undefined}>
+    <button type="button" className="kiri-record-options__input" role="switch" aria-checked={props.checked}
+      disabled={props.disabled} title={props.title ?? props.label} onClick={props.onToggle}>
+      <span className="kiri-record-options__input-icon" aria-hidden="true">{props.icon}</span>
+      <span>{props.label}</span>
     </button>
-  );
+    {props.accessory}
+  </div>;
 }
 
 interface ToolbarProps {

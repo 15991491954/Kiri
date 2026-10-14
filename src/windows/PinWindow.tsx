@@ -124,7 +124,8 @@ export function PinWindow({ id }: { id: string }) {
     catch { if (state.generation === generation) setError(true); }
     finally { state.busy = false; setBusy(false); }
   };
-  return <div className="pin-window" aria-label={t("Screenshot Reference")}>
+  return <div className="pin-window" aria-label={t("Screenshot Reference")}
+    onContextMenu={event => event.preventDefault()}>
     <div className="pin-window__actions" onPointerDown={event => event.stopPropagation()}>
       <button className="kiri-pin-action" type="button" disabled={busy}
         title={t(onTop ? "Unpin" : "Pin on Top")} aria-label={t(onTop ? "Unpin" : "Pin on Top")}
@@ -135,13 +136,13 @@ export function PinWindow({ id }: { id: string }) {
     {error && <p className="pin-window__error" role="alert">{t("Could not change window pinning on this desktop.")}</p>}
     <main className="pin-window__image" onPointerDown={event => {
       if (event.button !== 0) return;
-      if (!/Macintosh|Mac OS X/i.test(navigator.userAgent)) {
+      if (!/Macintosh|Mac OS X|Windows/i.test(navigator.userAgent)) {
         void getCurrentWindow().startDragging().catch(() => {});
         return;
       }
-      // macOS native dragging requires the original mouse-down event. By the
-      // time asynchronous WebView IPC arrives, AppKit may have a move/up event.
-      // Use captured screen coordinates without relying on NSApp.currentEvent.
+      // Native dragging reaches AppKit/Win32 asynchronously and a short gesture
+      // may already have ended. Capture screen coordinates and retain pointerup
+      // while the native origin loads. Linux keeps compositor-managed dragging.
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       if (latestMove.current) latestMove.current.cancelled = true;

@@ -105,3 +105,61 @@ export function capturePanelLayout(selection, bounds, size, modeSelector = null,
   return { ...captureToolbarPosition(selection, bounds, { width, height }, sizeControlsOpen, modeSelector),
     width, maxHeight };
 }
+
+/** Recording setup follows its region: roomy selections contain it; small ones
+ * use the nearest clear outside edge. OCR and annotation retain their own rules. */
+export function recordingPanelLayout(selection, bounds, size, modeSelector = null, sizeControlsOpen = false) {
+  const margin = 8, gap = 12;
+  const screen = { x: bounds.x + margin, y: bounds.y + margin,
+    width: Math.max(0, bounds.width - margin * 2), height: Math.max(0, bounds.height - margin * 2) };
+  const width = Math.min(size.width, screen.width);
+  const height = Math.min(size.height, screen.height);
+  const clamp = (value, low, high) => Math.min(Math.max(value, low), Math.max(low, high));
+  const centeredLeft = clamp(selection.x + (selection.width - width) / 2, screen.x, screen.x + screen.width - width);
+  const centeredTop = clamp(selection.y + (selection.height - height) / 2, screen.y, screen.y + screen.height - height);
+  const clear = (position, panelHeight = height) => !modeSelector ||
+    position.left + width + gap <= modeSelector.x || position.left >= modeSelector.x + modeSelector.width + gap ||
+    position.top + panelHeight + gap <= modeSelector.y || position.top >= modeSelector.y + modeSelector.height + gap;
+  const onScreen = p => p.left >= screen.x && p.left + width <= screen.x + screen.width &&
+    p.top >= screen.y && p.top + height <= screen.y + screen.height;
+  const inside = p => p.left >= selection.x + gap && p.left + width <= selection.x + selection.width - gap &&
+    p.top >= selection.y + gap && p.top + height <= selection.y + selection.height - gap;
+  const center = { left: centeredLeft, top: centeredTop };
+  if (inside(center) && clear(center)) return { ...center, width, maxHeight: screen.height };
+
+  const outside = [
+    { left: centeredLeft, top: selection.y + selection.height + gap },
+    { left: centeredLeft, top: selection.y - height - gap - (sizeControlsOpen ? 38 : 0) },
+    { left: selection.x + selection.width + (sizeControlsOpen ? 80 : gap), top: centeredTop },
+    { left: selection.x - width - gap, top: centeredTop },
+  ];
+  for (const p of outside) {
+    if (onScreen(p) && clear(p)) return { ...p, width, maxHeight: screen.height };
+  }
+
+  // A moved/wrapped mode selector reserves only its own area. Choose the
+  // nearest clear rectangle, keeping Start fixed above the scrollable settings.
+  let spaces = [screen];
+  if (modeSelector) {
+    const right = screen.x + screen.width, bottom = screen.y + screen.height;
+    spaces = [
+      { ...screen, height: clamp(modeSelector.y - gap - screen.y, 0, screen.height) },
+      { ...screen, y: clamp(modeSelector.y + modeSelector.height + gap, screen.y, bottom),
+        height: Math.max(0, bottom - modeSelector.y - modeSelector.height - gap) },
+      { ...screen, width: clamp(modeSelector.x - gap - screen.x, 0, screen.width) },
+      { ...screen, x: clamp(modeSelector.x + modeSelector.width + gap, screen.x, right),
+        width: Math.max(0, right - modeSelector.x - modeSelector.width - gap) },
+    ];
+  }
+  const usable = spaces.filter(space => space.width >= width && space.height > 0);
+  const complete = usable.filter(space => space.height >= height);
+  const candidates = (complete.length ? complete : usable).map(space => {
+    const panelHeight = Math.min(height, space.height);
+    const p = { left: clamp(centeredLeft, space.x, space.x + space.width - width),
+      top: clamp(centeredTop, space.y, space.y + space.height - panelHeight),
+      width, maxHeight: space.height };
+    return { p, distance: Math.hypot(p.left - centeredLeft, p.top - centeredTop) };
+  });
+  candidates.sort((a, b) => complete.length ? a.distance - b.distance : b.p.maxHeight - a.p.maxHeight);
+  return candidates[0]?.p ?? { ...center, width, maxHeight: screen.height };
+}

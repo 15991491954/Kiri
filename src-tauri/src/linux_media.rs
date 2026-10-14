@@ -628,7 +628,16 @@ impl AudioSetup<'_> {
         match self {
             Self::Devices(sources) => RecordingAudio::description(sources.len(), "appsrc format=time is-live=true do-timestamp=false caps=audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"),
             #[cfg(test)]
-            Self::Tones(count) => RecordingAudio::description(*count, "audiotestsrc is-live=true"),
+            Self::Tones(count) => {
+                let mut description = RecordingAudio::description(*count, "audiotestsrc is-live=true");
+                for index in 0..*count {
+                    description = description.replace(
+                        &format!("name=audio_{index} !"),
+                        &format!("name=audio_{index} ! audio/x-raw,rate=48000 !"),
+                    );
+                }
+                description
+            }
             #[cfg(test)]
             Self::DelayedPcm => RecordingAudio::description(1, "appsrc format=time is-live=true do-timestamp=false caps=audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"),
         }
@@ -660,7 +669,7 @@ struct PreparedEncoder {
 impl PreparedEncoder {
     fn new(config: &EncoderConfig, out_path: &Path) -> Result<Self> {
         let sources =
-            crate::linux_audio::selected_sources(config.audio.is_some(), config.mic.is_some())?;
+            crate::linux_audio::selected_sources_with_input(config.audio.is_some(), config.mic.is_some(), config.microphone_device_id.as_deref())?;
         Self::with_audio(config, out_path, AudioSetup::Devices(&sources))
     }
 
@@ -1546,6 +1555,7 @@ mod tests {
             bitrate: 1_000_000,
             audio: None,
             mic: None,
+            microphone_device_id: None,
         }
     }
 
@@ -1738,9 +1748,29 @@ mod tests {
     }
 
     pub(super) fn audio_fixture(path: &Path, frequencies: &[f64], millis: u64) {
+        audio_fixture_with_startup_delay(path, frequencies, millis, Duration::ZERO);
+    }
+
+    fn audio_fixture_with_startup_delay(
+        path: &Path,
+        frequencies: &[f64],
+        millis: u64,
+        startup_delay: Duration,
+    ) {
         let prepared =
             PreparedEncoder::with_audio(&config(), path, AudioSetup::Tones(frequencies.len()))
                 .unwrap();
+        prepared.pipeline.set_state(gstreamer::State::Ready).unwrap();
+        // These are content/merge fixtures, not live capture clock tests.
+        // GstBaseSrc rebases a pseudo-live audiotestsrc's first PTS to its
+        // scheduling time, so a busy runner can insert startup silence into
+        // the input itself. Keep the real recording encoder/AAC priming/mux,
+        // but supply finite audio and video with the same exact zero origin.
+        // One bounded test buffer also avoids treating offline backpressure as
+        // a live audio queue overrun. The native Pulse/FIFO and delayed-PCM
+        // tests continue to exercise real-time delivery separately.
+        let frames = i32::try_from(millis.checked_mul(48).unwrap()).unwrap();
+        assert!(frames > 0);
         for (index, frequency) in frequencies.iter().enumerate() {
             let source = prepared
                 .pipeline
@@ -1748,23 +1778,52 @@ mod tests {
                 .unwrap();
             source.set_property("freq", *frequency);
             source.set_property("volume", 0.15f64);
-            source.set_property("samplesperbuffer", 480i32);
+            source.set_property("samplesperbuffer", frames);
+            source.set_property("num-buffers", 1i32);
+            source.set_property("is-live", false);
+            if !startup_delay.is_zero() {
+                source.static_pad("src").unwrap().add_probe(
+                    gstreamer::PadProbeType::BUFFER,
+                    move |_, _| {
+                        std::thread::sleep(startup_delay);
+                        gstreamer::PadProbeReturn::Remove
+                    },
+                );
+            }
         }
-        let (tx, rx) = mpsc::sync_channel(2);
-        let output = path.to_owned();
-        let worker = std::thread::spawn(move || {
-            encode_bgra_mp4(
-                prepared,
-                &output,
-                rx,
-                Arc::new(AtomicBool::new(false)),
-                Arc::new(AtomicBool::new(false)),
+        prepared
+            .push(
+                solid_frame([0, 255, 0, 255]),
+                Duration::ZERO,
+                Duration::from_millis(millis),
             )
-        });
-        tx.send(solid_frame([0, 255, 0, 255])).unwrap();
-        std::thread::sleep(Duration::from_millis(millis));
-        drop(tx);
-        worker.join().unwrap().unwrap();
+            .unwrap();
+        prepared.appsrc.end_of_stream().unwrap();
+        wait_for_eos(&prepared.bus, FINALIZE_TIMEOUT, "audio fixture encoding").unwrap();
+        prepared.audio.validate().unwrap();
+        let PreparedEncoder {
+            pipeline, output, ..
+        } = prepared;
+        drop(pipeline);
+        validate_recording_tracks(output.path(), Some((64, 48)), Some(true)).unwrap();
+        output.persist_noclobber(path).unwrap();
+    }
+
+    #[test]
+    fn native_audio_content_fixture_has_no_startup_gap_when_source_is_delayed() {
+        let temp = tempfile::tempdir().unwrap();
+        let _review = ReviewArtifacts::new(temp.path(), "audio-fixture-delayed-start");
+        let path = temp.path().join("delayed-start.mp4");
+        audio_fixture_with_startup_delay(&path, &[880.0], 700, Duration::from_millis(400));
+        let duration = validate_recording_tracks(&path, Some((64, 48)), Some(true))
+            .unwrap()
+            .2;
+        assert!((duration - 0.7).abs() < 0.05, "fixture duration {duration}");
+        let audio = decoded_audio(&path);
+        for (from, to) in [(2400, 6240), (24000, 27840)] {
+            assert!(tone_amplitude(&audio[from..to], 880.0) > 0.08);
+            assert!(tone_amplitude(&audio[from..to], 440.0) < 0.01);
+        }
     }
 
     fn decoded_audio(video: &Path) -> Vec<f32> {
@@ -2514,6 +2573,7 @@ mod tests {
         let start = Instant::now();
         let mut peaks = Vec::new();
         crate::linux_audio::microphone_check(
+            None,
             || start.elapsed() < Duration::from_millis(400),
             |_, peak| {
                 peaks.push(peak);

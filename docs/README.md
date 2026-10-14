@@ -16,12 +16,12 @@ application or a durable product decision.
 | Language | Overview | Setup and help | Video editing |
 | --- | --- | --- | --- |
 | 简体中文 | [Kiri](../README.md) | [简体中文](usage.zh-CN.md) | [简体中文](video-editing.zh-CN.md) |
-| English | [Kiri](../README_EN.md) | [English](usage.md) | [English](video-editing.md) |
-| 繁體中文 | [Kiri](../README_ZH_TW.md) | [繁體中文](usage.zh-TW.md) | [繁體中文](video-editing.zh-TW.md) |
-| 日本語 | [Kiri](../README_JA.md) | [日本語](usage.ja.md) | [日本語](video-editing.ja.md) |
-| Deutsch | [Kiri](../README_DE.md) | [Deutsch](usage.de.md) | [Deutsch](video-editing.de.md) |
-| 한국어 | [Kiri](../README_KO.md) | [한국어](usage.ko.md) | [한국어](video-editing.ko.md) |
-| Français | [Kiri](../README_FR.md) | [Français](usage.fr.md) | [Français](video-editing.fr.md) |
+| English | [Kiri](readme/en.md) | [English](usage.md) | [English](video-editing.md) |
+| 繁體中文 | [Kiri](readme/zh-TW.md) | [繁體中文](usage.zh-TW.md) | [繁體中文](video-editing.zh-TW.md) |
+| 日本語 | [Kiri](readme/ja.md) | [日本語](usage.ja.md) | [日本語](video-editing.ja.md) |
+| Deutsch | [Kiri](readme/de.md) | [Deutsch](usage.de.md) | [Deutsch](video-editing.de.md) |
+| 한국어 | [Kiri](readme/ko.md) | [한국어](usage.ko.md) | [한국어](video-editing.ko.md) |
+| Français | [Kiri](readme/fr.md) | [Français](usage.fr.md) | [Français](video-editing.fr.md) |
 
 The user guides cover the same platform boundaries. Architecture, ADRs, detailed
 Linux QA, and contribution records retain their original language.
@@ -35,10 +35,10 @@ Linux QA, and contribution records retain their original language.
 - [`architecture.md`](architecture.md) — runtime structure, data boundaries,
   and platform responsibilities.
 - [`../AGENTS.md`](../AGENTS.md) — product contract and repository rules.
-- [`../ROADMAP.md`](../ROADMAP.md) — completed capabilities and work that still
+- [`roadmap.md`](roadmap.md) — completed capabilities and work that still
   needs product or platform validation.
-- [`../PRIVACY.md`](../PRIVACY.md) and [`../SECURITY.md`](../SECURITY.md) —
-  network, credential, and local-data boundaries.
+- [Privacy](privacy/en.md) · [隐私说明](privacy/zh-CN.md) — network, credential, and local-data boundaries.
+- [Security](../SECURITY.md) — reporting vulnerabilities.
 - [`windows-capture-incident.md`](windows-capture-incident.md) — current
   Windows screenshot lifecycle failure, diagnostics, and native retest gate.
 - [`releases/v1.6.6.md`](releases/v1.6.6.md) — lighter recorded click highlight
@@ -136,7 +136,7 @@ development.
 - [ADR 0032: Localized Kiri installer](adr/0032-localized-kiri-installer.md)
 - [ADR 0033: Shared installer source](adr/0033-shared-installer-source.md)
 
-- [0034 — Local video trimming and microphone checks](adr/0034-local-video-trimming-and-input-check.md)
+- [0034 — Local video trimming and microphone checks](adr/0034-local-video-trimming-and-input-check.md) — the historical microphone-test entry is superseded by ADR 0105.
 
 - [0035 — Video timeline and timed effects](adr/0035-video-timeline-and-timed-effects.md)
 
@@ -208,3 +208,7 @@ development.
 - [ADR 0103: Annotation tool double-click completion](adr/0103-annotation-tool-double-click-completion.md)
 
 - [ADR 0104: Windows recording active time](adr/0104-windows-recording-active-time.md) — keep static footage duration and exclude pauses.
+
+- [ADR 0105: Recording controls follow the selected region](adr/0105-adaptive-recording-controls.md) — adaptive preparation and recording controls, explicit microphone selection, and native acceptance requirements.
+
+- [ADR 0106: macOS floating panels participate in capture hover selection](adr/0106-floating-window-hover.md) — include eligible floating panels while preserving frontmost-window selection.

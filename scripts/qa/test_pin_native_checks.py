@@ -4,8 +4,72 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from pin_native_checks import borderless_geometry_evidence, capture_origin_evidence, pin_lifecycle_evidence, pin_open_log_marker, proportional_resize_evidence
+from pin_native_checks import borderless_geometry_evidence, capture_origin_evidence, pin_content_evidence, pin_lifecycle_evidence, pin_open_log_marker, pin_outline_evidence, proportional_resize_evidence
 from windows_qa_profile import isolated_app_directories, isolated_windows_profile
+
+try:
+    from PIL import Image, ImageDraw
+except ImportError:
+    Image = ImageDraw = None
+
+
+@unittest.skipIf(Image is None, "Pixel assertions require Pillow, as installed in native desktop QA")
+class NativePinPixelChecks(unittest.TestCase):
+    def framed_image(self, scale):
+        size = (round(580 * scale), round(235 * scale))
+        reference = Image.new("RGB", size, "white")
+        actual = reference.copy()
+        ImageDraw.Draw(actual).rounded_rectangle(
+            (0, 0, size[0] - 1, size[1] - 1), radius=round(8 * scale),
+            outline="#111111", width=round(2 * scale))
+        return actual, reference
+
+    def test_frame_is_independent_of_content_at_integer_and_fractional_dpi(self):
+        for scale, inset in [(1, 4), (1.25, 5), (1.5, 6), (2, 8)]:
+            with self.subTest(scale=scale):
+                actual, reference = self.framed_image(scale)
+                proof = pin_content_evidence(actual, reference, scale)
+                self.assertEqual(proof["mean_pixel_error"], 0)
+                self.assertEqual(proof["content_inset_physical"], inset)
+                self.assertTrue(pin_outline_evidence(actual, reference, scale)["visible"])
+
+    def test_content_occlusion_still_exceeds_the_original_threshold(self):
+        for scale in [1, 1.25, 1.5, 2]:
+            with self.subTest(scale=scale):
+                actual, reference = self.framed_image(scale)
+                ImageDraw.Draw(actual).rectangle(
+                    (round(100 * scale), round(80 * scale), round(200 * scale), round(180 * scale)),
+                    fill="black")
+                self.assertGreater(pin_content_evidence(actual, reference, scale)["mean_pixel_error"], 3)
+
+    def test_every_frame_side_must_be_dark_and_visible(self):
+        for scale in [1, 1.25, 1.5, 2]:
+            actual, reference = self.framed_image(scale)
+            points = pin_outline_evidence(actual, reference, scale)["side_sample_points"]
+            for point in points:
+                with self.subTest(scale=scale, point=point):
+                    missing_side = actual.copy()
+                    missing_side.putpixel(point, (255, 255, 255))
+                    with self.assertRaisesRegex(RuntimeError, "missing a dark, visible frame side"):
+                        pin_outline_evidence(missing_side, reference, scale)
+
+    def test_a_visible_but_light_frame_is_rejected(self):
+        actual, reference = self.framed_image(1)
+        for point in pin_outline_evidence(actual, reference, 1)["side_sample_points"]:
+            actual.putpixel(point, (150, 150, 150))
+        with self.assertRaisesRegex(RuntimeError, "missing a dark, visible frame side"):
+            pin_outline_evidence(actual, reference, 1)
+
+    def test_invalid_scale_and_unusable_dimensions_are_rejected(self):
+        actual, reference = self.framed_image(1)
+        for helper in [pin_content_evidence, pin_outline_evidence]:
+            for scale in [0, -1, float("nan"), float("inf")]:
+                with self.subTest(helper=helper.__name__, scale=scale), self.assertRaises(RuntimeError):
+                    helper(actual, reference, scale)
+            with self.assertRaises(RuntimeError):
+                helper(actual, reference.resize((579, 235)), 1)
+            with self.assertRaises(RuntimeError):
+                helper(actual.resize((8, 8)), reference.resize((8, 8)), 1)
 
 
 class NativePinChecks(unittest.TestCase):

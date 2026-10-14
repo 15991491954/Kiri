@@ -432,6 +432,9 @@ pub struct EncoderConfig {
     pub audio: Option<AudioSpec>,
     /// Optional microphone capture format.
     pub mic: Option<AudioSpec>,
+    /// Linux resolves the selected input in its shared-clock encoder pipeline.
+    #[cfg(target_os = "linux")]
+    pub microphone_device_id: Option<String>,
 }
 
 pub fn bitrate_for(width: i64, height: i64) -> i64 {

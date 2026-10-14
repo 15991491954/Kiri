@@ -21,7 +21,7 @@ import traceback
 from PIL import Image, ImageChops, ImageGrab, ImageStat
 from linux_desktop_fixture import DesktopFixture, RECORDING_REGION
 from linux_audio_tone import inspect_tone
-from pin_native_checks import annotated_capture_evidence, capture_origin_evidence, pin_lifecycle_evidence, pin_open_log_marker, proportional_resize_evidence
+from pin_native_checks import annotated_capture_evidence, capture_origin_evidence, pin_content_evidence, pin_lifecycle_evidence, pin_open_log_marker, pin_outline_evidence, proportional_resize_evidence
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -450,6 +450,13 @@ def native_pin_acceptance():
                     and pin_open_log_marker(created[0]["id"]) in text and text)
     (output / "direct-pin-lifecycle.log").write_text(trace)
     lifecycle = pin_lifecycle_evidence(trace, created[0]["id"])
+    # This harness has one Xvfb monitor. Read the native scale of this exact
+    # capture rather than infer it from the resized reference image's pixels.
+    scales = re.findall(r"start_capture: display frozen logical=[^\n]*\bscale=([0-9.]+)", trace)
+    if len(scales) != 1:
+        raise RuntimeError("Expected one native display scale for this pinned capture")
+    pin_scale = float(scales[0])
+    report["pin_display_scale"] = pin_scale
     if "_NET_WM_STATE_ABOVE" not in command("xprop", "-id", pin, "_NET_WM_STATE").stdout:
         raise RuntimeError("X11 reference did not request native above stacking")
     report["pin_native_properties"] = command("xprop", "-id", pin,
@@ -467,8 +474,10 @@ def native_pin_acceptance():
         x, y, width, height = (int(before[key]) for key in ("X", "Y", "WIDTH", "HEIGHT"))
         actual = ImageGrab.grab().convert("RGB").crop((x, y, x + width, y + height))
         expected_image = captured.resize(actual.size, Image.Resampling.LANCZOS)
-        error = sum(ImageStat.Stat(ImageChops.difference(actual, expected_image)).mean) / 3
-        return {"mean_pixel_error": error} if error <= 3 else None
+        evidence = pin_content_evidence(actual, expected_image, pin_scale)
+        if evidence["mean_pixel_error"] > 3:
+            return None
+        return {**evidence, "outline": pin_outline_evidence(actual, expected_image, pin_scale)}
     report["pin_ready"] = wait_for("actual annotated pin image painted before drag", initial_image_painted)
     screenshot("direct-pin-ready-for-drag.png")
     start = (int(before["X"]) + int(before["WIDTH"]) // 2, int(before["Y"]) + int(before["HEIGHT"]) // 2)
@@ -529,8 +538,8 @@ def native_pin_acceptance():
         x, y, width, height = (int(bounds[key]) for key in ("X", "Y", "WIDTH", "HEIGHT"))
         actual = ImageGrab.grab().convert("RGB").crop((x, y, x + width, y + height))
         reference = captured.resize(actual.size, Image.Resampling.LANCZOS)
-        error = sum(ImageStat.Stat(ImageChops.difference(actual, reference)).mean) / 3
-        return {"mean_pixel_error": error} if error <= 3 else None
+        evidence = pin_content_evidence(actual, reference, pin_scale)
+        return evidence if evidence["mean_pixel_error"] <= 3 else None
     visible = wait_for("annotated X11 pin above another foreground app", visible_image)
     screenshot("direct-pin-moved-resized.png")
     command("xdotool", "windowactivate", "--sync", pin)
@@ -916,16 +925,9 @@ try:
     drag_region(recording_region)
     click_control("MP4")
     screenshot("recording-options.png")
-    # Exercise the startup race: no countdown must still unmap the selection
-    # before the very first captured frame. The decoder below checks all frames.
-    countdown, _ = wait_for_control("3-second countdown")
-    if countdown.get_state_set().contains(Atspi.StateType.CHECKED):
-        click_control("3-second countdown")
-    def countdown_is_off():
-        control = visible_control("3-second countdown")
-        return control and not control[0].get_state_set().contains(Atspi.StateType.CHECKED)
-    wait_for("countdown disabled", countdown_is_off)
-    report["recording_countdown_enabled"] = False
+    # The fixed countdown must unmap before the first captured frame. The
+    # decoder below still checks every exported frame for selection controls.
+    report["recording_countdown_enabled"] = True
     for label, requested in (("System audio", system_audio), ("Microphone", False)):
         control, _ = wait_for_control(label)
         if control.get_state_set().contains(Atspi.StateType.CHECKED) != requested:
@@ -936,6 +938,7 @@ try:
     report["audio_options"] = {"system_audio": system_audio, "microphone": False}
     staged_before = recording_files(".kiri-media-*.mp4")
     click_control("Start Recording")
+    wait_for_control("Cancel Countdown")
     # Pointer stays outside the selected region, including during countdown.
     command("xdotool", "mousemove", "--sync", "1200", "760")
     wait_for("countdown and overlay close before recording", lambda: overlay() is None, timeout=15)
@@ -1086,9 +1089,6 @@ try:
     open_capture()
     click_control("Record")
     drag_region(recording_region)
-    countdown, _ = wait_for_control("3-second countdown")
-    if not countdown.get_state_set().contains(Atspi.StateType.CHECKED):
-        click_control("3-second countdown")
     before_countdown = assets()
     staged_before = recording_files(".kiri-media-*.mp4")
     click_control("Start Recording")

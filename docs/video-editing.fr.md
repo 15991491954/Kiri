@@ -55,4 +55,4 @@ Les petites sources ne sont jamais agrandies. La taille du fichier dépend de la
 
 Les exports conservent l’audio synchronisé. Linux normalise l’audio en AAC stéréo à 48 kHz, applique l’orientation vidéo et conserve le rythme des images à fréquence variable et des images maintenues. macOS conserve la hauteur du son lors des changements de vitesse ; Windows la change avec la vitesse. Sous Windows, les effets nécessitent actuellement une source sans métadonnées de rotation. Les enregistrements Kiri remplissent cette condition.
 
-[Utilisation](usage.fr.md) · [Retour à Kiri](../README_FR.md)
+[Utilisation](usage.fr.md) · [Retour à Kiri](readme/fr.md)

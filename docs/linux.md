@@ -170,7 +170,7 @@ cover MP4/GIF encoding and merging. Check the candidate's reports for results.
 GTK retains clipboard ownership after capture closes while Kiri is running.
 Whether clipboard content survives quitting Kiri depends on the desktop's
 clipboard manager. Screenshot annotations and OCR source images stay local;
-the shared [privacy policy](../PRIVACY.md) also applies on Linux.
+the shared [privacy policy](privacy/en.md) also applies on Linux.
 
 ## Basic video editing
 
@@ -337,7 +337,7 @@ another application; English/Chinese/Japanese local OCR; and recording consent,
 pause/resume/stop, GIF conversion, timing, and absence of Kiri controls. Test the
 multi-display rejection explicitly. Use a separate test user and public test
 content; never point QA at an existing capture library. Record outcomes before
-marking those gates complete in the [roadmap](../ROADMAP.md).
+marking those gates complete in the [roadmap](roadmap.md).
 
 ## Global Shortcuts Portal acceptance
 

@@ -56,4 +56,4 @@ Small sources are never enlarged. File size depends on the source and edited dur
 
 Exports retain synchronized audio. Linux normalizes audio to 48 kHz stereo AAC, applies video orientation and preserves variable-rate and held-frame presentation timing. macOS preserves audio pitch when clip speed changes; Windows changes the pitch along with the speed. On Windows, video effects currently require a source without rotation metadata. Kiri recordings meet that requirement.
 
-[Back to Kiri](../README_EN.md)
+[Back to Kiri](readme/en.md)

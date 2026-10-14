@@ -6,7 +6,7 @@ Read it before editing, then read `docs/architecture.md`.
 ## Start here
 
 1. Run `git status -sb` before making changes.
-2. Read `README.md`, `ROADMAP.md`, and `docs/architecture.md`.
+2. Read `README.md`, `docs/roadmap.md`, and `docs/architecture.md`.
 3. For capture-selection behavior, also read
    `docs/adr/0003-manual-region-selection.md`.
 4. Treat every pre-existing modification and untracked file as user-owned.
@@ -99,6 +99,9 @@ Linux. Preserve these decisions:
 - `scripts/` — packaging, stable development signing, and app-icon validation.
 - `docs/architecture.md` — current runtime structure and platform boundaries.
 - `docs/README.md` — index of current documentation and accepted decisions.
+- `docs/readme/` — translated product overviews.
+- `docs/privacy/` — English and Simplified Chinese privacy policies.
+- `docs/roadmap.md` — completed capabilities and remaining validation.
 - `docs/adr/` — accepted architecture/product decisions.
 
 ## Architecture boundaries
@@ -186,7 +189,15 @@ the separate checklist in `docs/linux.md` and report those limits explicitly.
 - All user-facing strings go through `t()`/`fmt()` in `src/i18n`; the English
   string is the key (matching the Swift L10n behavior).
 - Keep all seven dictionaries identical in key set and formatting placeholders.
-- Update `README.md` and `README_ZH.md` together for user-visible behavior.
+- Keep `README.md` and `docs/readme/*.md` concise product overviews: a short
+  introduction, core features, a brief quick start, documentation links, and thanks.
+  Integrate new capabilities into existing short bullets only when they change
+  the overview. Do not append release-by-release or feature-by-feature interaction
+  paragraphs. Put detailed controls, edge cases, and troubleshooting in the
+  relevant `docs/usage.*.md` or focused guide instead.
+- When the overview changes, update `README.md` and `docs/readme/zh-CN.md`
+  together and keep all seven language overviews equivalent. Minor interaction
+  changes belong in the guides and do not require additions to the README.
 - Record durable interaction changes as a new ADR instead of rewriting old
   history without explanation.
 

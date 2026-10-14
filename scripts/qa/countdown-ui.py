@@ -32,6 +32,8 @@ if(c==='recording_countdown_ready'){
 }
 if(c==='cancel_recording_flow'&&window.failCancel){window.failCancel=false;throw Error('controlled cancellation failure')}
 if(c==='get_recording_state')return {isStarting:true,isRecording:false,isPaused:false,isTransitioning:false,isFinalizing:false,elapsed:0,elapsedLabel:'00:00'};
+// The controls stay hidden until native placement returns the available CSS width.
+if(c==='position_recording_controls')return {maxWidth:window.innerWidth};
 if(c==='plugin:event|listen')return ++serial;
 return null;
 }};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
@@ -200,11 +202,24 @@ async def main(record=False):
             assert await count(w,'cancel_recording_flow') == 1 and await count(w,'begin_recording') == 0
             results.append('readiness error remains visible and cancellable')
             await c.close()
-            c,w = await page('control-panel')
-            await w.get_by_role('button',name='Cancel',exact=True).wait_for()
-            assert await w.get_by_role('button',name='Cancel',exact=True).is_enabled()
-            results.append('late control panel hydrates its cancel action')
-            await c.close()
+            for key in ['click','Escape']:
+                c,w = await page('control-panel')
+                action = w.get_by_role('button',name='Cancel',exact=True)
+                await action.wait_for()
+                assert await action.is_enabled()
+                assert await w.get_by_role('button',name='Pause Recording',exact=True).is_disabled()
+                assert await w.get_by_role('timer').inner_text() == '00:00'
+                placement = await w.evaluate("calls.find(c=>c.command==='position_recording_controls').args")
+                assert placement['sessionId'] == SESSION and placement['width'] > 0
+                assert placement['height'] == 52 and placement['preservePosition'] is False
+                if key == 'click':
+                    await action.click()
+                else:
+                    await w.keyboard.press('Escape')
+                await w.wait_for_function("calls.filter(c=>c.command==='stop_recording').length===1")
+                assert await count(w,'begin_recording') == await count(w,'pause_recording') == 0
+                results.append('late control panel hydrates a visible, enabled cancel action; '+key+' stops the starting session')
+                await c.close()
             for viewport,size in [({'width':320,'height':320},112),({'width':280,'height':220},88)]:
                 c,w = await page(viewport=viewport,reduced_motion='reduce')
                 await w.get_by_role('button',name='Cancel Countdown').wait_for()

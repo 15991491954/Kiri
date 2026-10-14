@@ -8,6 +8,7 @@ pub mod locale;
 pub mod ocr_provider;
 pub mod pin_placement;
 pub mod policy;
+pub mod recording_controls;
 pub mod recording_recovery;
 pub mod shortcut;
 pub mod video_project;

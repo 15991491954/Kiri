@@ -23,6 +23,9 @@ const ControlPanelWindow = React.lazy(() =>
 const RippleWindow = React.lazy(() =>
   import("./windows/RippleWindow").then((module) => ({ default: module.RippleWindow })),
 );
+const RecordingRegionWindow = React.lazy(() =>
+  import("./windows/RecordingRegionWindow").then((module) => ({ default: module.RecordingRegionWindow })),
+);
 const EditorWindow = React.lazy(() =>
   import("./windows/EditorWindow").then((module) => ({ default: module.EditorWindow })),
 );
@@ -93,6 +96,8 @@ function App() {
       return <CountdownWindow />;
     case "control-panel":
       return <ControlPanelWindow />;
+    case "recording-region":
+      return <RecordingRegionWindow />;
     case "ripple":
       return <RippleWindow />;
     case "editor":

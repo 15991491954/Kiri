@@ -21,7 +21,7 @@ function pinWindow(options = {}) {
     startDragging: async () => { drags += 1; },
     close: async () => { closes += 1; },
     innerSize: async () => ({ width: 400, height: 200 }),
-    scaleFactor: async () => 2,
+    scaleFactor: options.scaleFactor ?? (async () => options.scale ?? 2),
     outerPosition: options.outerPosition ?? (async () => ({ x: -400, y: 100 })),
     setSize(value) { const result = deferred(); sizes.push({ value, ...result }); return result.promise; },
     setPosition(value) { const result = deferred(); positions.push({ value, ...result }); return result.promise; },
@@ -34,6 +34,7 @@ function pinWindow(options = {}) {
       onPinOnTop: async callback => { pinned = callback; return () => { pinned = null; }; }},
     "./pin-window.css": {},
   }});
+  h.window.devicePixelRatio = options.contentScale ?? 2.5;
   const component = h.mount("PinWindow", {id: "test-image"});
   component.render();
   return {component, requests, sizes, positions, drags: () => drags, closes: () => closes,
@@ -106,7 +107,7 @@ test("a stale rejected toggle does not show an error after a successful library 
 });
 
 test("borderless references drag only from the image and retain accessible close controls", async () => {
-  const h = pinWindow();
+  const h = pinWindow({ userAgent: "Linux" });
   const tree = nodes(h.component.render());
   const image = tree.find(node => node?.type === "main");
   image.props.onPointerDown({ button: 2 });
@@ -146,13 +147,14 @@ const moveEvent = (x, y, pointerId = 1) => ({ button: 0, pointerId, screenX: x, 
   preventDefault() {}, currentTarget: { setPointerCapture() {} } });
 const imageSurface = h => nodes(h.component.render()).find(node => node?.type === "main");
 
-test("macOS image dragging uses physical positions and coalesces Retina movement", async () => {
-  const h = pinWindow({ userAgent: "Macintosh" });
+for (const userAgent of ["Macintosh", "Windows"]) {
+test(`${userAgent} image dragging uses physical positions and coalesces movement`, async () => {
+  const h = pinWindow({ userAgent });
   const image = imageSurface(h);
   image.props.onPointerDown(moveEvent(100, 100));
   image.props.onPointerMove(moveEvent(150, 125));
   await settleRequests();
-  assert.equal(h.drags(), 0, "AppKit dragging must not depend on an asynchronous mouse-down event");
+  assert.equal(h.drags(), 0, "dragging must not depend on an asynchronous native mouse-down event");
   assert.deepEqual({ ...h.positions[0].value }, { x: -300, y: 150 });
   image.props.onPointerMove(moveEvent(170, 135));
   image.props.onPointerUp(moveEvent(200, 150));
@@ -166,9 +168,9 @@ test("macOS image dragging uses physical positions and coalesces Retina movement
   assert.equal(h.positions.length, 2, "released pointers cannot move the window");
 });
 
-test("a short macOS drag retains its last position while the native origin is loading", async () => {
+test(`a short ${userAgent} drag retains its last position while the native origin is loading`, async () => {
   const origin = deferred();
-  const h = pinWindow({ userAgent: "Mac OS X", outerPosition: () => origin.promise });
+  const h = pinWindow({ userAgent, outerPosition: () => origin.promise });
   const image = imageSurface(h);
   image.props.onPointerDown(moveEvent(30, 40));
   image.props.onPointerMove(moveEvent(45, 50, 2));
@@ -180,10 +182,10 @@ test("a short macOS drag retains its last position while the native origin is lo
   h.positions[0].resolve();
 });
 
-test("cancelled and unmounted macOS drags cannot apply a late origin or pending movement", async () => {
+test(`cancelled and unmounted ${userAgent} drags cannot apply a late origin or pending movement`, async () => {
   for (const end of ["cancel", "unmount"]) {
     const origin = deferred();
-    const h = pinWindow({ userAgent: "Macintosh", outerPosition: () => origin.promise });
+    const h = pinWindow({ userAgent, outerPosition: () => origin.promise });
     const image = imageSurface(h);
     image.props.onPointerDown(moveEvent(100, 100));
     image.props.onPointerMove(moveEvent(200, 200));
@@ -195,16 +197,60 @@ test("cancelled and unmounted macOS drags cannot apply a late origin or pending 
   }
 });
 
-test("right clicks never start macOS movement and other desktops retain native drag", async () => {
-  const mac = pinWindow({ userAgent: "Macintosh" });
-  imageSurface(mac).props.onPointerDown({ button: 2 });
+test(`a newer ${userAgent} drag invalidates an older delayed origin`, async () => {
+  const origins = [deferred(), deferred()];
+  let reads = 0;
+  const h = pinWindow({ userAgent, outerPosition: () => origins[reads++].promise });
+  const image = imageSurface(h);
+  image.props.onPointerDown(moveEvent(10, 20));
+  image.props.onPointerUp(moveEvent(200, 250));
+  image.props.onPointerDown(moveEvent(300, 350));
+  image.props.onPointerUp(moveEvent(320, 380));
+  origins[1].resolve({ x: -400, y: 100 });
   await settleRequests();
-  assert.equal(mac.positions.length, 0);
-  for (const userAgent of ["Windows", "Linux"]) {
+  assert.deepEqual({ ...h.positions[0].value }, { x: -360, y: 160 });
+  h.positions[0].resolve();
+  origins[0].resolve({ x: -400, y: 100 });
+  await settleRequests();
+  assert.equal(h.positions.length, 1, "the old gesture must not jump the window back");
+});
+}
+
+test("Windows drag waits for both native origin and display scale, independent of WebView content zoom", async () => {
+  for (const scale of [1, 1.25, 2]) {
+    const displayScale = deferred();
+    const h = pinWindow({ userAgent: "Windows NT 10.0", contentScale: 2.5,
+      scaleFactor: () => displayScale.promise });
+    const image = imageSurface(h);
+    image.props.onPointerDown(moveEvent(-20, 35));
+    image.props.onPointerUp(moveEvent(15, 61));
+    await settleRequests();
+    assert.equal(h.positions.length, 0, "a partial native snapshot cannot move the window");
+    displayScale.resolve(scale);
+    await settleRequests();
+    assert.deepEqual({ ...h.positions[0].value }, {
+      x: Math.round(-400 + 35 * scale), y: Math.round(100 + 26 * scale),
+    }, "screen-coordinate deltas use the native display scale exactly once");
+    h.positions[0].resolve();
+    h.component.unmount();
+  }
+});
+
+test("right clicks never drag or expose the browser image menu; Linux retains native dragging", async () => {
+  for (const userAgent of ["Macintosh", "Windows", "Linux"]) {
     const h = pinWindow({ userAgent });
-    imageSurface(h).props.onPointerDown({ button: 0 });
-    assert.equal(h.drags(), 1);
+    imageSurface(h).props.onPointerDown({ button: 2 });
+    let prevented = 0;
+    h.component.render().props.onContextMenu({ preventDefault: () => prevented++ });
+    await settleRequests();
+    assert.equal(prevented, 1, userAgent);
     assert.equal(h.positions.length, 0);
+    assert.equal(h.drags(), 0);
+    if (userAgent === "Linux") {
+      imageSurface(h).props.onPointerDown({ button: 0 });
+      assert.equal(h.drags(), 1);
+    }
+    h.component.unmount();
   }
 });
 

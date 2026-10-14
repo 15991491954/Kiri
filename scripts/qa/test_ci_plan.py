@@ -19,7 +19,8 @@ class PlanTests(unittest.TestCase):
         return policy.plan("pull_request", "refs/pull/71/merge", {}, list(paths))
 
     def test_docs_and_evidence_do_not_build_or_render(self):
-        result = self.auto("README_ZH.md", "docs/qa/report.md", "docs/qa/after.png")
+        result = self.auto("docs/readme/zh-CN.md", "docs/privacy/en.md", "docs/roadmap.md",
+                           "docs/qa/report.md", "docs/qa/after.png")
         self.assertEqual(set(result.values()), {"quick", "false"})
 
     def test_frontend_runs_renderer_without_native_packages(self):

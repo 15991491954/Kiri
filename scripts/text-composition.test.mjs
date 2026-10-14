@@ -214,7 +214,7 @@ function windowHandler(filename, name) {
   assert.ok(handler);
   const calls = [];
   const action = name => () => calls.push(name);
-  const context = { isTextComposition, completionLock: { locked: false },
+  const context = { isTextComposition, document: { querySelector: () => null }, completionLock: { locked: false },
     colorPicker: { onCopyKeyDown: () => false },
     qrRequestRef: { current: null }, readOnlyRef: { current: false }, closeQr: action("closeQr"),
     phaseRef: { current: "annotating" }, tool: "select",

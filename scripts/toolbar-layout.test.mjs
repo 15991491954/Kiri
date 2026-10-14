@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { capturePanelLayout, captureToolbarPosition } from "../src/windows/toolbar-layout.js";
+import { capturePanelLayout, captureToolbarPosition, recordingPanelLayout } from "../src/windows/toolbar-layout.js";
 import { createLibraryHarness, nodes } from "./helpers/library-render-harness.mjs";
 
 const overlaps = (position, size, rect) => position.left < rect.x + rect.width &&
@@ -177,7 +177,7 @@ test("only visible HUD rows receive pointer input, with measurement updated when
   component.unmount();
 });
 
-test("the installed X11 recording region keeps MP4 and its footer clear of the Screenshot mode button", () => {
+test("legacy outside-panel layout keeps its actions clear of the mode selector", () => {
   const selection = { x: 300, y: 10, width: 680, height: 380 };
   const bounds = { x: 0, y: 0, width: 1280, height: 800 };
   const mode = { x: 492, y: 44, width: 296, height: 44 };
@@ -191,7 +191,7 @@ test("the installed X11 recording region keeps MP4 and its footer clear of the S
   assert.ok(!overlaps(mp4, { width: 158, height: 32 }, mode), "MP4 must not click the Screenshot selector");
 });
 
-test("scrollable Record and OCR panels stay clear of wrapped and dragged modes at every edge", () => {
+test("scrollable OCR panels stay clear of wrapped and dragged modes at every edge", () => {
   for (const [width, height] of [[320, 480], [480, 640], [1280, 800]]) {
     const bounds = { x: 0, y: 0, width, height };
     const modeWidth = Math.min(304, width - 16), modeHeight = width === 320 ? 80 : 44;
@@ -213,41 +213,173 @@ test("scrollable Record and OCR panels stay clear of wrapped and dragged modes a
   }
 });
 
-test("panel placement measures hidden recording content while keeping the footer outside its scroll area", () => {
+function recordingSetup() {
   const source = readFileSync(new URL("../src/windows/OverlayWindow.tsx", import.meta.url), "utf8");
   const panel = source.slice(source.indexOf("export function RecordOptionsPanel("), source.indexOf("interface ToolbarProps"));
-  let naturalHeight = 460, style;
-  const measured = { getBoundingClientRect() { return { height: Math.min(naturalHeight, style.maxHeight) }; } };
-  const scroll = { get scrollHeight() { return naturalHeight - 76; },
-    get clientHeight() { return Math.max(0, Math.min(naturalHeight, style.maxHeight) - 76); }, firstElementChild: {} };
+  const clamp = source.slice(source.indexOf("function clampFloatingControl("), source.indexOf("// --- window hover candidate"));
+  let naturalHeight = 184, style, changes = [], starts = 0, cancels = 0;
+  const measured = {
+    getBoundingClientRect() { return { height: Math.min(naturalHeight, style.maxHeight) }; },
+    get clientHeight() { return Math.min(naturalHeight, style.maxHeight); },
+    get scrollHeight() { return style.maxHeight < 168 ? naturalHeight : this.clientHeight; },
+  };
+  const scroll = { get scrollHeight() { return naturalHeight - 64; },
+    get clientHeight() { return style.maxHeight < 168 ? naturalHeight - 64 : Math.max(0, Math.min(naturalHeight, style.maxHeight) - 64); }, firstElementChild: {} };
   const harness = createLibraryHarness({}, `import React,{useState,useRef,useEffect,useLayoutEffect} from "react";
     import {t} from "../i18n"; import {KiriIcon} from "../components/KiriIcons";
-    const ToolButton=()=>null, captureToolbarPosition=${captureToolbarPosition.toString()}, capturePanelLayout=${capturePanelLayout.toString()};
-    ${panel}`, {
+    const Mic="mic", Volume2="volume", MousePointer2="pointer", MousePointerClick="clicks", RecordingMicrophoneSelect="mic-select";
+    const FLOATING_CONTROL_MARGIN=8,minX=r=>r.x,minY=r=>r.y,maxX=r=>r.x+r.width,maxY=r=>r.y+r.height;
+    ${clamp} const recordingPanelLayout=${recordingPanelLayout.toString()}; ${panel}; export {RecordInput};`, {
     attachRef(node) {
-      if (node.props.ref && node.props.className === "kiri-hud") { style = node.props.style; node.props.ref.current = measured; }
-      if (node.props.ref && node.props.style?.overflowY === "auto") node.props.ref.current = scroll;
+      if (node.props.ref && node.props.className === "kiri-record-options") { style = node.props.style; node.props.ref.current = measured; }
+      if (node.props.ref && node.props.className === "kiri-record-options__scroll") node.props.ref.current = scroll;
     },
     globals: { ResizeObserver: class { observe() {} disconnect() {} } },
   });
-  const props = { anchor: { x: 300, y: 10, width: 680, height: 380 }, bounds: { x: 0, y: 0, width: 1280, height: 800 },
-    modeSelectorBounds: { x: 492, y: 44, width: 296, height: 44 }, options: { outputFormat: "mp4" }, sizeControlsOpen: false };
+  const props = { anchor: { x: 100, y: 140, width: 600, height: 350 }, bounds: { x: 0, y: 0, width: 1280, height: 800 },
+    modeSelectorBounds: { x: 492, y: 44, width: 296, height: 44 }, options: { outputFormat: "mp4", usesCountdown: true,
+      capturesSystemAudio: true, capturesMicrophone: false, showsCursor: true, highlightsClicks: true }, sizeControlsOpen: false,
+    systemAudioSupported: true, micSupported: true, clickHighlightsSupported: true, trayRecordingControls: false,
+    onChange: value => changes.push(value), onStart: () => starts++, onCancel: () => cancels++, onToggleSize() {} };
   const component = harness.mount("RecordOptionsPanel", props);
-  let tree = component.render();
-  let root = nodes(tree).find(node => node?.props?.className === "kiri-hud");
-  assert.equal(root.props.style.top, 400);
-  assert.equal(root.props.style.maxHeight, 392);
-  naturalHeight = 740;
-  tree = component.render({ ...props, bounds: { x: 0, y: 0, width: 320, height: 480 },
+  return { component, props, harness, changes, counts: () => ({ starts, cancels }),
+    height(value) { naturalHeight = value; } };
+}
+
+const recordingRoot = tree => nodes(tree).find(node => node?.props?.className === "kiri-record-options");
+const setupPointer = (x, y, button = false, header = true) => ({ button: 0, pointerId: 1, clientX: x, clientY: y,
+  target: { closest: selector => selector === ".kiri-record-options__header" ? header : button }, currentTarget: { setPointerCapture() {} }, preventDefault() {}, stopPropagation() {} });
+
+test("recording setup centers inside a roomy selection and below a small selection", () => {
+  const bounds = { x: 0, y: 0, width: 1200, height: 800 };
+  const size = { width: 336, height: 184 };
+  assert.deepEqual(recordingPanelLayout({ x: 100, y: 140, width: 600, height: 350 }, bounds, size),
+    { left: 232, top: 223, width: 336, maxHeight: 784 });
+  const small = recordingPanelLayout({ x: 100, y: 140, width: 280, height: 94 }, bounds, size);
+  assert.equal(small.left, 72); assert.equal(small.top, 246);
+  const bottom = recordingPanelLayout({ x: 850, y: 690, width: 280, height: 94 }, bounds, size);
+  assert.equal(bottom.top, 494); assert.ok(bottom.left + bottom.width <= 1192);
+  const side = recordingPanelLayout({ x: 20, y: 0, width: 90, height: 800 }, bounds, size);
+  assert.equal(side.left, 122); assert.equal(side.top, 308);
+});
+
+test("recording setup keeps resized dimensions controls clear above and beside small selections", () => {
+  const p = recordingPanelLayout({ x: 400, y: 450, width: 180, height: 130 },
+    { x: 0, y: 0, width: 800, height: 600 }, { width: 336, height: 300 }, null, true);
+  assert.equal(p.top, 100);
+  assert.ok(p.top + 300 <= 412, "the width field at y=412 remains reachable");
+  const side = recordingPanelLayout({ x: 20, y: 0, width: 90, height: 800 },
+    { x: 0, y: 0, width: 1200, height: 800 }, { width: 336, height: 184 }, null, true);
+  assert.equal(side.left, 190, "right side placement clears the height field");
+});
+
+test("recording setup edges stay on screen and clear wrapped/moved mode selectors", () => {
+  for (const [width, height] of [[320, 480], [800, 600], [1512, 982]]) {
+    const bounds = { x: 0, y: 0, width, height };
+    const mode = { x: 8, y: 44, width: Math.min(304, width - 16), height: width === 320 ? 80 : 44 };
+    for (const selection of [bounds, { x: 0, y: 0, width: 100, height: 90 },
+      { x: width - 100, y: height - 90, width: 100, height: 90 }]) {
+      for (const panelHeight of [184, 400, 800]) {
+        const p = recordingPanelLayout(selection, bounds, { width: 336, height: panelHeight }, mode);
+        const size = { width: p.width, height: Math.min(panelHeight, p.maxHeight) };
+        assert.ok(p.left >= 8 && p.left + size.width <= width - 8);
+        assert.ok(p.top >= 8 && p.top + size.height <= height - 8);
+        assert.ok(!overlaps(p, size, mode), JSON.stringify({ p, size, mode, selection }));
+      }
+    }
+  }
+});
+
+test("recording setup stays still during selection gestures and always follows its selection", () => {
+  const h = recordingSetup();
+  let root = recordingRoot(h.component.render());
+  const start = root.props.style;
+  root = recordingRoot(h.component.render({ ...h.props, selectionAdjusting: true,
+    anchor: { x: 600, y: 450, width: 180, height: 100 } }));
+  assert.equal(root.props.style.left, start.left); assert.equal(root.props.style.top, start.top);
+  assert.equal(root.props["data-adjusting"], true);
+  root = recordingRoot(h.component.render({ ...h.props, anchor: { x: 600, y: 450, width: 180, height: 100 } }));
+  assert.equal(root.props.style.top, 562);
+  const automaticPosition = root.props.style;
+  root.props.onPointerDown(setupPointer(700, 570));
+  root.props.onPointerMove(setupPointer(4000, 4000));
+  root.props.onPointerUp(setupPointer(4000, 4000));
+  root = recordingRoot(h.component.render());
+  assert.deepEqual(root.props.style, automaticPosition, "panel does not support manual dragging");
+  h.component.unmount();
+  const fresh = recordingSetup();
+  root = recordingRoot(fresh.component.render());
+  assert.equal(root.props.style.left, 210); assert.equal(root.props.style.top, 223);
+  fresh.component.unmount();
+});
+
+test("recording setup keeps four direct controls without a second settings panel", () => {
+  const h = recordingSetup();
+  let tree = h.component.render();
+  const header = nodes(tree).find(node => node?.props?.className === "kiri-record-options__header");
+  const start = nodes(header).find(node => node?.props?.className === "kiri-record-options__start");
+  start.props.onClick(); assert.equal(h.counts().starts, 1);
+  assert.deepEqual(nodes(tree).filter(node => node?.props?.onToggle).map(node => node.props.label),
+    ["System audio", "Microphone", "Pointer", "Click highlight"]);
+  assert.ok(!nodes(tree).some(node => node?.props?.["aria-label"] === "More Actions"));
+  assert.ok(!nodes(tree).some(node => node?.props?.label === "3-second countdown"));
+  const microphone = nodes(tree).find(node => node?.props?.label === "Microphone");
+  assert.ok(microphone.props.accessory, "microphone selection is beside its control");
+  h.height(240);
+  tree = h.component.render({ ...h.props, bounds: { x: 0, y: 0, width: 320, height: 480 },
     anchor: { x: 0, y: 0, width: 320, height: 480 }, modeSelectorBounds: { x: 8, y: 44, width: 304, height: 80 } });
-  root = nodes(tree).find(node => node?.props?.className === "kiri-hud");
+  const root = recordingRoot(tree);
   assert.equal(root.props.style.width, 304);
-  assert.ok(root.props.style.top >= 134);
-  assert.ok(root.props.style.top + root.props.style.maxHeight <= 472);
-  const footer = nodes(tree).find(node => node?.props?.style?.flexShrink === 0 && node.props.style.display === "flex");
-  assert.ok(footer, "Start/Cancel must remain in the fixed footer");
-  assert.ok(!nodes(footer).some(node => node?.props?.ref?.current === scroll));
-  component.unmount();
+  assert.ok(root.props.style.top >= 136);
+  assert.ok(root.props.style.top + Math.min(240, root.props.style.maxHeight) <= 472);
+  h.component.unmount();
+});
+
+test("very short available space scrolls the whole setup without losing its natural height", () => {
+  const h = recordingSetup();
+  h.height(300);
+  const root = recordingRoot(h.component.render({ ...h.props,
+    bounds: { x: 0, y: 0, width: 480, height: 320 },
+    anchor: { x: 0, y: 0, width: 480, height: 320 },
+    modeSelectorBounds: { x: 88, y: 138, width: 304, height: 44 },
+  }));
+  assert.equal(root.props.style.maxHeight, 118);
+  assert.equal(root.props["data-constrained"], true);
+  const expanded = recordingRoot(h.component.render(h.props));
+  assert.equal(expanded.props["data-constrained"], undefined);
+  assert.equal(expanded.props.style.top, 165, "restored space centers the full 300px panel, not the clipped 118px viewport");
+  h.component.unmount();
+});
+
+test("format and device controls preserve silent GIF, platform limits, and pointer-highlight dependency", () => {
+  const h = recordingSetup();
+  let tree = h.component.render();
+  const pointer = nodes(tree).find(node => node?.props?.label === "Pointer");
+  pointer.props.onToggle();
+  assert.equal(h.changes[0].showsCursor, false); assert.equal(h.changes[0].highlightsClicks, false);
+  const gif = nodes(tree).find(node => node?.props?.className === "kiri-record-options__format" && node.props.children.includes("GIF"));
+  gif.props.onClick(); assert.equal(h.changes[1].outputFormat, "gif");
+  tree = h.component.render({ ...h.props, options: { ...h.props.options, outputFormat: "gif" } });
+  assert.equal(nodes(tree).find(node => node?.props?.label === "System audio").props.disabled, true);
+  assert.equal(nodes(tree).find(node => node?.props?.label === "Microphone").props.disabled, true);
+  tree = h.component.render({ ...h.props, systemAudioSupported: false, micSupported: false });
+  for (const label of ["System audio", "Microphone"]) {
+    const input = nodes(tree).find(node => node?.props?.label === label);
+    assert.equal(input.props.disabled, true); assert.equal(input.props.title, "Unavailable on this platform");
+  }
+  tree = h.component.render({ ...h.props, clickHighlightsSupported: false });
+  assert.equal(nodes(tree).find(node => node?.props?.label === "Click highlight").props.disabled, true);
+  tree = h.component.render({ ...h.props, options: { ...h.props.options, showsCursor: false } });
+  const highlight = nodes(tree).find(node => node?.props?.label === "Click highlight");
+  assert.equal(highlight.props.disabled, true); assert.equal(highlight.props.checked, false);
+  const root = recordingRoot(tree), previous = root.props.style;
+  root.props.onPointerDown(setupPointer(200, 200, true));
+  root.props.onPointerMove(setupPointer(600, 600));
+  assert.deepEqual(recordingRoot(h.component.render()).props.style, previous, "control clicks cannot drag the panel");
+  root.props.onPointerDown(setupPointer(200, 200, false, false));
+  root.props.onPointerMove(setupPointer(600, 600));
+  assert.deepEqual(recordingRoot(h.component.render()).props.style, previous, "scrollable settings remain available to touch scrolling");
+  h.component.unmount();
 });
 
 test("remote OCR measures wrapped content without hiding the mode selector or sending on layout changes", () => {

@@ -2,7 +2,7 @@
 
 [简体中文](usage.zh-CN.md) · **English** · [繁體中文](usage.zh-TW.md) · [日本語](usage.ja.md) · [Deutsch](usage.de.md) · [한국어](usage.ko.md) · [Français](usage.fr.md)
 
-[Back to README](../README_EN.md)
+[Back to README](readme/en.md)
 
 ## Install and update
 
@@ -32,7 +32,7 @@ Press ⇧⌘A on macOS or Shift+Ctrl+A on Windows / Linux X11, then select a win
 
 Choose Screenshot, Record, or OCR. The screenshot toolbar also offers Recognize QR Codes. Enter confirms a screenshot; Esc cancels capture. Screenshots go to your clipboard and local library. You can change the capture shortcut in Settings on macOS, Windows, and X11.
 
-Before choosing an annotation tool, click the screenshot toolbar's sliders button to show editable width and height labels on the selection edges. The recording settings offer the same button. Values use output pixels, including on Retina displays. Enter or leaving a field applies its value; Esc discards the current input, and a second Esc cancels capture. Arrow keys adjust by one pixel, or ten with Shift. Click the sliders again to hide the labels. Once annotation starts, the sliders retain their appearance controls.
+Before choosing an annotation tool, click the screenshot toolbar's sliders button to show editable width and height labels on the selection edges. Values use output pixels, including on Retina displays. Enter or leaving a field applies its value; Esc discards the current input, and a second Esc cancels capture. Arrow keys adjust by one pixel, or ten with Shift. Click the sliders again to hide the labels. Once annotation starts, the sliders retain their appearance controls.
 
 On macOS, if you change display layout, resolution, or scale after selecting a region, start a new capture before recording. If recording is paused, stop and save it first.
 
@@ -40,17 +40,43 @@ While typing an annotation, Ctrl/Cmd+Z undoes text and Shift+Enter adds a line. 
 
 On GNOME Wayland, if the first capture shows no permission dialog, open Kiri's Library and choose Request Access in the error banner. Allow screenshot access in GNOME's dialog, then retry Capture. Kiri discards the authorization image. See the [Linux guide](linux.md).
 
+Recording preparation offers MP4 / GIF, Start, and four inline icons: system audio, microphone, pointer, and click highlights. Start always runs a three-second countdown; GIF recordings are silent. The panel adapts to the selection and display edges.
+
+Use the small arrow beside the microphone to select an actual input device without changing the system default. If the selected device is unavailable or disconnects, Kiri reports an error instead of silently switching microphones.
+
+On macOS and Windows, recording controls follow the selection and adapt near display edges. Dragging moves the current panel; the next capture positions it from the new selection again. Pause keeps the recorded elapsed time, and resume continues it. Older Windows versions may still show the system’s full-display capture border. Linux continues to use tray actions or commands.
+
 ## Screenshot annotations
 
 Select an existing annotation to change its style. Mosaic offers freehand, rectangle, and ellipse shapes, with pixel or blur effects and adjustable strength. Use Watermark (W) to type directly on the image, then choose a single mark or a tiled pattern and adjust opacity, angle, and spacing. Watermarks remain editable after saving.
+
+Text (T), Numbered callout (N), and Label bubble (B) each have their own button in the screenshot and image-editor toolbars. Choose Numbered callout, click to place a number, and type its description directly on the image; Return adds a line. Drag the number and transparent description separately, and adjust size, color, and filled or outline style.
+
+Single-click existing text, numbered notes, labels, or watermarks to select them; drag to move and double-click to edit. Press `Delete` or `Backspace` to remove a selected annotation, or click **Delete annotation**. Undo with `⌘Z` / `Ctrl+Z`. While typing, deletion keys only delete text.
+
+While entering text, a numbered description, or a label, the first action on empty canvas finishes editing and clears selection; the next uses the current tool. Text and shape tools also clear an existing selection before placing another mark. The tool stays selected, and Pen and mosaic support continuous strokes. Clicking the canvas ends watermark input; editing again reuses the same watermark.
+
+Annotations stack in creation order. Mosaic added later processes earlier text, shapes and watermarks; annotations added afterward appear above it. Moving or editing an annotation keeps its layer.
+
+## References and colors
+
+Double-click an unmarked part of the screenshot selection to finish; double-clicking existing text still edits it. The toolbar pin saves and pins a screenshot, and Pin on the completion card opens the same kind of reference. The reference has a thin black rounded border. Drag the image to move it, resize proportionally from the lower-right corner, and hover to unpin or close.
+
+In Screenshot mode, hover to magnify the original pixels and see their coordinates and HEX color. Press `⌘C` on macOS or `Ctrl+C` to copy the color while keeping the selection. The loupe hides once annotation starts.
 
 ## GIF conversion
 
 Converting a library MP4 to GIF checks video decoding before encoding. Use Cancel during checking or conversion; Cancel all stops multiple jobs. The original video remains. Cancellation is unavailable once the final library save begins.
 
+## Library and feedback
+
+Use Select Multiple to check items or select all, then move them to Trash; ordinary clicks still open an item. Trash supports batch restore and confirms Empty Trash inside the main window. Renaming updates the actual filename while keeping its type. Copy File in the context menu pastes into a folder; Copy still pastes image pixels.
+
+When reporting a problem, use Settings → About → Copy Info for app, system and display information. It excludes captures, credentials and personal paths.
+
 ## Privacy
 
-Captures and media processing stay local. Remote OCR is optional and asks before each upload. Editable screenshots retain an original image locally, including pixels covered by annotations. Read the [privacy policy](../PRIVACY.md).
+Captures and media processing stay local. Remote OCR is optional and asks before each upload. Editable screenshots retain an original image locally, including pixels covered by annotations. Read the [privacy policy](privacy/en.md).
 
 ## More docs
 

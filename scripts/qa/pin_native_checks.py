@@ -1,8 +1,47 @@
 """Shared assertions for real, isolated screenshot pinning acceptance."""
 
 import json
+import math
 from pathlib import Path
 import re
+
+
+def pin_content_evidence(actual, reference, scale):
+    """Compare image content without Kiri's CSS frame and rounded corners."""
+    from PIL import ImageChops, ImageStat
+
+    if not math.isfinite(scale) or scale <= 0 or actual.size != reference.size:
+        raise RuntimeError("Pin pixel comparison needs matching dimensions and a valid display scale")
+    # The frame is 2 CSS px with an inner 1px highlight. Four CSS px also
+    # clears the antialiased corners without weakening the content threshold.
+    inset = math.ceil(4 * scale)
+    width, height = actual.size
+    if min(width, height) <= 2 * inset:
+        raise RuntimeError("Pin is too small for an independent content comparison")
+    bounds = (inset, inset, width - inset, height - inset)
+    diff = ImageChops.difference(actual.convert("RGB").crop(bounds), reference.convert("RGB").crop(bounds))
+    return {"mean_pixel_error": sum(ImageStat.Stat(diff).mean) / 3,
+            "content_inset_physical": inset, "display_scale": scale}
+
+
+def pin_outline_evidence(actual, reference, scale):
+    """Sample the straight sides: rounded corners intentionally show the desktop."""
+    if not math.isfinite(scale) or scale <= 0 or actual.size != reference.size:
+        raise RuntimeError("Pin outline comparison needs matching dimensions and a valid display scale")
+    width, height = actual.size
+    if min(width, height) <= math.ceil(8 * scale):
+        raise RuntimeError("Pin is too small for independent frame samples")
+    offset = max(0, round(scale - 0.5))  # Center of the 2 CSS px dark stroke.
+    points = [(width // 2, offset), (width - 1 - offset, height // 2),
+              (width // 2, height - 1 - offset), (offset, height // 2)]
+    actual, reference = actual.convert("RGB"), reference.convert("RGB")
+    pixels = [actual.getpixel(point) for point in points]
+    contrast = [max(abs(a - b) for a, b in zip(pixel, reference.getpixel(point)))
+                for point, pixel in zip(points, pixels)]
+    if any(max(pixel) > 64 for pixel in pixels) or min(contrast) < 25:
+        raise RuntimeError(f"Pinned reference is missing a dark, visible frame side: pixels={pixels}, contrast={contrast}")
+    return {"side_sample_points": points, "side_pixels": pixels,
+            "side_contrast": contrast, "display_scale": scale, "visible": True}
 
 
 def pin_open_log_marker(asset_id):

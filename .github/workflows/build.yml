@@ -215,6 +215,16 @@ jobs:
         env:
           KIRI_LINUX_MEDIA_QA_DIR: ${{ runner.temp }}/kiri-linux-media-review
           KIRI_LINUX_VIDEO_QA_DIR: ${{ runner.temp }}/kiri-linux-media-review/video-export
+      - name: Repeat Linux audio fixture and reordered export regressions
+        run: |
+          for pass in 1 2 3 4 5; do
+            KIRI_LINUX_MEDIA_QA_DIR="$KIRI_LINUX_MEDIA_QA_DIR/fixture-pass-$pass" \
+              cargo test --locked --manifest-path src-tauri/Cargo.toml native_audio_content_fixture_has_no_startup_gap_when_source_is_delayed -- --nocapture --test-threads=1
+            KIRI_LINUX_VIDEO_QA_DIR="$KIRI_LINUX_MEDIA_QA_DIR/export-pass-$pass" \
+              cargo test --locked --manifest-path src-tauri/Cargo.toml native_linux_recorded_audio_survives_reordered_video_export -- --nocapture --test-threads=1
+          done
+        env:
+          KIRI_LINUX_MEDIA_QA_DIR: ${{ runner.temp }}/kiri-linux-media-review
       - name: Verify Linux system audio with a private FIFO sink
         run: |
           for pass in 1 2 3; do
