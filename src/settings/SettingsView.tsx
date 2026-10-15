@@ -286,10 +286,6 @@ function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
       <div className="kiri-settings-section__heading">
         <div>
           <h2 id="about-settings-title" tabIndex={-1}>{t(updater.hasUpdate ? "Update available" : "About")}</h2>
-          {(manualUpdates || isPortable) && <p>
-            {t(manualUpdates ? "Linux updates are installed manually from a downloaded package."
-              : "Portable version: download the latest ZIP from Releases to update.")}
-          </p>}
         </div>
       </div>
       <div className="kiri-settings-card kiri-version-row">
