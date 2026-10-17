@@ -37,6 +37,8 @@ user32.MonitorFromWindow.argtypes=[wintypes.HWND,wintypes.DWORD]
 user32.MonitorFromWindow.restype=wintypes.HANDLE
 user32.GetDpiForWindow.argtypes=[wintypes.HWND]
 user32.GetDpiForWindow.restype=wintypes.UINT
+user32.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+user32.GetWindowTextW.restype=ctypes.c_int
 get_style=user32.GetWindowLongPtrW
 get_style.argtypes=[wintypes.HWND,ctypes.c_int]
 get_style.restype=ctypes.c_ssize_t
@@ -65,6 +67,10 @@ def native_windows():
   return True
  if not user32.EnumWindows(visit,0):raise RuntimeError('Could not enumerate native windows')
  return result
+def hit_evidence(hwnd):
+ owner=wintypes.DWORD();user32.GetWindowThreadProcessId(hwnd,ctypes.byref(owner))
+ title=ctypes.create_unicode_buffer(512);user32.GetWindowTextW(hwnd,title,len(title))
+ return {'hwnd':int(hwnd or 0),'pid':owner.value,'title':title.value}
 def verify_recording_geometry(panel,selection):
  hwnd=panel.handle;panel_rect=window_rect(hwnd);visible=native_windows()
  matches=[w for w in visible if w['hwnd']!=hwnd and all(abs(a-b)<=2 for a,b in zip(w['rect'],selection))]
@@ -79,7 +85,20 @@ def verify_recording_geometry(panel,selection):
  # fills the desktop. Input must reach the underlying source application.
  x=round((selection[0]+selection[2])/2);y=selection[1]+1
  hit=user32.WindowFromPoint(wintypes.POINT(x,y));hit_root=user32.GetAncestor(hit,2)
- if hit_root!=source_window.handle:raise RuntimeError('Recording region border intercepts native input hit testing')
+ geometry=report['recording_geometry']
+ geometry['edge_hit_before_fixture_activation']=hit_evidence(hit_root)
+ geometry['expected_source']=hit_evidence(source_window.handle)
+ geometry['source_rect']=window_rect(source_window.handle)
+ # The assertion concerns border input routing, so make its underlying test
+ # fixture the foreground target rather than assuming no other CI window rose.
+ source_window.set_focus();focus_deadline=time.monotonic()+2
+ while user32.GetAncestor(user32.GetForegroundWindow(),2)!=source_window.handle:
+  if time.monotonic()>=focus_deadline:raise RuntimeError('Recording input fixture did not take native focus')
+  time.sleep(.05)
+ hit=user32.WindowFromPoint(wintypes.POINT(x,y));hit_root=user32.GetAncestor(hit,2)
+ geometry['edge_hit_after_fixture_activation']=hit_evidence(hit_root)
+ if not user32.IsWindowVisible(region_hwnd):raise RuntimeError('Recording region disappeared when its source was focused')
+ if hit_root!=source_window.handle:raise RuntimeError('Recording border input did not reach the focused source: '+json.dumps(geometry['edge_hit_after_fixture_activation']))
  monitor=MonitorInfo();monitor.size=ctypes.sizeof(MonitorInfo)
  if not user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd,2),ctypes.byref(monitor)):
   raise RuntimeError('Could not read controls monitor work area')
