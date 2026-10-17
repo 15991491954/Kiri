@@ -28,6 +28,8 @@ user32.GetWindowDisplayAffinity.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.
 user32.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
 user32.IsWindow.argtypes=[wintypes.HWND]
 user32.IsWindowVisible.argtypes=[wintypes.HWND]
+user32.IsZoomed.argtypes=[wintypes.HWND]
+user32.IsZoomed.restype=wintypes.BOOL
 user32.GetForegroundWindow.restype=wintypes.HWND
 user32.GetAncestor.argtypes=[wintypes.HWND,wintypes.UINT]
 user32.GetAncestor.restype=wintypes.HWND
@@ -89,6 +91,8 @@ def verify_recording_geometry(panel,selection):
  geometry['edge_hit_before_fixture_activation']=hit_evidence(hit_root)
  geometry['expected_source']=hit_evidence(source_window.handle)
  geometry['source_rect']=window_rect(source_window.handle)
+ geometry['source_maximized']=bool(user32.IsZoomed(source_window.handle))
+ if not geometry['source_maximized']:raise RuntimeError('Starting recording changed the source maximized state')
  # The assertion concerns border input routing, so make its underlying test
  # fixture the foreground target rather than assuming no other CI window rose.
  source_window.set_focus();focus_deadline=time.monotonic()+2
@@ -154,6 +158,8 @@ def cancelled():
  time.sleep(3.5)
  if proc.poll() is not None:raise RuntimeError('Cancellation exited the application')
  if exists('Pause Recording') or exists('Cancel Countdown'):raise RuntimeError('Cancelled flow remains active')
+ if not user32.IsZoomed(source_window.handle):raise RuntimeError('Cancelling capture changed the source maximized state')
+ report.setdefault('source_state_after_cancel',[]).append({'maximized':True,'rect':window_rect(source_window.handle)})
 try:
  find('Settings',timeout=35)
  sample=Path(os.environ['RUNNER_TEMP'])/'kiri-countdown-check.txt'
@@ -161,6 +167,10 @@ try:
  subprocess.Popen(['notepad.exe',str(sample)])
  source_window=desktop.window(title_re='.*kiri-countdown-check.*')
  source_window.wait('visible',timeout=20);source_window.maximize();source_window.set_focus();time.sleep(.5)
+ maximized_deadline=time.monotonic()+3
+ while not user32.IsZoomed(source_window.handle):
+  if time.monotonic()>=maximized_deadline:raise RuntimeError('Source fixture did not maximize before capture')
+  time.sleep(.05)
  for mode in ['click','Escape']*3:
   cancel,_=begin();parent=cancel.top_level_parent();h=parent.handle
   if not parent.is_visible():raise RuntimeError('Countdown is not visible')

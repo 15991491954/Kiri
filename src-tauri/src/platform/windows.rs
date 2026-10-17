@@ -13,8 +13,8 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
-    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, PeekMessageW,
-    PostThreadMessageW, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowsHookExW,
+    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+    PeekMessageW, PostThreadMessageW, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowsHookExW,
     ShowWindow, TranslateMessage, UnhookWindowsHookEx, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE,
     SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WH_MOUSE_LL, WM_LBUTTONDOWN,
     WM_QUIT, WM_RBUTTONDOWN,
@@ -29,7 +29,11 @@ use super::{ClickMonitorHandle, MicrophoneAccess};
 pub fn activate_application(pid: u32) {
     if let Some(hwnd) = find_main_window(pid) {
         unsafe {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
+            // SW_RESTORE also unmaximizes a visible source window. Only a
+            // minimized application needs restoring before focus is returned.
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
             let _ = SetForegroundWindow(hwnd);
         }
     }
