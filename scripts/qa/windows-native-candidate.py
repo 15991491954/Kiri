@@ -57,16 +57,21 @@ def validate(run, jobs, run_id, changed_paths):
     require(run.get("id") == run_id and all(run.get(key, {}).get("full_name", "").lower()
             == REPOSITORY.lower() for key in ("repository", "head_repository")),
             "Candidate must belong to the official repository")
-    require(run.get("path") == WORKFLOW and run.get("event") == "workflow_dispatch"
+    release_tag = (run.get("event") == "push" and
+                   bool(re.fullmatch(r"v\d+\.\d+\.\d+", run.get("head_branch", ""))))
+    require(run.get("path") == WORKFLOW and (run.get("event") == "workflow_dispatch" or release_tag)
             and run.get("status") == "completed" and run.get("run_attempt") == 1
             and re.fullmatch(r"[0-9a-f]{40}", run.get("head_sha", "")),
-            "Candidate must be a completed, unambiguous first build dispatch")
+            "Candidate must be a completed first dispatch or official release-tag build")
     windows = [job for job in jobs if job.get("name") == JOB]
     require(len(windows) == 1 and windows[0].get("status") == "completed"
             and windows[0].get("conclusion") in {"success", "failure"},
             "Exactly one completed Windows build job is required")
     steps = {step["name"]: step.get("conclusion") for step in windows[0].get("steps", [])}
-    require(all(steps.get(name) == "success" for name in BUILD_STEPS),
+    required_builds = tuple("Run tauri-apps/tauri-action@v0"
+                            if release_tag and name == "Build Windows acceptance installer" else name
+                            for name in BUILD_STEPS)
+    require(all(steps.get(name) == "success" for name in required_builds),
             "Candidate Rust tests, installer, portable packaging and bundle upload must pass")
     failed = {name for name, result in steps.items() if result == "failure"}
     require(failed <= NATIVE_STEPS.keys(), "Only known native acceptance steps may have failed")
@@ -156,7 +161,12 @@ def main():
     # Authenticate metadata before using the API's source SHA in git.
     job, gates = validate(run, jobs, args.run, [])
     source_sha = run["head_sha"]
-    subprocess.run(["git", "fetch", "--no-tags", "origin", source_sha], check=True)
+    if run["event"] == "push":
+        subprocess.run(["git", "fetch", "--no-tags", "origin", "refs/tags/" + run["head_branch"]], check=True)
+        require(command("git", "rev-parse", "FETCH_HEAD^{commit}") == source_sha,
+                "Release tag no longer matches the original build checkout")
+    else:
+        subprocess.run(["git", "fetch", "--no-tags", "origin", source_sha], check=True)
     harness_sha = command("git", "rev-parse", "HEAD")
     changes = command("git", "diff", "--name-only", "--no-renames", source_sha, harness_sha).splitlines()
     validate(run, jobs, args.run, changes)
@@ -169,7 +179,7 @@ def main():
     evidence.mkdir(exist_ok=True)
     flags = ["--allow-escape-sequences"] if "--allow-escape-sequences" in command("gh", "api", "--help") else []
     log = command("gh", "api", *flags, f"repos/{REPOSITORY}/actions/jobs/{job['id']}/logs")
-    require(checkout_sha(log) == source_sha, "Build checkout differs from the dispatch head")
+    require(checkout_sha(log) == source_sha, "Build checkout differs from the candidate head")
     artifacts = json.loads(command("gh", "api", api_root + "/artifacts?per_page=100"))["artifacts"]
     candidate = Path(os.environ["RUNNER_TEMP"]) / "kiri-native-candidate"
     candidate.mkdir()

@@ -449,7 +449,7 @@ def verify_support_folders():
     focus_library()
     find("Settings", kinds=("Button",), scope=library_window).click_input()
     about = find("About", kinds=("Group",), scope=library_window, scroll=True)
-    find("GitHub", kinds=("Button",), scope=about)
+    find("GitHub", kinds=("Button",), scope=about, scroll=True)
     destinations = [
         ("Settings Folder", Path(app_environment["APPDATA"]) / "io.yuxino.kiri"),
         ("Logs Folder", Path(app_environment["LOCALAPPDATA"]) / "io.yuxino.kiri" / "logs"),

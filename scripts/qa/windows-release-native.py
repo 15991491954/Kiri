@@ -101,14 +101,20 @@ def stop():
 
 def wait_for(description, predicate, timeout=20):
     deadline = time.monotonic() + timeout
+    last_read_error = None
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f"Kiri exited while waiting for {description}")
-        result = predicate()
+        try:
+            result = predicate()
+        except PermissionError as error:
+            # Windows may briefly deny reads while the native index is replaced.
+            last_read_error = error
+            result = False
         if result:
             return result
         time.sleep(0.1)
-    raise RuntimeError(f"Timed out waiting for {description}")
+    raise RuntimeError(f"Timed out waiting for {description}") from last_read_error
 
 
 def pinned_window():

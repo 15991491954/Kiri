@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 spec = importlib.util.spec_from_file_location("candidate", Path(__file__).with_name("windows-native-candidate.py"))
@@ -59,6 +59,34 @@ class CandidateTests(unittest.TestCase):
                 self.run = {**original, key: value}
                 self.validate()
         self.run = original
+
+    def release_tag_candidate(self):
+        self.run.update(event="push", head_branch="v1.6.22")
+        self.step("Build Windows acceptance installer")["conclusion"] = "skipped"
+        self.job["steps"].append({"name": "Run tauri-apps/tauri-action@v0", "conclusion": "success"})
+
+    def test_release_tag_replays_every_gate_with_its_original_bundle(self):
+        self.release_tag_candidate()
+        self.assertEqual(self.validate()[1], list(candidate.NATIVE_STEPS.values()))
+
+    def test_regular_pushes_and_invalid_tag_names_are_rejected(self):
+        self.release_tag_candidate()
+        for branch in ("main", "refs/tags/v1.6.22", "v1.6.22;unsafe", "v1.6.22-beta", ""):
+            self.run["head_branch"] = branch
+            with self.subTest(branch=branch), self.assertRaises(RuntimeError):
+                self.validate()
+
+    def test_release_tag_requires_successful_tauri_packaging(self):
+        self.release_tag_candidate()
+        for result in ("failure", "skipped", None):
+            self.step("Run tauri-apps/tauri-action@v0")["conclusion"] = result
+            with self.subTest(result=result), self.assertRaises(RuntimeError):
+                self.validate()
+
+    def test_release_tag_still_rejects_changed_application_sources(self):
+        self.release_tag_candidate()
+        with self.assertRaises(RuntimeError):
+            self.validate(["src-tauri/src/core/library.rs"])
 
     def test_rejects_missing_duplicate_cancelled_windows_job(self):
         for jobs in ([], [self.job, self.job], [{**self.job, "conclusion": "cancelled"}]):
@@ -232,6 +260,46 @@ class ConfirmationExecutableTests(unittest.TestCase):
         for sha in ("", "short", "not-a-commit"):
             with self.subTest(sha=sha), self.assertRaisesRegex(RuntimeError, "source commit SHA"):
                 self.result(GITHUB_SHA=sha)
+
+
+class NativePollingTests(unittest.TestCase):
+    def setUp(self):
+        source = Path(__file__).with_name("windows-release-native.py").read_text()
+        function = next(node for node in ast.parse(source).body
+                        if isinstance(node, ast.FunctionDef) and node.name == "wait_for")
+        self.now = 0
+        def sleep(seconds):
+            self.now += seconds
+        self.process = Mock()
+        self.process.poll.return_value = None
+        namespace = {"time": Mock(monotonic=lambda: self.now, sleep=sleep), "process": self.process}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), "native-wait", "exec"), namespace)
+        self.wait = namespace["wait_for"]
+
+    def test_transient_read_lock_waits_for_the_real_condition(self):
+        predicate = Mock(side_effect=[PermissionError("replace in progress"), False, "restored"])
+        self.assertEqual(self.wait("restored index", predicate, timeout=1), "restored")
+        self.assertEqual(predicate.call_count, 3)
+
+    def test_persistent_read_lock_still_fails_at_the_original_deadline(self):
+        predicate = Mock(side_effect=PermissionError("still denied"))
+        with self.assertRaisesRegex(RuntimeError, "Timed out") as error:
+            self.wait("restored index", predicate, timeout=0.2)
+        self.assertIsInstance(error.exception.__cause__, PermissionError)
+        self.assertGreaterEqual(self.now, 0.2)
+
+    def test_malformed_index_is_not_treated_as_a_read_lock(self):
+        predicate = Mock(side_effect=ValueError("invalid JSON"))
+        with self.assertRaisesRegex(ValueError, "invalid JSON"):
+            self.wait("restored index", predicate, timeout=1)
+        self.assertEqual(predicate.call_count, 1)
+
+    def test_process_exit_is_not_retried(self):
+        self.process.poll.return_value = 1
+        predicate = Mock(return_value=True)
+        with self.assertRaisesRegex(RuntimeError, "Kiri exited"):
+            self.wait("restored index", predicate, timeout=1)
+        predicate.assert_not_called()
 
 
 if __name__ == "__main__":
