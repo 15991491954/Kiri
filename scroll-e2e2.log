@@ -1,0 +1,21 @@
+[PASS] the capture overlay opens 
+True
+True
+True
+True
+True
+True
+True
+True
+True
+True
+True
+[FAIL] the scrolling screenshot action is reachable {"ok":false,"labels":[]}
+[FAIL] the scrolling preview panel opens 
+[FAIL] the scrolling region window opens 
+[PASS] startup does not fail on capture exclusion 
+
+2/5 checks passed
+  - the scrolling screenshot action is reachable ({"ok":false,"labels":[]})
+  - the scrolling preview panel opens ()
+  - the scrolling region window opens ()

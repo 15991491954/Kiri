@@ -1,0 +1,569 @@
+diff --git a/src/lib/ipc.ts b/src/lib/ipc.ts
+index 24e37b5..b0d9d03 100644
+--- a/src/lib/ipc.ts
++++ b/src/lib/ipc.ts
+@@ -59,8 +59,6 @@ export interface ScrollCaptureStatusDto {
+ 
+ export interface OcrRecognitionDto {
+   text: string;
+-  saved: boolean;
+-  asset: AssetDto | null;
+ }
+ 
+ export interface AssetDto {
+@@ -70,8 +68,6 @@ export interface AssetDto {
+   filename: string;
+   title: string | null;
+   ocrText: string | null;
+-  ocrOriginalText: string | null;
+-  qrText: string | null;
+   tags: string[];
+   pixelWidth: number;
+   pixelHeight: number;
+@@ -181,7 +177,7 @@ export interface ShortcutStatusDto {
+   status: "enabled" | "occupied" | "disabled" | "systemManaged";
+ }
+ 
+-export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "recordingPauseResume" | "recordingStop";
++export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "pastePin" | "recordingPauseResume" | "recordingStop";
+ 
+ export interface ShortcutSettingDto {
+   action: ShortcutAction;
+@@ -305,14 +301,9 @@ export interface QrScanDto { requestId: string; imageUrl: string; width: number;
+ export const api = {
+   scanQr: (requestId: string, selection: RectDto | null, assetId: string | null, expectedRevisionSha256?: string) => invoke<QrScanDto>("scan_qr", { requestId, selection, assetId, expectedRevisionSha256 }),
+   cancelQr: (requestId: string) => invoke<void>("cancel_qr", { requestId }),
+-  qrAction: (requestId: string, index: number, action: string) => invoke<AssetDto | null>("qr_action", { requestId, index, action }),
+-  listQrFavorites: (query: string) => invoke<AssetDto[]>("list_qr_favorites", { query }),
+-  qrFavoriteAction: (id: string, action: string) => invoke<void>("qr_favorite_action", { id, action }),
+-  listOcrRecords: (query: string) => invoke<AssetDto[]>("list_ocr_records", { query }),
+-  updateOcrHistoryText: (id: string, expectedText: string, replacement: string | null) =>
+-    invoke<AssetDto>("update_ocr_history_text", { id, expectedText, replacement }),
++  qrAction: (requestId: string, index: number, action: string) => invoke<void>("qr_action", { requestId, index, action }),
+   recognizeAssetLocal: (id: string) => invoke<OcrRecognitionDto>("recognize_asset_local", { id }),
+-  copyHistoryText: (text: string) => invoke<void>("copy_history_text", { text }),
++  copyOcrText: (text: string) => invoke<void>("copy_ocr_text", { text }),
+   listAssets: (query: string, showingTrash: boolean) =>
+     invoke<AssetDto[]>("list_assets", { query, showingTrash }),
+   getAsset: (id: string) => invoke<AssetDto>("get_asset", { id }),
+@@ -367,6 +358,12 @@ export const api = {
+   copyAssetFile: (id: string) => invoke<void>("copy_asset_file", { id }),
+   openAsset: (id: string) => invoke<void>("open_asset", { id }),
+   pinAsset: (id: string) => invoke<void>("pin_asset", { id }),
++  setPinTopmost: (onTop: boolean) => invoke<void>("set_pin_topmost", { onTop }),
++  raisePin: () => invoke<void>("raise_pin"),
++  zoomPin: (factor: number, anchorX: number, anchorY: number, imageWidth: number, imageHeight: number) =>
++    invoke<{ width: number; height: number }>("zoom_pin", {
++      factor, anchorX, anchorY, imageWidth, imageHeight,
++    }),
+   openEditor: (id: string, recognizeQr = false) => invoke<void>("open_editor", { id, recognizeQr }),
+   takeEditorQrRequest: () => invoke<boolean>("take_editor_qr_request"),
+   revealAsset: (id: string) => invoke<void>("reveal_asset", { id }),
+@@ -380,6 +377,8 @@ export const api = {
+   convertToGif: (id: string) => invoke<void>("convert_to_gif", { id }),
+ 
+   startCapture: () => invoke<CaptureContextDto>("start_capture"),
++  setCaptureMode: (mode: "screenshot" | "record" | "ocr") =>
++    invoke<void>("set_capture_mode", { mode }),
+   cancelCapture: () => invoke<void>("cancel_capture"),
+   startScrollCapture: (captureId: string, selection: RectDto) =>
+     invoke<void>("start_scroll_capture", { captureId, selection }),
+diff --git a/src/qr/QrResults.tsx b/src/qr/QrResults.tsx
+index 4ac3d14..450897a 100644
+--- a/src/qr/QrResults.tsx
++++ b/src/qr/QrResults.tsx
+@@ -1,25 +1,23 @@
+ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+-import { QrCode, Copy, ExternalLink, Star, X, Trash2, ChevronRight } from "lucide-react";
+-import { api, mediaUrl, onLibraryChanged, type AssetDto, type QrCodeDto, type QrScanDto } from "../lib/ipc";
++import { QrCode, Copy, ExternalLink, X, ChevronRight } from "lucide-react";
++import { api, type QrCodeDto, type QrScanDto } from "../lib/ipc";
+ import { t, fmt } from "../i18n";
+ import type { Rect } from "../annotation/geom";
+ import { initialQrSelection, qrCodeCenter, qrContentType, qrLooksLikeLink } from "./selection.js";
+-import "../ocr/text-history.css";
++import "../ocr/text-result.css";
+ import "./qr.css";
+ 
+-export function QrDetails({ code, action, saved = false, removable = false, autoSaving = false, autoSaveError = null, preview, meta }: {
+-  code: QrCodeDto; action(action: string): Promise<unknown>; saved?: boolean; removable?: boolean; autoSaving?: boolean; autoSaveError?: string | null; preview?: ReactNode; meta?: ReactNode;
++export function QrDetails({ code, action, preview, meta }: {
++  code: QrCodeDto; action(action: string): Promise<unknown>; preview?: ReactNode; meta?: ReactNode;
+ }) {
+   const [busy, setBusy] = useState(false);
+   const busyRef = useRef(false);
+   const [message, setMessage] = useState("");
+-  const [favorite, setFavorite] = useState(saved);
+   const contentType = qrContentType(code);
+   const linkWarning = code.suspicious && contentType !== "WeChat" && (!!code.url || qrLooksLikeLink(code.text ?? ""));
+   const directionWarning = code.text?.includes("\u202e") === true;
+   const mounted = useRef(true);
+   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+-  useEffect(() => { setFavorite(saved); }, [saved]);
+   const run = async (name: string) => {
+     if (busyRef.current) return;
+     busyRef.current = true;
+@@ -27,9 +25,7 @@ export function QrDetails({ code, action, saved = false, removable = false, auto
+     try {
+       await action(name);
+       if (!mounted.current) return;
+-      if (name === "favorite") setFavorite(true);
+-      if (name === "unfavorite" || name === "remove") setFavorite(false);
+-      setMessage(t(name === "copy" || name === "copyImage" ? "Copied to Clipboard" : name === "favorite" ? "Saved to QR Favorites" : name === "remove" || name === "unfavorite" ? "Moved to Trash" : "Link opened"));
++      setMessage(t(name === "copy" ? "Copied to Clipboard" : "Link opened"));
+     } catch (error) {
+       if (mounted.current) setMessage(t(typeof error === "string" ? error : "Could not complete this QR action."));
+     } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
+@@ -38,20 +34,14 @@ export function QrDetails({ code, action, saved = false, removable = false, auto
+     <div className="qr-actions">
+       {code.url && <button type="button" className="kiri-button kiri-button--primary" disabled={busy} onClick={() => void run("open")}><ExternalLink size={14}/>{t("Open Link")}</button>}
+       <button type="button" className={`kiri-button ${code.url ? "kiri-button--secondary" : "kiri-button--primary"}`} disabled={busy} onClick={() => void run("copy")}><Copy size={14}/>{t("Copy Text")}</button>
+-      {!removable && <button type="button" className="kiri-button kiri-button--secondary" disabled={busy || autoSaving} onClick={() => void run(favorite ? "unfavorite" : "favorite")}><Star size={14} fill={favorite ? "currentColor" : "none"}/>{t(autoSaving ? "Saving…" : favorite ? "Remove Favorite" : "Save QR Code")}</button>}
+-      {removable && <>
+-        <button type="button" className="kiri-button kiri-button--secondary" disabled={busy} onClick={() => void run("copyImage")}><QrCode size={14}/>{t("Copy QR Image")}</button>
+-        <button type="button" className="kiri-button kiri-button--secondary" disabled={busy} onClick={() => void run("remove")}><Trash2 size={14}/>{t("Remove Favorite")}</button>
+-      </>}
+     </div>
+   ) : null;
+-  return <section className={`qr-details${removable ? " qr-details--saved" : ""}`} aria-label={t("QR Content")}>
++  return <section className="qr-details" aria-label={t("QR Content")}>
+     <header className="qr-details__header">
+-      <div className="text-history__record-heading">
++      <div className="text-result__heading">
+         <span className="text-reader__caption qr-content-type">{t(code.text ? contentType : "QR Content")}</span>
+         {meta}
+       </div>
+-      {removable && controls}
+     </header>
+     <div className="qr-details__body">
+       {preview}
+@@ -61,11 +51,10 @@ export function QrDetails({ code, action, saved = false, removable = false, auto
+           {code.host && <p className="qr-host">{t("Destination")}: <bdi>{code.host}</bdi></p>}
+           {(linkWarning || directionWarning) && <p className="qr-warning" role="note">{t(linkWarning ? "Review this content carefully. This link may be unsafe." : "Review this content carefully.")}</p>}
+           {!code.url && linkWarning && <p className="qr-warning">{t("Only explicit HTTP or HTTPS links without credentials can be opened.")}</p>}
+-          {!removable && controls}
++          {controls}
+         </>}
+       </div>
+     </div>
+-    {autoSaveError && <p className="qr-feedback" role="status">{t(autoSaveError)}</p>}
+     {message && <p className="qr-feedback" role="status">{message}</p>}
+   </section>;
+ }
+@@ -78,13 +67,8 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+   onClose?(): void;
+ }) {
+   const [selected, setSelected] = useState<number | null>(() => initialQrSelection(scan.codes));
+-  const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
+-  const [autoSaving, setAutoSaving] = useState<Set<string>>(() => new Set());
+-  const [saveErrors, setSaveErrors] = useState<Map<string, string>>(() => new Map());
+   const [opening, setOpening] = useState(false);
+   const openingRef = useRef(false);
+-  const autoAttempts = useRef(new Set<string>());
+-  const pendingAutoSave = useRef(new Map<string, Promise<unknown>>());
+   const mounted = useRef(true);
+   const panelRef = useRef<HTMLDivElement>(null);
+   const [panelHeight, setPanelHeight] = useState(240);
+@@ -103,29 +87,6 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+   const onMarkerSelect = (index: number) => {
+     if (openingRef.current) return;
+     setSelected(index);
+-    const target = scan.codes.find(code => code.index === index);
+-    if (!target?.text || autoAttempts.current.has(target.text)) return;
+-    const text = target.text;
+-    autoAttempts.current.add(text);
+-    setAutoSaving(previous => new Set(previous).add(text));
+-    const pending = Promise.resolve().then(() => api.qrAction(scan.requestId, index, "favorite"))
+-      .then(result => {
+-        if (mounted.current) setFavorites(previous => new Set(previous).add(text));
+-        return result;
+-      })
+-      .catch(error => {
+-        if (mounted.current) setSaveErrors(previous => new Map(previous).set(text, typeof error === "string" ? error : "Could not save this QR code."));
+-        throw error;
+-      })
+-      .finally(() => {
+-        pendingAutoSave.current.delete(text);
+-        if (mounted.current) setAutoSaving(previous => {
+-          const next = new Set(previous); next.delete(text); return next;
+-        });
+-      });
+-    pendingAutoSave.current.set(text, pending);
+-    // A failed automatic save stays visible and can be retried with Save QR Code.
+-    void pending.catch(() => {});
+   };
+   const targets = <div className="qr-targets" role="group" aria-label={t("Choose a QR code in the image")}>
+         {scan.codes.map(code => {
+@@ -135,30 +96,15 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+           </button>;
+         })}
+       </div>;
+-  const details = code ? <QrDetails key={code.index} code={code} saved={!!code.text && favorites.has(code.text)} autoSaving={!!code.text && autoSaving.has(code.text)} autoSaveError={code.text ? saveErrors.get(code.text) ?? null : null} action={async action => {
++  const details = code ? <QrDetails key={code.index} code={code} action={async action => {
+       const isOpen = action === "open";
+       if (isOpen) {
+         if (openingRef.current) return;
+         openingRef.current = true; setOpening(true);
+       }
+       try {
+-        if (isOpen) {
+-          // Preserve every code already selected before opening tears down the scan.
+-          await Promise.allSettled([...pendingAutoSave.current.values()]);
+-        } else if (code.text && (action === "favorite" || action === "unfavorite")) {
+-          await pendingAutoSave.current.get(code.text)?.catch(() => {});
+-        }
+-        if (!mounted.current) return;
+         const result = await api.qrAction(scan.requestId, code.index, action);
+         if (isOpen && mounted.current) onOpened?.();
+-        if (mounted.current && code.text && (action === "favorite" || action === "unfavorite")) setFavorites(previous => {
+-          const next = new Set(previous);
+-          if (action === "favorite") next.add(code.text!); else next.delete(code.text!);
+-          return next;
+-        });
+-        if (mounted.current && code.text && action === "favorite") setSaveErrors(previous => {
+-          const next = new Map(previous); next.delete(code.text!); return next;
+-        });
+         return result;
+       } finally {
+         if (isOpen) {
+@@ -195,38 +141,3 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+       <div className="qr-prompt" role="status"><QrCode size={28}/><p>{t(scan.codes.length ? "Choose a QR code in the image" : "No QR codes found. Try a clearer image or a larger selection.")}</p></div>}
+   </div>;
+ }
+-
+-export function QrFavorites() {
+-  const [query, setQuery] = useState("");
+-  const [records, setRecords] = useState<AssetDto[]>([]);
+-  const [selected, setSelected] = useState<string | null>(null);
+-  const [error, setError] = useState(false);
+-  const [loading, setLoading] = useState(true);
+-  const [revision, setRevision] = useState(0);
+-  useEffect(() => { const subscription = onLibraryChanged(() => setRevision(n => n + 1)); return () => { void subscription.then(stop => stop()).catch(() => {}); }; }, []);
+-  useEffect(() => {
+-    let current = true; setError(false); setLoading(true);
+-    const timer = setTimeout(() => { void api.listQrFavorites(query).then(items => {
+-      if (!current) return;
+-      setRecords(items); setSelected(id => items.some(a => a.id === id) ? id : items[0]?.id ?? null); setLoading(false);
+-    }, () => { if (current) { setError(true); setLoading(false); setRecords([]); } }); }, query ? 150 : 0);
+-    return () => { current = false; clearTimeout(timer); };
+-  }, [query, revision]);
+-  const asset = records.find(a => a.id === selected);
+-  return <div className="text-history">
+-    <aside className="text-history__sidebar"><label className="text-history__search"><QrCode size={15}/><input type="search" aria-label={t("Search QR Favorites")} placeholder={t("Search QR Favorites")} value={query} onChange={event => setQuery(event.target.value)}/></label>
+-      <div className="text-history__list">{records.map(asset => <button type="button" className="ocr-history__item" aria-current={asset.id === selected || undefined} key={asset.id} onClick={() => setSelected(asset.id)}><span className="text-history__excerpt">{asset.qrText}</span><time>{new Date(asset.createdAt).toLocaleString()}</time></button>)}</div>
+-    </aside>
+-    <main className="text-history__detail">{asset ? <QrDetails key={asset.id} code={favoriteCode(asset.qrText ?? "")} saved removable
+-      meta={<time>{new Date(asset.createdAt).toLocaleString()}</time>}
+-      preview={<img className="qr-favorite-image" src={mediaUrl(asset.id)} alt={t("QR Source Image")} />}
+-      action={action => api.qrFavoriteAction(asset.id, action)} /> : <div className="text-history__empty" role={error ? "alert" : "status"}><QrCode size={28}/><p>{t(error ? "Could not load QR Favorites." : loading ? "Loading…" : query ? "No QR favorites match this search." : "Save a QR code to find and reuse it here.")}</p></div>}</main>
+-  </div>;
+-}
+-
+-function favoriteCode(text: string): QrCodeDto {
+-  // The backend repeats URL validation before every explicit open action.
+-  let url: URL | null = null;
+-  try { if (/^https?:\/\//i.test(text) && !/[\s\\\u0000-\u001f\u007f\u202e]/.test(text)) { const parsed = new URL(text); if (!parsed.username && !parsed.password) url = parsed; } } catch { /* Plain content. */ }
+-  return { index: 0, corners: [], text, url: url?.href ?? null, host: url?.hostname ?? null, suspicious: text.includes("\u202e") || (url ? /xn--|localhost|^\[|^\d+\.\d+\.\d+\.\d+$/.test(url.hostname) : qrLooksLikeLink(text)) };
+-}
+diff --git a/src/windows/EditorWindow.tsx b/src/windows/EditorWindow.tsx
+index bee6c77..ce3d4a8 100644
+--- a/src/windows/EditorWindow.tsx
++++ b/src/windows/EditorWindow.tsx
+@@ -1,7 +1,7 @@
+ // EditorWindow — annotation editor for saved captures
+ // Screenshot tools share one document; viewing zoom never changes saved pixels.
+ 
+-import { OcrDialog } from "../ocr/TextHistory";
++import { OcrDialog } from "../ocr/OcrDialog";
+ import { QrOverlay } from "../qr/QrOverlay";
+ import type { AssetDto, QrScanDto } from "../lib/ipc";
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+diff --git a/src/windows/LibraryWindow.tsx b/src/windows/LibraryWindow.tsx
+index 93c439a..f6b5c9f 100644
+--- a/src/windows/LibraryWindow.tsx
++++ b/src/windows/LibraryWindow.tsx
+@@ -25,8 +25,7 @@ import {
+ } from "../lib/ipc";
+ import { t, fmt } from "../i18n";
+ import { useAppUpdater } from "../settings/useAppUpdater";
+-import { QrFavorites } from "../qr/QrResults";
+-import { TextHistory, OcrDialog } from "../ocr/TextHistory";
++import { OcrDialog } from "../ocr/OcrDialog";
+ import brandIcon from "../../src-tauri/icons/128x128.png";
+ import { EmptyTrashDialog } from "../components/EmptyTrashDialog";
+ import { KiriIcon, type IconName } from "../components/KiriIcons";
+@@ -49,7 +48,7 @@ const SettingsView = React.lazy(() =>
+ );
+ 
+ type Section = "library" | "trash";
+-type Destination = "captures" | "text" | "qr" | "settings";
++type Destination = "captures" | "settings";
+ 
+ function thumbnailUrl(id: string, revision: number): string {
+   return kiriResourceUrl("thumbnail", [id], { v: revision });
+@@ -972,21 +971,17 @@ export function LibraryWindow() {
+       <SegmentedPicker
+         options={[
+           { label: t("Library"), icon: "square.grid.3x3.fill" },
+-          { label: t("Text History"), icon: "text.viewfinder" },
+-          { label: t("QR Favorites"), icon: "qrcode" },
+           { label: t("Trash"), icon: "trash" },
+           { label: t("Settings"), icon: "slider.horizontal.3", notification: updater.hasUpdate ? t("Update available") : undefined },
+         ]}
+-        value={destination === "settings" ? 4 : destination === "qr" ? 2 : destination === "text" ? 1 : section === "library" ? 0 : 3}
++        value={destination === "settings" ? 2 : section === "library" ? 0 : 1}
+         onChange={(index) => {
+           clearSelection();
+           setMenuFor(null);
+-          if (index === 4) {
++          if (index === 2) {
+             setDestination("settings");
+             return;
+           }
+-          if (index === 1) { setDestination("text"); return; }
+-          if (index === 2) { setDestination("qr"); return; }
+           setDestination("captures");
+           setSection(index === 0 ? "library" : "trash");
+           setKindFilter("all");
+@@ -1002,20 +997,16 @@ export function LibraryWindow() {
+               <h1 id="library-page-title" className="library-control-panel__title">
+                 {destination === "settings"
+                   ? t("Settings")
+-                  : destination === "qr" ? t("QR Favorites")
+-                  : destination === "text" ? t("Text History")
+                   : showingTrash
+                     ? t("Trash")
+                     : t("Library")}
+               </h1>
+               {destination !== "settings" && <span className="library-control-panel__subtitle">
+-                {destination === "qr" ? t("Find and reuse saved QR codes")
+-                  : destination === "text" ? t("Read, copy, and revisit recognized text")
+-                  : libraryUnavailable
+-                    ? t("Unavailable")
+-                    : libraryMigrating
+-                      ? t("Moving…")
+-                      : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
++                {libraryUnavailable
++                  ? t("Unavailable")
++                  : libraryMigrating
++                    ? t("Moving…")
++                    : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
+               </span>}
+             </div>
+ 
+@@ -1339,10 +1330,6 @@ export function LibraryWindow() {
+         </>
+       )}
+         </>
+-      ) : destination === "qr" ? (
+-        <QrFavorites />
+-      ) : destination === "text" ? (
+-        <TextHistory />
+       ) : (
+         <React.Suspense
+           fallback={
+diff --git a/src/windows/PinWindow.tsx b/src/windows/PinWindow.tsx
+index e96d5c7..720af74 100644
+--- a/src/windows/PinWindow.tsx
++++ b/src/windows/PinWindow.tsx
+@@ -1,7 +1,8 @@
+ import { useEffect, useRef, useState } from "react";
++import type { WheelEvent as ReactWheelEvent } from "react";
+ import { getCurrentWindow } from "@tauri-apps/api/window";
+ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+-import { mediaUrl, onAssetContentChanged, onPinOnTop } from "../lib/ipc";
++import { api, mediaUrl, onAssetContentChanged, onPinOnTop } from "../lib/ipc";
+ import { t } from "../i18n";
+ import { KiriIcon } from "../components/KiriIcons";
+ import "./pin-window.css";
+@@ -25,6 +26,31 @@ type MoveGesture = {
+   cancelled: boolean;
+ };
+ 
++type ZoomCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
++
++type ZoomGesture = {
++  applying: boolean;
++  pending: { factor: number; anchorX: number; anchorY: number } | null;
++  image: { width: number; height: number } | null;
++  report: (size: { width: number; height: number }) => void;
++};
++
++async function applyZoom(gesture: ZoomGesture) {
++  if (gesture.applying) return;
++  gesture.applying = true;
++  try {
++    while (gesture.pending) {
++      const step = gesture.pending;
++      gesture.pending = null;
++      const image = gesture.image;
++      const size = await api.zoomPin(step.factor, step.anchorX, step.anchorY,
++        image?.width ?? 0, image?.height ?? 0);
++      gesture.report(size);
++    }
++  } catch { gesture.pending = null; }
++  finally { gesture.applying = false; }
++}
++
+ async function applyMove(gesture: MoveGesture) {
+   if (!gesture.base || gesture.applying || gesture.cancelled) return;
+   gesture.applying = true;
+@@ -70,9 +96,62 @@ export function PinWindow({ id }: { id: string }) {
+   const resizeGesture = useRef<ResizeGesture | null>(null);
+   const moveGesture = useRef<MoveGesture | null>(null);
+   const latestMove = useRef<MoveGesture | null>(null);
+-  useEffect(() => () => {
+-    if (latestMove.current) latestMove.current.cancelled = true;
++  const zoomGesture = useRef<ZoomGesture | null>(null);
++  const imageSize = useRef<{ width: number; height: number } | null>(null);
++  const openedWidth = useRef(0);
++  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const zoomCorner = useRef<ZoomCorner>("top-left");
++  const [zoomHint, setZoomHint] = useState<{ percent: number; corner: ZoomCorner } | null>(null);
++  useEffect(() => {
++    void getCurrentWindow().innerSize()
++      .then(size => { openedWidth.current = size.width; })
++      .catch(() => {});
++    return () => {
++      if (latestMove.current) latestMove.current.cancelled = true;
++      if (zoomTimer.current) clearTimeout(zoomTimer.current);
++    };
+   }, []);
++  useEffect(() => {
++    // React installs wheel handlers passively, so only a native listener can
++    // stop the WebView's own control-wheel page zoom from competing with the
++    // pin's image zoom. The sizing itself stays in the React handler.
++    const stopPageZoom = (event: WheelEvent) => event.preventDefault();
++    window.addEventListener("wheel", stopPageZoom, { passive: false });
++    // Removal only matches on the capture flag, so the passive option is not
++    // repeated here.
++    return () => window.removeEventListener("wheel", stopPageZoom);
++  }, []);
++  const showZoom = (size: { width: number; height: number }) => {
++    // 100% means one image pixel per physical screen pixel, so the reference is
++    // the intrinsic bitmap width. A pin opened on a Retina display starts at
++    // 100%, while a library image fitted to a small reference starts below it.
++    const reference = imageSize.current?.width || openedWidth.current;
++    if (reference <= 0) return;
++    setZoomHint({
++      percent: Math.max(1, Math.round((size.width / reference) * 100)),
++      corner: zoomCorner.current,
++    });
++    if (zoomTimer.current) clearTimeout(zoomTimer.current);
++    zoomTimer.current = setTimeout(() => setZoomHint(null), 900);
++  };
++  const zoomBy = (factor: number, anchorX: number, anchorY: number) => {
++    if (!Number.isFinite(factor) || factor <= 0) return;
++    let gesture = zoomGesture.current;
++    if (!gesture) {
++      gesture = zoomGesture.current = { applying: false, pending: null, image: null,
++        report: showZoom };
++    }
++    gesture.image = imageSize.current;
++    // A fast wheel produces many events per native round trip; the factors add
++    // up, and only the frame in progress is lost to the bound.
++    gesture.pending = { factor: (gesture.pending?.factor ?? 1) * factor, anchorX, anchorY };
++    void applyZoom(gesture);
++  };
++  const takeOverFrame = () => {
++    // A drag or corner resize owns the frame from here on; a queued wheel step
++    // would otherwise move the window out from under the pointer that grabbed it.
++    if (zoomGesture.current) zoomGesture.current.pending = null;
++  };
+   useEffect(() => {
+     const subscription = onAssetContentChanged((assetId) => {
+       if (assetId === id) { setImageFailed(false); setRevision((value) => value + 1); }
+@@ -114,7 +193,9 @@ export function PinWindow({ id }: { id: string }) {
+     const next = !state.onTop;
+     setBusy(true); setError(false);
+     try {
+-      await getCurrentWindow().setAlwaysOnTop(next);
++      // The native side owns the topmost band: a pin that dropped out of it is
++      // repaired synchronously, which a WebView flag alone cannot do.
++      await api.setPinTopmost(next);
+       // A library repin received while this request was pending is newer.
+       if (state.generation === generation) {
+         state.onTop = next;
+@@ -124,8 +205,33 @@ export function PinWindow({ id }: { id: string }) {
+     catch { if (state.generation === generation) setError(true); }
+     finally { state.busy = false; setBusy(false); }
+   };
++  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
++    // A pointer gesture owns the frame while it runs: zooming would move the
++    // window out from under the coordinates the gesture already captured.
++    if (moveGesture.current || resizeGesture.current) return;
++    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
++    const delta = Math.max(-240, Math.min(240, event.deltaY * unit));
++    if (!delta) return;
++    const host = event.currentTarget;
++    const width = host.clientWidth || 1;
++    const height = host.clientHeight || 1;
++    const anchorX = Math.min(1, Math.max(0, event.clientX / width));
++    const anchorY = Math.min(1, Math.max(0, event.clientY / height));
++    // A zoom anchored at the pointer can push the opposite corner of the window
++    // off screen, so the percentage badge stays in the quadrant under the cursor.
++    zoomCorner.current =
++      `${anchorY <= 0.5 ? "top" : "bottom"}-${anchorX <= 0.5 ? "left" : "right"}`;
++    // One wheel notch is 100px and changes the size by 10%; trackpads send many
++    // small deltas, and the exponent makes those continuous instead of steppy.
++    zoomBy(Math.pow(1.1, -delta / 100), anchorX, anchorY);
++  };
+   return <div className="pin-window" aria-label={t("Screenshot Reference")}
+-    onContextMenu={event => event.preventDefault()}>
++    onWheel={handleWheel}
++    onContextMenu={event => event.preventDefault()}
++    onPointerDown={() => {
++      // Pins are all topmost; pointing at one brings it above its siblings.
++      void api.raisePin().catch(() => {});
++    }}>
+     <div className="pin-window__actions" onPointerDown={event => event.stopPropagation()}>
+       <button className="kiri-pin-action" type="button" disabled={busy}
+         title={t(onTop ? "Unpin" : "Pin on Top")} aria-label={t(onTop ? "Unpin" : "Pin on Top")}
+@@ -134,8 +240,11 @@ export function PinWindow({ id }: { id: string }) {
+         onClick={() => void getCurrentWindow().close()}><KiriIcon name="xmark" size={15} /></button>
+     </div>
+     {error && <p className="pin-window__error" role="alert">{t("Could not change window pinning on this desktop.")}</p>}
++    {zoomHint && <div className="pin-window__zoom" role="status"
++      data-corner={zoomHint.corner}>{zoomHint.percent}%</div>}
+     <main className="pin-window__image" onPointerDown={event => {
+       if (event.button !== 0) return;
++      takeOverFrame();
+       if (!/Macintosh|Mac OS X|Windows/i.test(navigator.userAgent)) {
+         void getCurrentWindow().startDragging().catch(() => {});
+         return;
+@@ -173,11 +282,21 @@ export function PinWindow({ id }: { id: string }) {
+       moveGesture.current = null;
+     }}>
+       {imageFailed ? <p role="alert">{t("Can't read this file")}</p> :
+-        <img key={revision} src={`${mediaUrl(id)}?v=${revision}`} alt={t("Pinned screenshot")} draggable={false} onError={() => setImageFailed(true)} />}
++        <img key={revision} src={`${mediaUrl(id)}?v=${revision}`} alt={t("Pinned screenshot")} draggable={false}
++          onLoad={event => {
++            const image = event.currentTarget;
++            // Intrinsic size in image pixels: the reference the zoom
++            // percentage is reported against.
++            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
++              imageSize.current = { width: image.naturalWidth, height: image.naturalHeight };
++            }
++          }}
++          onError={() => { imageSize.current = null; setImageFailed(true); }} />}
+     </main>
+     <div className="pin-window__resize" aria-hidden="true" onPointerDown={event => {
+         event.stopPropagation();
+         if (event.button !== 0) return;
++        takeOverFrame();
+         event.currentTarget.setPointerCapture(event.pointerId);
+         const gesture: ResizeGesture = { pointerId: event.pointerId, x: event.screenX, y: event.screenY,
+           base: null, pending: null, applying: false };
+diff --git a/src/windows/ViewerWindow.tsx b/src/windows/ViewerWindow.tsx
+index 53e0267..ad43466 100644
+--- a/src/windows/ViewerWindow.tsx
++++ b/src/windows/ViewerWindow.tsx
+@@ -7,7 +7,7 @@ import { api, mediaUrl, onAssetContentChanged, type AssetAvailability } from "..
+ import { VideoTrimPlayer, type VideoClosePreparation } from "./VideoTrimPlayer";
+ import { VideoCloseGuard } from "./VideoCloseGuard";
+ import { videoEditingCapabilities } from "./video-capabilities.js";
+-import { OcrDialog } from "../ocr/TextHistory";
++import { OcrDialog } from "../ocr/OcrDialog";
+ import { t } from "../i18n";
+ import { KiriIcon } from "../components/KiriIcons";
+ import { installViewerCopyShortcut } from "./viewer-copy-shortcut.js";

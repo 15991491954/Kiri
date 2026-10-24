@@ -1,0 +1,169 @@
+﻿diff --git a/src-tauri/src/scroll_capture.rs b/src-tauri/src/scroll_capture.rs
+index 869c4b3..8f1bca5 100644
+--- a/src-tauri/src/scroll_capture.rs
++++ b/src-tauri/src/scroll_capture.rs
+@@ -525,7 +525,7 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+     if !supported() {
+         return Err("Scrolling capture is unavailable in this desktop session.".into());
+     }
+-    let (capture, frame, compact, control) = {
++    let (capture, display, frame, compact, control) = {
+         let state = app.state::<AppState>();
+         let _transition = state.library_transition.lock().unwrap();
+         let mut active = state.scroll_capture.0.lock().unwrap();
+@@ -537,33 +537,37 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+             .session
+             .as_ref()
+             .ok_or_else(|| "No active capture session.".to_string())?;
+-        if session.capture_id != id || !session.overlay_labels.contains(&label) {
++        if session.capture_id != id || !session.has_overlay(&label) {
+             return Err("Capture command is only available to its overlay.".into());
+         }
+         if session.annotation.is_some() {
+             return Err("Start scrolling capture before adding annotations.".into());
+         }
+-        let pixels =
+-            scroll::pixel_region(&session.display, selection).map_err(|error| error.to_string())?;
++        // Scrolling always captures the display of the overlay that started
++        // it; peer overlays on other displays never supply pixels.
++        let display = session
++            .display_for_overlay(&label)
++            .ok_or_else(|| "Capture command is only available to its overlay.".to_string())?
++            .clone();
++        let pixels = scroll::pixel_region(&display, selection).map_err(|error| error.to_string())?;
+         ScrollDocument::new(pixels.width, pixels.height).map_err(|error| error.to_string())?;
+         let (frame, compact) = panel_frame(
+-            session.display.screen_frame,
++            display.screen_frame,
+             selection,
+             cfg!(any(target_os = "macos", windows)),
+         )
+         .ok_or_else(|| {
+             "Leave room outside the selection for scrolling capture controls.".to_string()
+         })?;
+-        let screen = session.display.screen_frame;
++        let screen = display.screen_frame;
+         let session_id = uuid::Uuid::new_v4();
+         let control = Arc::new(Session {
+             id: session_id,
+             requests: Mutex::new(Requests::default()),
+             status: Mutex::new(ScrollStatus::new(session_id)),
+             window_labels: session
+-                .overlay_labels
+-                .iter()
+-                .cloned()
++                .overlay_labels()
++                .map(str::to_string)
+                 .chain([PANEL.to_string(), REGION.to_string()])
+                 .collect(),
+             closing: AtomicBool::new(false),
+@@ -578,12 +582,12 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+                 ),
+                 width: frame.width,
+                 height: frame.height,
+-                backing_scale: session.display.backing_scale,
++                backing_scale: display.backing_scale,
+             },
+         });
+         let capture = flow.session.take().unwrap();
+         *active = Some(Arc::clone(&control));
+-        (capture, frame, compact, control)
++        (capture, display, frame, compact, control)
+     };
+     crate::microphone::stop();
+     crate::commands::invalidate_capture_resources(&app, &capture);
+@@ -602,19 +606,19 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+         // Resolve while the frozen overlay still holds the original stacking
+         // order. Closing it or activating the pre-capture app can raise a
+         // different, overlapping window before the source is bound.
+-        let target = scroll::resolve_target(&capture.display, selection)
++        let target = scroll::resolve_target(&display, selection)
+             .map_err(|error| StartupFailure::new(StartupStage::SourceSelection, error))?;
+         if control.requests.lock().unwrap().cancelled {
+             return Err(StartupFailure::cancelled());
+         }
+-        let labels = capture.overlay_labels.clone();
++        let labels: Vec<String> = capture.overlay_labels().map(str::to_string).collect();
+         let source_pid = match target {
+             scroll::ScrollTarget::Window { owner_pid, .. } => u32::try_from(owner_pid).ok(),
+             scroll::ScrollTarget::Display => capture.return_pid,
+         };
+         let session_id = control.id;
+-        let scale = capture.display.backing_scale;
+-        let screen = capture.display.screen_frame;
++        let scale = display.backing_scale;
++        let screen = display.screen_frame;
+         startup_ui(&app, move |app| {
+             for label in labels {
+                 if let Some(window) = app.get_webview_window(&label) {
+@@ -725,7 +729,7 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+         if control.requests.lock().unwrap().cancelled {
+             return Err(StartupFailure::cancelled());
+         }
+-        scroll::start(&capture.display, selection, &target)
++        scroll::start(&display, selection, &target)
+             .map_err(|error| StartupFailure::new(StartupStage::CaptureStream, error))
+     })();
+     let source = match setup {
+@@ -757,6 +761,8 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+                 &worker_app,
+                 &worker_control,
+                 &capture,
++                &label,
++                &display,
+                 selection,
+                 &mut source,
+             )
+@@ -771,7 +777,13 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
+                 None
+             }
+         };
+-        cleanup(&worker_app, &worker_control, &capture, owns_escape, preview);
++        cleanup(
++            &worker_app,
++            &worker_control,
++            &capture,
++            owns_escape,
++            preview,
++        );
+     }));
+     Ok(())
+ }
+@@ -908,6 +920,8 @@ fn run(
+     app: &AppHandle,
+     session: &Arc<Session>,
+     capture: &CaptureSession,
++    owner_label: &str,
++    display: &crate::capture::CapturedDisplay,
+     selection: Rect,
+     source: &mut ScrollSource,
+ ) -> Option<CompletionPreviewDto> {
+@@ -1007,7 +1021,7 @@ fn run(
+                                 revision: stitcher.revision,
+                                 left: 0,
+                                 top: origin + i64::from(region.top),
+-                                display_scale: capture.display.backing_scale,
++                                display_scale: display.backing_scale,
+                                 image,
+                             })
+                     })
+@@ -1086,7 +1100,7 @@ fn run(
+             // Keep the document and reopen live sampling so the user can
+             // naturally return through an unmatched area and continue.
+             if !source_failed {
+-                match scroll::start(&capture.display, selection, &source.target) {
++                match scroll::start(display, selection, &source.target) {
+                     Ok(next) => {
+                         *source = next;
+                         frozen = false;
+@@ -1133,7 +1147,9 @@ fn run(
+         session.status.lock().unwrap().phase = "saving";
+         let size = image.dimensions();
+         let result = encode(image)
+-            .and_then(|png| crate::commands::save_scroll_capture(app, capture, &png, size));
++            .and_then(|png| {
++                crate::commands::save_scroll_capture(app, capture, owner_label, &png, size)
++            });
+         match result {
+             Ok(preview) => {
+                 let _ = request.reply.send(Ok(()));

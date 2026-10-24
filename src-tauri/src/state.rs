@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder,
@@ -35,6 +35,10 @@ pub struct AppState {
     pub pending_capture_completion: std::sync::Mutex<Option<PendingCaptureCompletion>>,
     /// Bounded session-only origins for toolbar/completion-card references.
     pub capture_pin_placements: std::sync::Mutex<crate::core::pin_placement::RecentCapturePinPlacements>,
+    /// Metadata for native Windows pins. The images themselves live with their
+    /// surface thread; this registry only answers "what is where" for hit
+    /// testing and the byte budgets.
+    pub pins: std::sync::Mutex<crate::pin::PinRegistry>,
     pub recording: std::sync::Mutex<RecordingFlow>,
     /// Finalization outlives the live recording session and can overlap a new
     /// capture. These transient jobs are never written as library assets.
@@ -150,12 +154,13 @@ impl CaptureFlow {
     /// context with no live overlay.
     pub fn destroy_overlay(&mut self, label: &str) -> Option<(uuid::Uuid, Option<CaptureSession>)> {
         let session = self.session.as_mut()?;
-        if !session.overlay_labels.iter().any(|owner| owner == label) {
-            return None;
-        }
+        let binding = session
+            .overlays
+            .iter()
+            .position(|overlay| overlay.label == label)?;
         let capture_id = session.capture_id;
-        session.overlay_labels.retain(|owner| owner != label);
-        let ended_session = if session.overlay_labels.is_empty() {
+        session.overlays.remove(binding);
+        let ended_session = if session.overlays.is_empty() {
             self.session.take()
         } else {
             None
@@ -164,7 +169,7 @@ impl CaptureFlow {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CaptureMode {
     Screenshot,
@@ -175,7 +180,17 @@ pub enum CaptureMode {
 pub struct CaptureSession {
     pub capture_id: uuid::Uuid,
     pub initial_mode: CaptureMode,
-    pub display: CapturedDisplay,
+    /// Frozen displays in creation order. Index 0 is the display that owned
+    /// the pointer when capture started; every other entry was frozen after
+    /// the primary overlay was already visible.
+    pub displays: Vec<CapturedDisplay>,
+    /// One interactive overlay per frozen display. A selection always stays
+    /// inside the display its overlay covers; there is no cross-display rect.
+    pub overlays: Vec<OverlayBinding>,
+    /// Secondary display freezes are started once, after the primary overlay
+    /// has loaded its context. This prevents duplicate capture threads from
+    /// React StrictMode or a repeated `start_capture` call.
+    pub secondary_displays_started: bool,
     pub source_application: Option<String>,
     /// PID of the application that was frontmost before capture started.
     pub return_pid: Option<u32>,
@@ -183,10 +198,43 @@ pub struct CaptureSession {
     pub was_kiri_frontmost: bool,
     /// Library windows hidden for the capture session.
     pub hidden_windows: Vec<String>,
-    pub overlay_labels: Vec<String>,
     /// Present only after an overlay with committed marks stages the matching
     /// selection/document pair. Confirmation consumes the whole session.
     pub annotation: Option<StagedCaptureAnnotation>,
+}
+
+impl CaptureSession {
+    pub fn has_overlay(&self, label: &str) -> bool {
+        self.overlays.iter().any(|overlay| overlay.label == label)
+    }
+
+    pub fn overlay(&self, label: &str) -> Option<&OverlayBinding> {
+        self.overlays.iter().find(|overlay| overlay.label == label)
+    }
+
+    /// Resolve the frozen display an overlay is bound to. Overlays without a
+    /// binding never read another display's pixels.
+    pub fn display_for_overlay(&self, label: &str) -> Option<&CapturedDisplay> {
+        let binding = self.overlay(label)?;
+        self.displays.get(binding.display_index)
+    }
+
+    pub fn display_index_for_overlay(&self, label: &str) -> Option<usize> {
+        self.overlay(label).map(|binding| binding.display_index)
+    }
+
+    pub fn overlay_labels(&self) -> impl Iterator<Item = &str> {
+        self.overlays.iter().map(|overlay| overlay.label.as_str())
+    }
+}
+
+/// Binds one overlay WebView to the frozen display it presents. The token is
+/// the unguessable `kiri://capture/frozen/<token>.png` suffix for that display.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverlayBinding {
+    pub label: String,
+    pub display_index: usize,
+    pub token: String,
 }
 
 pub struct PendingCaptureCompletion {
@@ -194,11 +242,19 @@ pub struct PendingCaptureCompletion {
     pub preview: CompletionPreviewDto,
     pub monitor: Option<Monitor>,
     pub pin_on_top: bool,
+    /// When the completion was queued. A destroyed-overlay event normally
+    /// delivers it within a frame; the timestamp is what lets a lost event be
+    /// detected and the completion delivered anyway. Without it the single
+    /// pending slot stays occupied, every later confirmation is refused, and
+    /// the editing HUD looks as if the 📌 click did nothing.
+    pub queued_at: std::time::Instant,
 }
 
 #[derive(Debug, Clone)]
 pub struct StagedCaptureAnnotation {
     pub token: uuid::Uuid,
+    /// Overlay that prepared this snapshot. Only that overlay may confirm it.
+    pub owner_label: String,
     pub selection: Rect,
     pub document: AnnotationDocument,
 }
@@ -562,13 +618,13 @@ pub enum RecoveryAction {
 
 impl AppState {
     pub fn new(app: &AppHandle) -> anyhow::Result<Self> {
-        let config_dir = app.path().app_config_dir()?;
+        let config_dir = crate::paths::config_dir(app).ok_or_else(|| anyhow::anyhow!("the Lumen settings folder is unavailable"))?;
         let default_root = AssetLibrary::default_root_url()
             .or_else(|| dirs::data_local_dir().map(|dir| dir.join("kiri")))
             .ok_or_else(|| anyhow::anyhow!("the default Kiri library path is unavailable"))?;
         let library = LibraryContext::open(default_root, config_dir.clone())?;
         let recording_recovery = RecordingRecoveryStore::new(
-            app.path().app_local_data_dir()?.join("Recording Recovery"),
+            crate::paths::local_root().ok_or_else(|| anyhow::anyhow!("the Lumen data folder is unavailable"))?.join("Recording Recovery"),
         );
         let ocr_providers = Arc::new(crate::ocr_controller::OcrProviderManager::open(&config_dir));
         Ok(Self {
@@ -580,6 +636,7 @@ impl AppState {
             scroll_capture: Default::default(),
             pending_capture_completion: Default::default(),
             capture_pin_placements: Default::default(),
+            pins: Default::default(),
             recording: Default::default(),
             recording_save_jobs: Default::default(),
             saved_annotation_appearance: std::sync::Mutex::new(AnnotationAppearance::default()),
@@ -700,7 +757,7 @@ pub fn show_confirm_dialog(
                     .into(),
                 ),
             )
-            .title("kiri")
+            .title("Lumen")
             .decorations(false)
             .transparent(true)
             .shadow(false)
@@ -805,7 +862,7 @@ fn show_completion_toast_inner(app: &AppHandle, notice: &NoticeDto, monitor: Opt
                     .into(),
                 ),
             )
-            .title("kiri")
+            .title("Lumen")
             .decorations(false)
             .transparent(true)
             .shadow(false)
@@ -915,7 +972,7 @@ fn show_completion_preview_inner(
         None => {
             let builder =
                 WebviewWindowBuilder::new(app, label, WebviewUrl::App(initial_url.into()))
-                    .title("kiri")
+                    .title("Lumen")
                     .decorations(false)
                     .transparent(true)
                     .shadow(false)
@@ -1118,7 +1175,7 @@ pub(crate) fn log_dir() -> Option<std::path::PathBuf> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        dirs::data_local_dir().map(|dir| dir.join("kiri/logs"))
+        crate::paths::log_dir()
     }
 }
 
@@ -1158,9 +1215,8 @@ pub fn emit_recording_state(app: &AppHandle, state: &RecordingFlow) {
 
 /// Access the recording options preference storage.
 pub fn recording_options_path(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_config_dir()
-        .unwrap_or_else(|_| std::env::temp_dir())
+    crate::paths::config_dir(app)
+        .unwrap_or_else(std::env::temp_dir)
         .join("recording-options.json")
 }
 
@@ -1180,13 +1236,68 @@ pub fn save_recording_options(app: &AppHandle, options: &RecordingOptions) {
     }
 }
 
+// The overlay writes the mode the user actually worked in. Generic capture
+// entry points (shortcut, tray, library) reuse it so repeating the same kind of
+// capture skips the mode picker; explicit record/OCR entry points still force
+// their own mode for that session. Unknown or damaged files fall back to a
+// screenshot instead of blocking the capture.
+pub fn capture_mode_path(app: &AppHandle) -> PathBuf {
+    let config_dir = crate::paths::config_dir(app).unwrap_or_else(std::env::temp_dir);
+    capture_mode_path_for_root(&config_dir)
+}
+
+pub fn capture_mode_path_for_root(config_dir: &std::path::Path) -> PathBuf {
+    config_dir.join("capture-mode.json")
+}
+
+pub fn parse_capture_mode(name: &str) -> Option<CaptureMode> {
+    match name {
+        "screenshot" => Some(CaptureMode::Screenshot),
+        "record" => Some(CaptureMode::Record),
+        "ocr" => Some(CaptureMode::Ocr),
+        _ => None,
+    }
+}
+
+pub fn decode_capture_mode(data: &[u8]) -> CaptureMode {
+    #[derive(Deserialize)]
+    struct Preference {
+        mode: CaptureMode,
+    }
+    serde_json::from_slice::<Preference>(data)
+        .map(|preference| preference.mode)
+        .unwrap_or(CaptureMode::Screenshot)
+}
+
+pub fn encode_capture_mode(mode: CaptureMode) -> Vec<u8> {
+    #[derive(Serialize)]
+    struct Preference {
+        mode: CaptureMode,
+    }
+    serde_json::to_vec_pretty(&Preference { mode })
+        .unwrap_or_else(|_| b"{\"mode\":\"screenshot\"}".to_vec())
+}
+
+pub fn load_capture_mode(app: &AppHandle) -> CaptureMode {
+    std::fs::read(capture_mode_path(app))
+        .map(|data| decode_capture_mode(&data))
+        .unwrap_or(CaptureMode::Screenshot)
+}
+
+pub fn save_capture_mode(app: &AppHandle, mode: CaptureMode) -> std::io::Result<()> {
+    let path = capture_mode_path(app);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, encode_capture_mode(mode))
+}
+
 // Annotation appearance is shared by the capture overlay and editor. Keep it
 // in the native config directory because Tauri WebViews do not share reliable
 // localStorage across windows.
 pub fn annotation_appearance_path(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_config_dir()
-        .unwrap_or_else(|_| std::env::temp_dir())
+    crate::paths::config_dir(app)
+        .unwrap_or_else(std::env::temp_dir)
         .join("annotation-appearance.json")
 }
 
@@ -1218,9 +1329,8 @@ pub fn save_annotation_appearance(
 // ---------------------------------------------------------------------------
 
 fn language_path(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_config_dir()
-        .unwrap_or_else(|_| std::env::temp_dir())
+    crate::paths::config_dir(app)
+        .unwrap_or_else(std::env::temp_dir)
         .join("language.json")
 }
 
@@ -1390,7 +1500,7 @@ mod tests {
             session: Some(CaptureSession {
                 capture_id,
                 initial_mode: super::CaptureMode::Screenshot,
-                display: CapturedDisplay {
+                displays: vec![CapturedDisplay {
                     png_data: vec![1].into(),
                     pixel_width: 1,
                     pixel_height: 1,
@@ -1399,12 +1509,24 @@ mod tests {
                     display_id: 1,
                     display_identity: None,
                     backing_scale: 1.0,
-                },
+                }],
+                overlays: vec![
+                    super::OverlayBinding {
+                        label: "overlay-a".into(),
+                        display_index: 0,
+                        token: "a".repeat(32),
+                    },
+                    super::OverlayBinding {
+                        label: "overlay-b".into(),
+                        display_index: 0,
+                        token: "b".repeat(32),
+                    },
+                ],
+                secondary_displays_started: true,
                 source_application: None,
                 return_pid: None,
                 was_kiri_frontmost: true,
                 hidden_windows: Vec::new(),
-                overlay_labels: vec!["overlay-a".into(), "overlay-b".into()],
                 annotation: None,
             }),
         };
@@ -1417,6 +1539,57 @@ mod tests {
         let ended = ended.expect("last overlay must consume the session");
         assert_eq!(ended.capture_id, capture_id);
         assert!(flow.session.is_none());
+    }
+
+    #[test]
+    fn overlays_resolve_only_their_bound_display() {
+        fn display(id: u32, x: f64) -> CapturedDisplay {
+            CapturedDisplay {
+                png_data: vec![1].into(),
+                pixel_width: 100,
+                pixel_height: 100,
+                screen_frame: Rect::new(x, 0.0, 100.0, 100.0),
+                window_rects: Vec::new(),
+                display_id: id,
+                display_identity: None,
+                backing_scale: 1.0,
+            }
+        }
+        let session = CaptureSession {
+            capture_id: uuid::Uuid::new_v4(),
+            initial_mode: super::CaptureMode::Screenshot,
+            displays: vec![display(11, 0.0), display(22, 100.0)],
+            overlays: vec![
+                super::OverlayBinding {
+                    label: "overlay".into(),
+                    display_index: 0,
+                    token: "a".repeat(32),
+                },
+                super::OverlayBinding {
+                    label: "overlay-2".into(),
+                    display_index: 1,
+                    token: "b".repeat(32),
+                },
+            ],
+            secondary_displays_started: true,
+            source_application: None,
+            return_pid: None,
+            was_kiri_frontmost: true,
+            hidden_windows: Vec::new(),
+            annotation: None,
+        };
+
+        assert_eq!(
+            session.display_for_overlay("overlay").map(|display| display.display_id),
+            Some(11)
+        );
+        assert_eq!(
+            session.display_for_overlay("overlay-2").map(|display| display.display_id),
+            Some(22)
+        );
+        assert_eq!(session.display_index_for_overlay("overlay-2"), Some(1));
+        assert!(session.display_for_overlay("overlay-9").is_none());
+        assert!(session.display_for_overlay("countdown").is_none());
     }
 
     #[test]
@@ -1654,5 +1827,45 @@ mod tests {
         assert!(!flow.pending_start_is_current(id));
         flow.take_and_reset();
         assert!(!flow.pending_start_is_current(id));
+    }
+
+    #[test]
+    fn capture_mode_preference_round_trips_and_falls_back() {
+        for mode in [
+            super::CaptureMode::Screenshot,
+            super::CaptureMode::Record,
+            super::CaptureMode::Ocr,
+        ] {
+            assert_eq!(super::decode_capture_mode(&super::encode_capture_mode(mode)), mode);
+        }
+        assert_eq!(
+            super::decode_capture_mode(br#"{"mode":"record"}"#),
+            super::CaptureMode::Record
+        );
+        // A damaged or hand-edited file must never block a capture.
+        for damaged in [
+            &b""[..],
+            &br#"{"mode":"video"}"#[..],
+            &br#"{}"#[..],
+            &b"not json"[..],
+        ] {
+            assert_eq!(super::decode_capture_mode(damaged), super::CaptureMode::Screenshot);
+        }
+    }
+
+    #[test]
+    fn capture_mode_names_match_the_frontend_contract() {
+        assert_eq!(super::parse_capture_mode("screenshot"), Some(super::CaptureMode::Screenshot));
+        assert_eq!(super::parse_capture_mode("record"), Some(super::CaptureMode::Record));
+        assert_eq!(super::parse_capture_mode("ocr"), Some(super::CaptureMode::Ocr));
+        assert_eq!(super::parse_capture_mode("Screenshot"), None);
+        assert_eq!(super::parse_capture_mode(""), None);
+        let encoded =
+            String::from_utf8(super::encode_capture_mode(super::CaptureMode::Ocr)).unwrap();
+        assert!(encoded.contains("\"mode\": \"ocr\""), "{encoded}");
+        assert_eq!(
+            super::capture_mode_path_for_root(std::path::Path::new("/config")),
+            std::path::Path::new("/config").join("capture-mode.json")
+        );
     }
 }

@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Kiri">
-  <h1>Kiri</h1>
+  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Lumen">
+  <h1>Lumen</h1>
   <p>Screenshots, text recognition, and screen recording. Your captures stay local.</p>
   <p>For macOS, Windows, and Linux.</p>
   <p><a href="https://kiri.yuxino.cn">Website</a> · <a href="https://github.com/yuxino/kiri/releases/latest">Download the latest release</a></p>
@@ -12,7 +12,7 @@
   </p>
 </div>
 
-![Kiri](../assets/readme-preview.png)
+![Lumen](../assets/readme-preview.png)
 
 ## Features
 
@@ -23,19 +23,19 @@
 - Trim and reorder clips from one video, then export a new MP4.
 - Search, tag, favorite and export local captures, with Trash for accidental deletions.
 - Set, disable or restore global shortcuts directly in Settings; recording controls are active only while recording ([Wayland uses desktop settings](../linux.md)).
-- Enable Start at login in Settings → General when needed. It is off by default and starts Kiri in the background without opening the library.
+- Enable Start at login in Settings → General when needed. It is off by default and starts Lumen in the background without opening the library.
 
 ## Get started
 
-1. Press `⇧⌘A` on macOS or `Shift+Ctrl+A` on Windows / Linux X11 to open capture.
+1. Press `F1` to open capture, `F2` to pin the copied image or text, and `F3` to record.
 2. Choose Screenshot, Record, or OCR, then select a window or drag a region.
-3. For screenshots, press `Enter` to finish or `Esc` to cancel. Finished screenshots go to your clipboard and library.
+3. For screenshots, press `Enter` to finish or `Esc` to cancel. Finished screenshots are copied to your clipboard; use the toolbar pin to keep one on screen.
 
 [Setup and help](../usage.md) · [Video editing](../video-editing.md) · [Linux](../linux.md) · [Report an issue](https://github.com/yuxino/kiri/issues)
 
 ## Thanks
 
-Thank you to everyone who writes code, reports issues, tries Kiri, or shares it.
+Thank you to everyone who writes code, reports issues, tries Lumen, or shares it.
 
 Special thanks to [@kerwin2046](https://github.com/kerwin2046) for [initial Linux support](https://github.com/yuxino/kiri/pull/20), and [@LLLin000](https://github.com/LLLin000) for [Windows text-scaling capture alignment](https://github.com/yuxino/kiri/pull/61).
 

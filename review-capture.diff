@@ -1,0 +1,230 @@
+﻿diff --git a/src-tauri/src/capture/macos.rs b/src-tauri/src/capture/macos.rs
+index 365c749..be58b18 100644
+--- a/src-tauri/src/capture/macos.rs
++++ b/src-tauri/src/capture/macos.rs
+@@ -226,12 +226,7 @@ fn active_screen() -> Result<ActiveScreen> {
+ 
+ fn screen_geometry(screen: &NSScreen) -> Result<ActiveScreen> {
+     let frame = screen.frame();
+-    let display_id = screen
+-        .deviceDescription()
+-        .objectForKey(&NSString::from_str("NSScreenNumber"))
+-        .and_then(|value| value.downcast::<NSNumber>().ok())
+-        .map(|number| number.unsignedIntValue() as CGDirectDisplayID)
+-        .ok_or_else(|| anyhow!("display unavailable"))?;
++    let display_id = screen_display_id(screen)?;
+     let backing_scale = screen.backingScaleFactor().max(1.0);
+ 
+     // `NSScreen.mainScreen` follows the key window and can therefore switch
+@@ -248,6 +243,15 @@ fn screen_geometry(screen: &NSScreen) -> Result<ActiveScreen> {
+     })
+ }
+ 
++fn screen_display_id(screen: &NSScreen) -> Result<CGDirectDisplayID> {
++    screen
++        .deviceDescription()
++        .objectForKey(&NSString::from_str("NSScreenNumber"))
++        .and_then(|value| value.downcast::<NSNumber>().ok())
++        .map(|number| number.unsignedIntValue() as CGDirectDisplayID)
++        .ok_or_else(|| anyhow!("display unavailable"))
++}
++
+ #[cfg(test)]
+ mod active_screen_tests {
+     use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+@@ -627,15 +631,54 @@ pub fn capture_active_display() -> Result<CapturedDisplay> {
+         .ok_or_else(|| anyhow!("display capture must start on the main thread"))?;
+     let screen = active_screen()?;
+     let content = shareable_content(main_thread)?;
++    capture_screen(&screen, &content)
++}
++
++/// Stable Core Graphics display ids in `NSScreen` order. Mirrored screens
++/// share an id, so duplicates are removed before capturing.
++pub fn display_ids() -> Result<Vec<u32>> {
++    let main_thread = MainThreadMarker::new()
++        .ok_or_else(|| anyhow!("display enumeration must run on the main thread"))?;
++    let screens = NSScreen::screens(main_thread);
++    let mut ids: Vec<u32> = Vec::new();
++    for screen in screens.iter() {
++        let id = screen_display_id(&screen)?;
++        if !ids.contains(&id) {
++            ids.push(id);
++        }
++    }
++    Ok(ids)
++}
++
++/// Freeze one already-known display after the primary overlay is interactive.
++pub fn capture_display_by_id(id: u32) -> Result<CapturedDisplay> {
++    let main_thread = MainThreadMarker::new()
++        .ok_or_else(|| anyhow!("display capture must start on the main thread"))?;
++    let screens = NSScreen::screens(main_thread);
++    let screen = screens
++        .iter()
++        .find_map(|screen| {
++            let geometry = screen_geometry(&screen).ok()?;
++            (geometry.display_id == id).then_some(geometry)
++        })
++        .ok_or_else(|| anyhow!("The display is no longer available."))?;
++    let content = shareable_content(main_thread)?;
++    capture_screen(&screen, &content)
++}
++
++fn capture_screen(
++    screen: &ActiveScreen,
++    content: &SCShareableContent,
++) -> Result<CapturedDisplay> {
+     let displays = unsafe { content.displays() };
+     let display = displays
+         .iter()
+         .find(|display| unsafe { display.displayID() } == screen.display_id)
+         .ok_or_else(|| anyhow!("the active display could not be captured"))?;
+ 
+-    let window_rects = collect_window_rects(&content, screen.display_id);
++    let window_rects = collect_window_rects(content, screen.display_id);
+     let own_process_id = std::process::id() as i32;
+-    let filter = make_filter(&content, &display, own_process_id, &[]);
++    let filter = make_filter(content, &display, own_process_id, &[]);
+ 
+     let configuration = unsafe {
+         let configuration = SCStreamConfiguration::new();
+diff --git a/src-tauri/src/capture/windows.rs b/src-tauri/src/capture/windows.rs
+index db16719..c364a32 100644
+--- a/src-tauri/src/capture/windows.rs
++++ b/src-tauri/src/capture/windows.rs
+@@ -51,6 +51,55 @@ impl Drop for FrozenCaptureWorkerPermit {
+ }
+ 
+ pub fn capture_active_display() -> Result<CapturedDisplay> {
++    run_frozen_capture_worker("kiri-frozen-capture", capture_active_display_inner)
++}
++
++/// Stable one-based monitor indices for the current desktop layout. These are
++/// the same ids stored in `CapturedDisplay::display_id` and can be passed back
++/// to `capture_display_by_id` while the layout is unchanged.
++///
++/// `xcap::Monitor::id()` is the raw `HMONITOR` handle, which never equals the
++/// one-based position `CapturedDisplay::display_id` stores. Returning handles
++/// here made the coordinator treat the pointer display as a second display and
++/// stack a duplicate overlay on it, so this function must keep the session id
++/// space: position + 1.
++pub fn display_ids() -> Result<Vec<u32>> {
++    xcap::Monitor::all()?
++        .iter()
++        .enumerate()
++        .map(|(position, _)| windows_capture_monitor_index(position))
++        .collect()
++}
++
++/// Freeze one already-known monitor after the primary overlay is interactive.
++/// A disconnected or reordered monitor fails closed instead of selecting a
++/// different display's pixels.
++pub fn capture_display_by_id(id: u32) -> Result<CapturedDisplay> {
++    run_frozen_capture_worker("kiri-frozen-display", move |progress| {
++        let monitors = xcap::Monitor::all()?;
++        let position = display_id_position(id)?;
++        let monitor = monitors
++            .get(position)
++            .ok_or_else(|| anyhow!("The display is no longer available."))?;
++        capture_monitor(monitor, Some(progress))
++    })
++}
++
++/// Inverse of `windows_capture_monitor_index`: a session display id is a
++/// one-based enumeration position, not a native `HMONITOR` handle.
++fn display_id_position(id: u32) -> Result<usize> {
++    let zero_based = id
++        .checked_sub(1)
++        .ok_or_else(|| anyhow!("The display id is invalid."))?;
++    usize::try_from(zero_based).map_err(|_| anyhow!("The display id is too large."))
++}
++
++fn run_frozen_capture_worker<F>(name: &str, select: F) -> Result<CapturedDisplay>
++where
++    F: FnOnce(&mpsc::Sender<FrozenCaptureMessage<CapturedDisplay>>) -> Result<CapturedDisplay>
++        + Send
++        + 'static,
++{
+     if FROZEN_CAPTURE_WORKER_ACTIVE
+         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+         .is_err()
+@@ -61,17 +110,15 @@ pub fn capture_active_display() -> Result<CapturedDisplay> {
+     }
+ 
+     let (sender, receiver) = mpsc::channel();
+-    let worker = std::thread::Builder::new()
+-        .name("kiri-frozen-capture".into())
+-        .spawn(move || {
+-            let result = {
+-                let _permit = FrozenCaptureWorkerPermit;
+-                capture_active_display_inner(&sender)
+-            };
+-            if sender.send(FrozenCaptureMessage::Finished(result)).is_err() {
+-                log::warn!("Windows frozen capture finished after its caller stopped waiting");
+-            }
+-        });
++    let worker = std::thread::Builder::new().name(name.into()).spawn(move || {
++        let result = {
++            let _permit = FrozenCaptureWorkerPermit;
++            select(&sender)
++        };
++        if sender.send(FrozenCaptureMessage::Finished(result)).is_err() {
++            log::warn!("Windows frozen capture finished after its caller stopped waiting");
++        }
++    });
+     if let Err(error) = worker {
+         FROZEN_CAPTURE_WORKER_ACTIVE.store(false, Ordering::Release);
+         return Err(anyhow!(
+@@ -155,7 +202,18 @@ fn capture_active_display_inner(
+         })
+         .or_else(|| monitors.first())
+         .ok_or_else(|| anyhow!("The active display could not be captured."))?;
++    log::info!(
++        "Windows frozen capture: selected monitor in {} ms",
++        worker_started.elapsed().as_millis()
++    );
++    capture_monitor(monitor, Some(progress))
++}
+ 
++fn capture_monitor(
++    monitor: &xcap::Monitor,
++    progress: Option<&mpsc::Sender<FrozenCaptureMessage<CapturedDisplay>>>,
++) -> Result<CapturedDisplay> {
++    let worker_started = Instant::now();
+     log::info!("Windows frozen capture: requesting desktop frame through GDI");
+     let frame_started = Instant::now();
+     let image = monitor.capture_image()?;
+@@ -164,9 +222,11 @@ fn capture_active_display_inner(
+         frame_started.elapsed().as_millis(),
+         worker_started.elapsed().as_millis()
+     );
+-    progress
+-        .send(FrozenCaptureMessage::NativeFrameReady)
+-        .map_err(|_| anyhow!("The Windows screen capture caller stopped waiting."))?;
++    if let Some(progress) = progress {
++        progress
++            .send(FrozenCaptureMessage::NativeFrameReady)
++            .map_err(|_| anyhow!("The Windows screen capture caller stopped waiting."))?;
++    }
+ 
+     let metadata_started = Instant::now();
+     let scale = monitor.scale_factor().unwrap_or(1.0).max(1.0) as f64;
+@@ -1021,6 +1081,17 @@ mod tests {
+         assert!(windows_capture_monitor_index(usize::MAX).is_err());
+     }
+ 
++    #[test]
++    fn session_display_ids_round_trip_through_enumeration_positions() {
++        assert_eq!(display_id_position(1).unwrap(), 0);
++        assert_eq!(display_id_position(2).unwrap(), 1);
++        assert!(display_id_position(0).is_err());
++        for position in 0..8 {
++            let id = windows_capture_monitor_index(position).unwrap();
++            assert_eq!(display_id_position(id).unwrap(), position);
++        }
++    }
++
+     #[test]
+     fn frozen_capture_fast_png_round_trips_rgba_pixels() {
+         let pixels = vec![

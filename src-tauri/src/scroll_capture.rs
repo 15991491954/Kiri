@@ -110,7 +110,7 @@ impl StartupFailure {
                 ) {
                     "Scrolling capture requires desktop composition to exclude its controls."
                 } else {
-                    "Could not exclude Kiri controls from scrolling capture."
+                    "Could not exclude Lumen controls from scrolling capture."
                 }
             }
             StartupStage::OverlayTransition
@@ -525,7 +525,7 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
     if !supported() {
         return Err("Scrolling capture is unavailable in this desktop session.".into());
     }
-    let (capture, frame, compact, control) = {
+    let (capture, display, frame, compact, control) = {
         let state = app.state::<AppState>();
         let _transition = state.library_transition.lock().unwrap();
         let mut active = state.scroll_capture.0.lock().unwrap();
@@ -537,33 +537,40 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
             .session
             .as_ref()
             .ok_or_else(|| "No active capture session.".to_string())?;
-        if session.capture_id != id || !session.overlay_labels.contains(&label) {
+        if session.capture_id != id || !session.has_overlay(&label) {
             return Err("Capture command is only available to its overlay.".into());
         }
         if session.annotation.is_some() {
             return Err("Start scrolling capture before adding annotations.".into());
         }
-        let pixels =
-            scroll::pixel_region(&session.display, selection).map_err(|error| error.to_string())?;
+        // Scrolling always captures the display of the overlay that started
+        // it; peer overlays on other displays never supply pixels.
+        let display = session
+            .display_for_overlay(&label)
+            .ok_or_else(|| "Capture command is only available to its overlay.".to_string())?
+            .clone();
+        let pixels = scroll::pixel_region(&display, selection).map_err(|error| error.to_string())?;
         ScrollDocument::new(pixels.width, pixels.height).map_err(|error| error.to_string())?;
         let (frame, compact) = panel_frame(
-            session.display.screen_frame,
+            display.screen_frame,
             selection,
-            cfg!(any(target_os = "macos", windows)),
+            // Only macOS ScreenCaptureKit reliably excludes a WebView window.
+            // Windows rejects the policy for WebView2, so the preview must not
+            // overlap the captured pixels there.
+            cfg!(target_os = "macos"),
         )
         .ok_or_else(|| {
             "Leave room outside the selection for scrolling capture controls.".to_string()
         })?;
-        let screen = session.display.screen_frame;
+        let screen = display.screen_frame;
         let session_id = uuid::Uuid::new_v4();
         let control = Arc::new(Session {
             id: session_id,
             requests: Mutex::new(Requests::default()),
             status: Mutex::new(ScrollStatus::new(session_id)),
             window_labels: session
-                .overlay_labels
-                .iter()
-                .cloned()
+                .overlay_labels()
+                .map(str::to_string)
                 .chain([PANEL.to_string(), REGION.to_string()])
                 .collect(),
             closing: AtomicBool::new(false),
@@ -578,12 +585,12 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
                 ),
                 width: frame.width,
                 height: frame.height,
-                backing_scale: session.display.backing_scale,
+                backing_scale: display.backing_scale,
             },
         });
         let capture = flow.session.take().unwrap();
         *active = Some(Arc::clone(&control));
-        (capture, frame, compact, control)
+        (capture, display, frame, compact, control)
     };
     crate::microphone::stop();
     crate::commands::invalidate_capture_resources(&app, &capture);
@@ -602,19 +609,19 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
         // Resolve while the frozen overlay still holds the original stacking
         // order. Closing it or activating the pre-capture app can raise a
         // different, overlapping window before the source is bound.
-        let target = scroll::resolve_target(&capture.display, selection)
+        let target = scroll::resolve_target(&display, selection)
             .map_err(|error| StartupFailure::new(StartupStage::SourceSelection, error))?;
         if control.requests.lock().unwrap().cancelled {
             return Err(StartupFailure::cancelled());
         }
-        let labels = capture.overlay_labels.clone();
+        let labels: Vec<String> = capture.overlay_labels().map(str::to_string).collect();
         let source_pid = match target {
             scroll::ScrollTarget::Window { owner_pid, .. } => u32::try_from(owner_pid).ok(),
             scroll::ScrollTarget::Display => capture.return_pid,
         };
         let session_id = control.id;
-        let scale = capture.display.backing_scale;
-        let screen = capture.display.screen_frame;
+        let scale = display.backing_scale;
+        let screen = display.screen_frame;
         startup_ui(&app, move |app| {
             for label in labels {
                 if let Some(window) = app.get_webview_window(&label) {
@@ -640,7 +647,7 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
                     .into(),
                 ),
             )
-            .title("kiri")
+            .title("Lumen")
             .inner_size(screen.width, screen.height)
             .position(screen.x, screen.y)
             .visible(false)
@@ -662,17 +669,27 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
             })?;
             #[cfg(windows)]
             {
-                platform::windows::require_window_capture_exclusion(&region)
-                    .map_err(|error| StartupFailure::new(StartupStage::RegionExclusion, error))?;
                 platform::windows::pin_webview_to_display_scale(&region, scale);
             }
-            #[cfg(not(windows))]
-            platform::set_window_capture_excluded(&app, REGION, true);
+            // The window has to exist and have painted once before Windows
+            // accepts EXCLUDEFROMCAPTURE (see require_window_capture_exclusion).
             platform::show_window_without_activation(
                 &app,
                 REGION,
                 TransientWindowRole::ScrollCaptureRegion,
             );
+            // Windows rejects EXCLUDEFROMCAPTURE for WebView2 windows
+            // (ERROR_NOT_ENOUGH_MEMORY). The region chrome is painted strictly
+            // outside the selection hole, so the session must not depend on
+            // that policy: try it, and keep going when it is unavailable.
+            #[cfg(windows)]
+            if let Err(error) = platform::windows::require_window_capture_exclusion(&region) {
+                log::warn!(
+                    "[scroll] region window exclusion unavailable; its chrome stays outside the selection: {error}"
+                );
+            }
+            #[cfg(not(windows))]
+            platform::set_window_capture_excluded(&app, REGION, true);
             let panel = WebviewWindowBuilder::new(
                 &app,
                 PANEL,
@@ -684,7 +701,7 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
                     .into(),
                 ),
             )
-            .title("kiri")
+            .title("Lumen")
             .inner_size(frame.width, frame.height)
             .position(frame.x, frame.y)
             .visible(false)
@@ -701,16 +718,19 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
             watch_session_window(&panel, session_id);
             platform::place_transient_window(&panel, frame, scale)
                 .map_err(|error| StartupFailure::new(StartupStage::PanelPlacement, error))?;
-            #[cfg(windows)]
-            platform::windows::require_window_capture_exclusion(&panel)
-                .map_err(|error| StartupFailure::new(StartupStage::PanelExclusion, error))?;
-            #[cfg(not(windows))]
-            platform::set_window_capture_excluded(&app, PANEL, true);
             platform::show_window_without_activation(
                 &app,
                 PANEL,
                 TransientWindowRole::RecordingControls,
             );
+            #[cfg(not(windows))]
+            platform::set_window_capture_excluded(&app, PANEL, true);
+            // The panel is placed outside the selection on Windows, so a
+            // rejected exclusion policy cannot contaminate a captured frame.
+            #[cfg(windows)]
+            if let Err(error) = platform::windows::require_window_capture_exclusion(&panel) {
+                log::warn!("[scroll] panel exclusion unavailable: {error}");
+            }
             if let Some(pid) = source_pid {
                 platform::activate_application(pid);
             }
@@ -725,7 +745,7 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
         if control.requests.lock().unwrap().cancelled {
             return Err(StartupFailure::cancelled());
         }
-        scroll::start(&capture.display, selection, &target)
+        scroll::start(&display, selection, &target)
             .map_err(|error| StartupFailure::new(StartupStage::CaptureStream, error))
     })();
     let source = match setup {
@@ -757,6 +777,8 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
                 &worker_app,
                 &worker_control,
                 &capture,
+                &label,
+                &display,
                 selection,
                 &mut source,
             )
@@ -771,7 +793,13 @@ fn start(app: AppHandle, label: String, id: uuid::Uuid, selection: Rect) -> Resu
                 None
             }
         };
-        cleanup(&worker_app, &worker_control, &capture, owns_escape, preview);
+        cleanup(
+            &worker_app,
+            &worker_control,
+            &capture,
+            owns_escape,
+            preview,
+        );
     }));
     Ok(())
 }
@@ -908,6 +936,8 @@ fn run(
     app: &AppHandle,
     session: &Arc<Session>,
     capture: &CaptureSession,
+    owner_label: &str,
+    display: &crate::capture::CapturedDisplay,
     selection: Rect,
     source: &mut ScrollSource,
 ) -> Option<CompletionPreviewDto> {
@@ -1007,7 +1037,7 @@ fn run(
                                 revision: stitcher.revision,
                                 left: 0,
                                 top: origin + i64::from(region.top),
-                                display_scale: capture.display.backing_scale,
+                                display_scale: display.backing_scale,
                                 image,
                             })
                     })
@@ -1086,7 +1116,7 @@ fn run(
             // Keep the document and reopen live sampling so the user can
             // naturally return through an unmatched area and continue.
             if !source_failed {
-                match scroll::start(&capture.display, selection, &source.target) {
+                match scroll::start(display, selection, &source.target) {
                     Ok(next) => {
                         *source = next;
                         frozen = false;
@@ -1133,7 +1163,9 @@ fn run(
         session.status.lock().unwrap().phase = "saving";
         let size = image.dimensions();
         let result = encode(image)
-            .and_then(|png| crate::commands::save_scroll_capture(app, capture, &png, size));
+            .and_then(|png| {
+                crate::commands::save_scroll_capture(app, capture, owner_label, &png, size)
+            });
         match result {
             Ok(preview) => {
                 let _ = request.reply.send(Ok(()));
@@ -1546,7 +1578,8 @@ fn panel_position(
 }
 
 /// Prefer a preview outside the selected content, then compact controls.
-/// Native window exclusion permits an inside fallback; X11 must leave room.
+/// The inside fallback is only for platforms whose native capture exclusion
+/// reliably removes a WebView window (macOS); Windows must leave room.
 fn panel_frame(screen: Rect, selection: Rect, allow_inside: bool) -> Option<(Rect, bool)> {
     const GAP: f64 = 10.0;
     for (width, height, compact) in [
@@ -1601,7 +1634,7 @@ mod tests {
             .context("Could not exclude scrolling capture controls");
         let failure = StartupFailure::new(StartupStage::RegionExclusion, cause);
         let diagnostic = failure.diagnostic();
-        assert!(diagnostic.starts_with("Could not exclude Kiri controls from scrolling capture."));
+        assert!(diagnostic.starts_with("Could not exclude Lumen controls from scrolling capture."));
         assert!(diagnostic.contains("stage=exclude-region-window"));
         assert!(diagnostic.contains(
             "Could not exclude scrolling capture controls: Win32 error 87 (HRESULT 0x80070057)"
@@ -1636,7 +1669,7 @@ mod tests {
             assert_eq!(
                 StartupFailure::detail(stage, "SetWindowDisplayAffinity failed: 0x80070057")
                     .notice(false),
-                Some("Could not exclude Kiri controls from scrolling capture.")
+                Some("Could not exclude Lumen controls from scrolling capture.")
             );
         }
     }

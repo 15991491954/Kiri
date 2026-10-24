@@ -1,0 +1,6 @@
+error when starting dev server:
+Error: Port 1420 is already in use
+    at Server.onError$1 (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/node_modules/.pnpm/vite@7.3.6/node_modules/vite/dist/node/chunks/config.js:15006:28)
+    at Server.emit (node:events:509:28)
+    at emitErrorNT (node:net:2044:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)

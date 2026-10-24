@@ -1,0 +1,104 @@
+﻿diff --git a/src/annotation/AnnotationCanvas.tsx b/src/annotation/AnnotationCanvas.tsx
+index 88b37de..fdd33cf 100644
+--- a/src/annotation/AnnotationCanvas.tsx
++++ b/src/annotation/AnnotationCanvas.tsx
+@@ -17,6 +17,7 @@ import type { Point, Rect } from "./geom";
+ import { handleTextEditorKey, isTextComposition, setTextComposition } from "./text-composition.js";
+ import type { ColorPreset } from "./model";
+ import { clampPoint, hitTestHandle } from "./geom";
++import { handleCursor } from "./cursors.js";
+ import {
+   AnnotationHistory,
+   COLOR_HEX,
+@@ -1295,15 +1296,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
+               if (calloutHandleAt(selectedMark, p, 9 * hitTestScale.radial)) cursor = "crosshair";
+             } else if ((toolRef.current === "select" || (textTool && selectedMark?.kind === "text")) &&
+               selected !== null && current[selected] && !["line","arrow"].includes(current[selected].kind)) {
+-              if (
+-                hitTestHandle(
+-                  p,
+-                  selectionBounds(current[selected]),
+-                  9 * hitTestScale.radial,
+-                )
+-              ) {
+-                cursor = "crosshair";
+-              }
++              const resizeHandle = hitTestHandle(
++                p,
++                selectionBounds(current[selected]),
++                9 * hitTestScale.radial,
++              );
++              if (resizeHandle) cursor = handleCursor(resizeHandle) ?? "crosshair";
+             }
+             if (
+               cursor === "default" &&
+diff --git a/src/lib/ipc.ts b/src/lib/ipc.ts
+index 24e37b5..b0d9d03 100644
+--- a/src/lib/ipc.ts
++++ b/src/lib/ipc.ts
+@@ -59,8 +59,6 @@ export interface ScrollCaptureStatusDto {
+ 
+ export interface OcrRecognitionDto {
+   text: string;
+-  saved: boolean;
+-  asset: AssetDto | null;
+ }
+ 
+ export interface AssetDto {
+@@ -70,8 +68,6 @@ export interface AssetDto {
+   filename: string;
+   title: string | null;
+   ocrText: string | null;
+-  ocrOriginalText: string | null;
+-  qrText: string | null;
+   tags: string[];
+   pixelWidth: number;
+   pixelHeight: number;
+@@ -181,7 +177,7 @@ export interface ShortcutStatusDto {
+   status: "enabled" | "occupied" | "disabled" | "systemManaged";
+ }
+ 
+-export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "recordingPauseResume" | "recordingStop";
++export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "pastePin" | "recordingPauseResume" | "recordingStop";
+ 
+ export interface ShortcutSettingDto {
+   action: ShortcutAction;
+@@ -305,14 +301,9 @@ export interface QrScanDto { requestId: string; imageUrl: string; width: number;
+ export const api = {
+   scanQr: (requestId: string, selection: RectDto | null, assetId: string | null, expectedRevisionSha256?: string) => invoke<QrScanDto>("scan_qr", { requestId, selection, assetId, expectedRevisionSha256 }),
+   cancelQr: (requestId: string) => invoke<void>("cancel_qr", { requestId }),
+-  qrAction: (requestId: string, index: number, action: string) => invoke<AssetDto | null>("qr_action", { requestId, index, action }),
+-  listQrFavorites: (query: string) => invoke<AssetDto[]>("list_qr_favorites", { query }),
+-  qrFavoriteAction: (id: string, action: string) => invoke<void>("qr_favorite_action", { id, action }),
+-  listOcrRecords: (query: string) => invoke<AssetDto[]>("list_ocr_records", { query }),
+-  updateOcrHistoryText: (id: string, expectedText: string, replacement: string | null) =>
+-    invoke<AssetDto>("update_ocr_history_text", { id, expectedText, replacement }),
++  qrAction: (requestId: string, index: number, action: string) => invoke<void>("qr_action", { requestId, index, action }),
+   recognizeAssetLocal: (id: string) => invoke<OcrRecognitionDto>("recognize_asset_local", { id }),
+-  copyHistoryText: (text: string) => invoke<void>("copy_history_text", { text }),
++  copyOcrText: (text: string) => invoke<void>("copy_ocr_text", { text }),
+   listAssets: (query: string, showingTrash: boolean) =>
+     invoke<AssetDto[]>("list_assets", { query, showingTrash }),
+   getAsset: (id: string) => invoke<AssetDto>("get_asset", { id }),
+@@ -367,6 +358,12 @@ export const api = {
+   copyAssetFile: (id: string) => invoke<void>("copy_asset_file", { id }),
+   openAsset: (id: string) => invoke<void>("open_asset", { id }),
+   pinAsset: (id: string) => invoke<void>("pin_asset", { id }),
++  setPinTopmost: (onTop: boolean) => invoke<void>("set_pin_topmost", { onTop }),
++  raisePin: () => invoke<void>("raise_pin"),
++  zoomPin: (factor: number, anchorX: number, anchorY: number, imageWidth: number, imageHeight: number) =>
++    invoke<{ width: number; height: number }>("zoom_pin", {
++      factor, anchorX, anchorY, imageWidth, imageHeight,
++    }),
+   openEditor: (id: string, recognizeQr = false) => invoke<void>("open_editor", { id, recognizeQr }),
+   takeEditorQrRequest: () => invoke<boolean>("take_editor_qr_request"),
+   revealAsset: (id: string) => invoke<void>("reveal_asset", { id }),
+@@ -380,6 +377,8 @@ export const api = {
+   convertToGif: (id: string) => invoke<void>("convert_to_gif", { id }),
+ 
+   startCapture: () => invoke<CaptureContextDto>("start_capture"),
++  setCaptureMode: (mode: "screenshot" | "record" | "ocr") =>
++    invoke<void>("set_capture_mode", { mode }),
+   cancelCapture: () => invoke<void>("cancel_capture"),
+   startScrollCapture: (captureId: string, selection: RectDto) =>
+     invoke<void>("start_scroll_capture", { captureId, selection }),

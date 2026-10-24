@@ -48,8 +48,7 @@ fn load_at(path: &Path) -> bool {
 }
 
 pub fn load(app: &AppHandle) -> bool {
-    app.path()
-        .app_config_dir()
+    crate::paths::config_dir(app)
         .map(|dir| load_at(&dir.join("dock-visibility.json")))
         .unwrap_or(true)
 }
@@ -203,10 +202,8 @@ pub fn set_dock_visibility(window: WebviewWindow, visible: bool) -> Result<(), S
         if current.visible == visible {
             return Ok(());
         }
-        let path = app
-            .path()
-            .app_config_dir()
-            .map_err(|_| "Couldn't change Dock visibility.".to_string())?
+        let path = crate::paths::config_dir(app)
+            .ok_or_else(|| "Couldn't change Dock visibility.".to_string())?
             .join("dock-visibility.json");
         let staged =
             stage_at(&path, visible).map_err(|_| "Couldn't change Dock visibility.".to_string())?;

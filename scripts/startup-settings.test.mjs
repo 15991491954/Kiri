@@ -65,7 +65,7 @@ test("a system-disabled registration is explained, refreshed after system settin
   }, source);
   const row = harness.mount("StartupSettingsRow", {});
   row.render(); await settleRequests();
-  assert.ok(nodes(row.render()).includes("Not active. Allow Kiri in your system's startup settings."));
+  assert.ok(nodes(row.render()).includes("Not active. Allow Lumen in your system's startup settings."));
   button(row, "Open System Settings").props.onClick(); await settleRequests();
   assert.equal(opened, 1);
   assert.equal(button(row, "Open System Settings"), undefined);

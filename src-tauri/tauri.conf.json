@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "kiri",
-  "version": "1.6.26",
+  "productName": "Lumen",
+  "mainBinaryName": "kiri",
+  "version": "1.6.27",
   "identifier": "io.yuxino.kiri",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -14,13 +15,16 @@
     "windows": [
       {
         "label": "library",
-        "title": "kiri",
-        "width": 960,
-        "height": 640,
-        "minWidth": 820,
-        "minHeight": 540,
+        "title": "Lumen",
+        "width": 1000,
+        "height": 680,
+        "minWidth": 840,
+        "minHeight": 560,
         "center": true,
         "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
         "visible": false
       }
     ],
@@ -31,7 +35,7 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "targets": "all",
     "category": "Utility",
     "shortDescription": "A fast, local-first capture workspace",
@@ -55,17 +59,6 @@
     "linux": {
       "appimage": {
         "bundleMediaFramework": false
-      }
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxQTIxQzZBODYwQzExRkYKUldUL0VReUdhaHlpTVhQWjNza1N4ajd3eXZTakNWUDdKSjBiUVhUU01aRitockpTMC9EZms4cjQK",
-      "endpoints": [
-        "https://github.com/yuxino/kiri/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
       }
     }
   }

@@ -1,0 +1,260 @@
+diff --git a/src-tauri/src/capture/windows.rs b/src-tauri/src/capture/windows.rs
+index db16719..c364a32 100644
+--- a/src-tauri/src/capture/windows.rs
++++ b/src-tauri/src/capture/windows.rs
+@@ -51,6 +51,55 @@ impl Drop for FrozenCaptureWorkerPermit {
+ }
+ 
+ pub fn capture_active_display() -> Result<CapturedDisplay> {
++    run_frozen_capture_worker("kiri-frozen-capture", capture_active_display_inner)
++}
++
++/// Stable one-based monitor indices for the current desktop layout. These are
++/// the same ids stored in `CapturedDisplay::display_id` and can be passed back
++/// to `capture_display_by_id` while the layout is unchanged.
++///
++/// `xcap::Monitor::id()` is the raw `HMONITOR` handle, which never equals the
++/// one-based position `CapturedDisplay::display_id` stores. Returning handles
++/// here made the coordinator treat the pointer display as a second display and
++/// stack a duplicate overlay on it, so this function must keep the session id
++/// space: position + 1.
++pub fn display_ids() -> Result<Vec<u32>> {
++    xcap::Monitor::all()?
++        .iter()
++        .enumerate()
++        .map(|(position, _)| windows_capture_monitor_index(position))
++        .collect()
++}
++
++/// Freeze one already-known monitor after the primary overlay is interactive.
++/// A disconnected or reordered monitor fails closed instead of selecting a
++/// different display's pixels.
++pub fn capture_display_by_id(id: u32) -> Result<CapturedDisplay> {
++    run_frozen_capture_worker("kiri-frozen-display", move |progress| {
++        let monitors = xcap::Monitor::all()?;
++        let position = display_id_position(id)?;
++        let monitor = monitors
++            .get(position)
++            .ok_or_else(|| anyhow!("The display is no longer available."))?;
++        capture_monitor(monitor, Some(progress))
++    })
++}
++
++/// Inverse of `windows_capture_monitor_index`: a session display id is a
++/// one-based enumeration position, not a native `HMONITOR` handle.
++fn display_id_position(id: u32) -> Result<usize> {
++    let zero_based = id
++        .checked_sub(1)
++        .ok_or_else(|| anyhow!("The display id is invalid."))?;
++    usize::try_from(zero_based).map_err(|_| anyhow!("The display id is too large."))
++}
++
++fn run_frozen_capture_worker<F>(name: &str, select: F) -> Result<CapturedDisplay>
++where
++    F: FnOnce(&mpsc::Sender<FrozenCaptureMessage<CapturedDisplay>>) -> Result<CapturedDisplay>
++        + Send
++        + 'static,
++{
+     if FROZEN_CAPTURE_WORKER_ACTIVE
+         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+         .is_err()
+@@ -61,17 +110,15 @@ pub fn capture_active_display() -> Result<CapturedDisplay> {
+     }
+ 
+     let (sender, receiver) = mpsc::channel();
+-    let worker = std::thread::Builder::new()
+-        .name("kiri-frozen-capture".into())
+-        .spawn(move || {
+-            let result = {
+-                let _permit = FrozenCaptureWorkerPermit;
+-                capture_active_display_inner(&sender)
+-            };
+-            if sender.send(FrozenCaptureMessage::Finished(result)).is_err() {
+-                log::warn!("Windows frozen capture finished after its caller stopped waiting");
+-            }
+-        });
++    let worker = std::thread::Builder::new().name(name.into()).spawn(move || {
++        let result = {
++            let _permit = FrozenCaptureWorkerPermit;
++            select(&sender)
++        };
++        if sender.send(FrozenCaptureMessage::Finished(result)).is_err() {
++            log::warn!("Windows frozen capture finished after its caller stopped waiting");
++        }
++    });
+     if let Err(error) = worker {
+         FROZEN_CAPTURE_WORKER_ACTIVE.store(false, Ordering::Release);
+         return Err(anyhow!(
+@@ -155,7 +202,18 @@ fn capture_active_display_inner(
+         })
+         .or_else(|| monitors.first())
+         .ok_or_else(|| anyhow!("The active display could not be captured."))?;
++    log::info!(
++        "Windows frozen capture: selected monitor in {} ms",
++        worker_started.elapsed().as_millis()
++    );
++    capture_monitor(monitor, Some(progress))
++}
+ 
++fn capture_monitor(
++    monitor: &xcap::Monitor,
++    progress: Option<&mpsc::Sender<FrozenCaptureMessage<CapturedDisplay>>>,
++) -> Result<CapturedDisplay> {
++    let worker_started = Instant::now();
+     log::info!("Windows frozen capture: requesting desktop frame through GDI");
+     let frame_started = Instant::now();
+     let image = monitor.capture_image()?;
+@@ -164,9 +222,11 @@ fn capture_active_display_inner(
+         frame_started.elapsed().as_millis(),
+         worker_started.elapsed().as_millis()
+     );
+-    progress
+-        .send(FrozenCaptureMessage::NativeFrameReady)
+-        .map_err(|_| anyhow!("The Windows screen capture caller stopped waiting."))?;
++    if let Some(progress) = progress {
++        progress
++            .send(FrozenCaptureMessage::NativeFrameReady)
++            .map_err(|_| anyhow!("The Windows screen capture caller stopped waiting."))?;
++    }
+ 
+     let metadata_started = Instant::now();
+     let scale = monitor.scale_factor().unwrap_or(1.0).max(1.0) as f64;
+@@ -1021,6 +1081,17 @@ mod tests {
+         assert!(windows_capture_monitor_index(usize::MAX).is_err());
+     }
+ 
++    #[test]
++    fn session_display_ids_round_trip_through_enumeration_positions() {
++        assert_eq!(display_id_position(1).unwrap(), 0);
++        assert_eq!(display_id_position(2).unwrap(), 1);
++        assert!(display_id_position(0).is_err());
++        for position in 0..8 {
++            let id = windows_capture_monitor_index(position).unwrap();
++            assert_eq!(display_id_position(id).unwrap(), position);
++        }
++    }
++
+     #[test]
+     fn frozen_capture_fast_png_round_trips_rgba_pixels() {
+         let pixels = vec![
+diff --git a/src-tauri/src/protocol.rs b/src-tauri/src/protocol.rs
+index bab1b2c..1fa11f8 100644
+--- a/src-tauri/src/protocol.rs
++++ b/src-tauri/src/protocol.rs
+@@ -18,7 +18,9 @@ const THUMBNAIL_CACHE_MAX_ENTRIES: usize = 256;
+ pub(crate) const MEDIA_RANGE_MAX_BYTES: u64 = 1024 * 1024;
+ 
+ pub struct ProtocolStore {
+-    frozen_capture: Mutex<Option<FrozenCapture>>,
++    /// Frozen display frames keyed by the unguessable token embedded in each
++    /// overlay URL. A capture session owns one entry per display.
++    frozen_captures: Mutex<HashMap<String, FrozenCapture>>,
+     thumbnails: Mutex<ThumbnailCache>,
+     thumbnail_generation: Mutex<()>,
+ }
+@@ -26,7 +28,7 @@ pub struct ProtocolStore {
+ impl ProtocolStore {
+     pub fn new() -> Self {
+         Self {
+-            frozen_capture: Mutex::new(None),
++            frozen_captures: Mutex::new(HashMap::new()),
+             thumbnails: Mutex::new(ThumbnailCache::with_limits(
+                 THUMBNAIL_CACHE_MAX_BYTES,
+                 THUMBNAIL_CACHE_MAX_ENTRIES,
+@@ -113,17 +115,16 @@ impl ThumbnailCache {
+ 
+ struct FrozenCapture {
+     capture_id: uuid::Uuid,
+-    token: String,
+     png: Arc<[u8]>,
+ }
+ 
+ pub fn set_frozen_png(store: &ProtocolStore, capture_id: uuid::Uuid, png: Arc<[u8]>) -> String {
+     let token = uuid::Uuid::new_v4().simple().to_string();
+-    *store.frozen_capture.lock().unwrap() = Some(FrozenCapture {
+-        capture_id,
+-        token: token.clone(),
+-        png,
+-    });
++    store
++        .frozen_captures
++        .lock()
++        .unwrap()
++        .insert(token.clone(), FrozenCapture { capture_id, png });
+     token
+ }
+ 
+@@ -174,13 +175,14 @@ pub fn clear_thumbnails(store: &ProtocolStore) {
+ }
+ 
+ pub fn clear_frozen_png_for_capture(store: &ProtocolStore, capture_id: uuid::Uuid) {
+-    let mut frozen_capture = store.frozen_capture.lock().unwrap();
+-    if frozen_capture
+-        .as_ref()
+-        .is_some_and(|capture| capture.capture_id == capture_id)
+-    {
+-        *frozen_capture = None;
+-    }
++    // One capture session publishes one frozen frame per display. Teardown
++    // must revoke every token at once, including frames added after the
++    // overlay that confirms first started loading.
++    store
++        .frozen_captures
++        .lock()
++        .unwrap()
++        .retain(|_, capture| capture.capture_id != capture_id);
+ }
+ 
+ fn annotation_source_revision(query: Option<&str>) -> Option<String> {
+@@ -419,10 +421,14 @@ fn frozen_png_for_path(store: &ProtocolStore, path: &str) -> Option<Vec<u8>> {
+     {
+         return None;
+     }
+-    let capture = store.frozen_capture.lock().unwrap();
+-    let capture = capture.as_ref()?;
+-    constant_time_eq(requested_token.as_bytes(), capture.token.as_bytes())
+-        .then(|| capture.png.as_ref().to_vec())
++    let captures = store.frozen_captures.lock().unwrap();
++    // Compare against every live token rather than using the map's hash lookup
++    // so a rejected token never gets timing feedback beyond the fixed-length
++    // comparison. A session has at most one token per display.
++    captures
++        .iter()
++        .find(|(token, _)| constant_time_eq(requested_token.as_bytes(), token.as_bytes()))
++        .map(|(_, capture)| capture.png.as_ref().to_vec())
+ }
+ 
+ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+@@ -930,10 +936,16 @@ mod tests {
+         let store = ProtocolStore::new();
+         let capture_id = uuid::Uuid::new_v4();
+         let token = set_frozen_png(&store, capture_id, vec![1, 2, 3].into());
++        let secondary = set_frozen_png(&store, capture_id, vec![4, 5].into());
++        let other_capture = set_frozen_png(&store, uuid::Uuid::new_v4(), vec![9].into());
+         assert_eq!(
+             frozen_png_for_path(&store, &format!("frozen/{token}.png")),
+             Some(vec![1, 2, 3])
+         );
++        assert_eq!(
++            frozen_png_for_path(&store, &format!("frozen/{secondary}.png")),
++            Some(vec![4, 5])
++        );
+         assert!(frozen_png_for_path(&store, "frozen.png").is_none());
+         assert!(
+             frozen_png_for_path(&store, "frozen/00000000000000000000000000000000.png").is_none()
+@@ -944,8 +956,15 @@ mod tests {
+             frozen_png_for_path(&store, &format!("frozen/{token}.png")),
+             Some(vec![1, 2, 3])
+         );
++        // Every display token for the ending capture is revoked together; a
++        // different live capture keeps its own frames.
+         clear_frozen_png_for_capture(&store, capture_id);
+         assert!(frozen_png_for_path(&store, &format!("frozen/{token}.png")).is_none());
++        assert!(frozen_png_for_path(&store, &format!("frozen/{secondary}.png")).is_none());
++        assert_eq!(
++            frozen_png_for_path(&store, &format!("frozen/{other_capture}.png")),
++            Some(vec![9])
++        );
+     }
+ 
+     #[test]

@@ -1,0 +1,4 @@
+CLIP_HAS_IMAGE=True
+PINS=1
+hwnd=0x13504D2 pid=32376 rect=2050,600 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+CLIP_STILL_HAS_IMAGE=True

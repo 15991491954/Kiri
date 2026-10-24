@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Kiri">
-  <h1>Kiri</h1>
+  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Lumen">
+  <h1>Lumen</h1>
   <p>Captures d’écran, reconnaissance de texte et enregistrement d’écran. Vos captures restent locales.</p>
   <p>Pour macOS, Windows et Linux.</p>
   <p><a href="https://kiri.yuxino.cn">Site web</a> · <a href="https://github.com/yuxino/kiri/releases/latest">Télécharger la dernière version</a></p>
@@ -12,7 +12,7 @@
   </p>
 </div>
 
-![Kiri](../assets/readme-preview.png)
+![Lumen](../assets/readme-preview.png)
 
 ## Fonctions
 
@@ -23,19 +23,19 @@
 - Coupez et réorganisez les clips d’une même vidéo, puis exportez un nouveau MP4.
 - Recherchez, étiquetez, ajoutez aux favoris et exportez vos captures locales ; récupérez les suppressions accidentelles dans la corbeille.
 - Définissez, désactivez ou rétablissez les raccourcis globaux dans les réglages ; les commandes d’enregistrement ne sont actives que pendant celui-ci ([Wayland utilise les réglages du bureau](../linux.md)).
-- Activez le lancement à la connexion dans Réglages → Général si nécessaire. Désactivé par défaut, il démarre Kiri en arrière-plan sans ouvrir la bibliothèque.
+- Activez le lancement à la connexion dans Réglages → Général si nécessaire. Désactivé par défaut, il démarre Lumen en arrière-plan sans ouvrir la bibliothèque.
 
 ## Premiers pas
 
-1. Appuyez sur `⇧⌘A` sous macOS ou `Shift+Ctrl+A` sous Windows / Linux X11 pour ouvrir la capture.
+1. `F1` ouvre la capture, `F2` épingle l’image ou le texte copié, et `F3` démarre l’enregistrement.
 2. Choisissez Capture d’écran, Enregistrer ou OCR, puis cliquez sur une fenêtre ou faites glisser une zone.
-3. Pour une capture d’écran, `Entrée` termine et `Échap` annule. L’image est copiée dans le presse-papiers et enregistrée dans la bibliothèque.
+3. Pour une capture d’écran, `Entrée` termine et `Échap` annule. L’image est copiée dans le presse-papiers ; utilisez 📌 dans la barre d’outils pour l’épingler à l’écran.
 
 [Installation et aide](../usage.fr.md) · [Montage vidéo](../video-editing.fr.md) · [Linux](../linux.md) · [Signaler un problème](https://github.com/yuxino/kiri/issues)
 
 ## Merci
 
-Merci à toutes les personnes qui écrivent du code, signalent des problèmes, essaient Kiri ou le partagent.
+Merci à toutes les personnes qui écrivent du code, signalent des problèmes, essaient Lumen ou le partagent.
 
 Merci en particulier à [@kerwin2046](https://github.com/kerwin2046) pour la [prise en charge initiale de Linux](https://github.com/yuxino/kiri/pull/20), et à [@LLLin000](https://github.com/LLLin000) pour la [correction de l’alignement des captures avec la mise à l’échelle du texte Windows](https://github.com/yuxino/kiri/pull/61).
 

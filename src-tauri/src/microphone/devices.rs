@@ -26,12 +26,7 @@ pub async fn list_microphone_devices(
         .unwrap()
         .session
         .as_ref()
-        .is_some_and(|session| {
-            session
-                .overlay_labels
-                .iter()
-                .any(|label| label == window.label())
-        });
+        .is_some_and(|session| session.has_overlay(window.label()));
     if !allowed {
         return Err("Microphones are only available in capture.".into());
     }

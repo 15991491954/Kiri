@@ -1,0 +1,136 @@
+TOP hwnd=0x1A0BFC class=Tauri Window title=Kiri (dev) rect=792,364 976x679 topmost=False
+  CHILD hwnd=0x9146E class=WRY_WEBVIEW rect=800,395 960x640
+  CHILD hwnd=0x28008E class=Chrome_WidgetWin_0 rect=800,395 960x640
+  CHILD hwnd=0xA1416 class=Chrome_WidgetWin_1 rect=800,395 960x640
+  CHILD hwnd=0x14609E2 class=Chrome_RenderWidgetHostHWND rect=800,395 960x640
+  CHILD hwnd=0x671202 class=Intermediate D3D Window rect=800,395 960x640
+  UIA root name='Kiri (dev)' class='Tauri Window' children=1
+  UIA descendants=513
+    [0] type=ControlType.Pane name='' class='WRY_WEBVIEW' enabled=True bounds=800,395,960,640
+    [1] type=ControlType.Pane name='kiri' class='Chrome_WidgetWin_1' enabled=True bounds=800,395,960,640
+    [2] type=ControlType.Pane name='' class='Intermediate D3D Window' enabled=False bounds=800,395,960,640
+    [3] type=ControlType.Pane name='kiri - Web 内容' class='RootView' enabled=True bounds=800,395,960,640
+    [4] type=ControlType.Pane name='' class='NonClientView' enabled=True bounds=800,395,960,640
+    [5] type=ControlType.Pane name='' class='EmbeddedBrowserTabRootView' enabled=True bounds=Empty
+    [6] type=ControlType.Pane name='' class='NativeFrameView' enabled=True bounds=800,395,960,640
+    [7] type=ControlType.Pane name='' class='ClientView' enabled=True bounds=800,395,960,640
+    [8] type=ControlType.Document name='kiri' class='' enabled=True bounds=800,395,960,640
+    [9] type=ControlType.Group name='' class='' enabled=True bounds=800,395,960,640
+    [10] type=ControlType.Group name='' class='library-sidebar' enabled=True bounds=800,395,200,640
+    [11] type=ControlType.Text name='kiri' class='' enabled=True bounds=864,420,28,26
+    [12] type=ControlType.Group name='Kiri' class='library-section-picker' enabled=True bounds=812,473,175,540
+    [13] type=ControlType.Button name='素材库' class='library-section-picker__button' enabled=True bounds=812,473,175,40
+    [14] type=ControlType.Button name='回收站' class='library-section-picker__button' enabled=True bounds=812,517,175,40
+    [15] type=ControlType.Button name='设置' class='library-section-picker__button' enabled=True bounds=812,973,175,40
+    [16] type=ControlType.Group name='' class='library-control-panel' enabled=True bounds=1000,395,760,145
+    [17] type=ControlType.Text name='素材库' class='library-control-panel__title' enabled=True bounds=1024,413,379,27
+    [18] type=ControlType.Text name='40 项内容' class='' enabled=True bounds=1024,444,57,18
+    [19] type=ControlType.Button name='多选素材' class='kiri-button kiri-button--secondary' enabled=True bounds=1423,420,99,36
+    [20] type=ControlType.Button name='导入素材' class='kiri-button kiri-button--secondary' enabled=True bounds=1530,420,99,36
+    [21] type=ControlType.Button name='粘贴图片' class='kiri-button kiri-button--secondary' enabled=True bounds=1637,420,99,36
+    [22] type=ControlType.Edit name='搜索截图与录屏' class='' enabled=True bounds=1550,493,176,35
+    [23] type=ControlType.Button name='全部' class='library-kind-picker__button' enabled=True bounds=1024,494,59,33
+    [24] type=ControlType.Button name='图片' class='library-kind-picker__button' enabled=True bounds=1084,494,59,33
+    [25] type=ControlType.Button name='视频' class='library-kind-picker__button' enabled=True bounds=1144,494,59,33
+    [26] type=ControlType.Button name='动图' class='library-kind-picker__button' enabled=True bounds=1204,494,59,33
+    [27] type=ControlType.Button name='收藏' class='library-favorite-filter' enabled=True bounds=1269,494,61,33
+    [28] type=ControlType.Text name='今天' class='' enabled=True bounds=1037,560,28,19
+    [29] type=ControlType.Text name='35' class='' enabled=True bounds=1080,561,14,17
+    [30] type=ControlType.Group name='20261023-101220-4bfdf98e-4f9c-42bd-b617-9073b8fb7c0c.png' class='library-asset-card' enabled=True bounds=1024,589,222,221
+    [31] type=ControlType.Group name='' class='' enabled=True bounds=1034,762,195,19
+    [32] type=ControlType.Text name='10:12' class='' enabled=True bounds=1034,762,37,19
+    [33] type=ControlType.Button name='编辑' class='kiri-icon-button' enabled=True bounds=1123,723,27,26
+    [34] type=ControlType.Button name='复制' class='kiri-icon-button' enabled=True bounds=1150,723,27,26
+    [35] type=ControlType.Button name='收藏' class='kiri-icon-button kiri-card-favorite' enabled=True bounds=1177,723,27,26
+    [36] type=ControlType.Button name='更多操作' class='kiri-icon-button' enabled=True bounds=1204,723,27,26
+    [37] type=ControlType.Group name='' class='' enabled=True bounds=1034,783,202,17
+    [38] type=ControlType.Text name='493' class='' enabled=True bounds=1034,783,23,17
+    [39] type=ControlType.Text name='×' class='' enabled=True bounds=1056,783,10,17
+TOP hwnd=0x10688 class=Tauri Window title=Cursor BYOK rect=-32000,-32000 160x28 topmost=False
+  CHILD hwnd=0x106C4 class=TAURI_DRAG_RESIZE_BORDERS rect=-31992,-32000 144x20
+  CHILD hwnd=0x1068C class=WRY_WEBVIEW rect=-31992,-32000 820x558
+  CHILD hwnd=0x10690 class=Chrome_WidgetWin_0 rect=-31992,-32000 820x558
+  CHILD hwnd=0x206D8 class=Chrome_WidgetWin_0 rect=-31992,-32000 728x30
+  CHILD hwnd=0x106AE class=Chrome_WidgetWin_1 rect=-31992,-32000 820x558
+  CHILD hwnd=0x106B2 class=Chrome_RenderWidgetHostHWND rect=-31992,-32000 820x558
+  CHILD hwnd=0x106E4 class=Intermediate D3D Window rect=-31992,-32000 820x558
+  UIA root name='Cursor BYOK' class='Tauri Window' children=2
+  UIA descendants=11
+    [0] type=ControlType.Pane name='TAURI_DRAG_RESIZE_WINDOW' class='TAURI_DRAG_RESIZE_BORDERS' enabled=True bounds=-31992,-32000,144,20
+    [1] type=ControlType.Pane name='' class='WRY_WEBVIEW' enabled=True bounds=-31992,-32000,820,558
+    [2] type=ControlType.Pane name='' class='Chrome_WidgetWin_0' enabled=True bounds=-31992,-32000,728,30
+    [3] type=ControlType.Pane name='Cursor BYOK' class='Chrome_WidgetWin_1' enabled=True bounds=-31992,-32000,820,558
+    [4] type=ControlType.Pane name='' class='Intermediate D3D Window' enabled=False bounds=-31992,-32000,820,558
+    [5] type=ControlType.Pane name='Cursor BYOK - Web 内容' class='RootView' enabled=True bounds=-31992,-32000,820,558
+    [6] type=ControlType.Pane name='' class='NonClientView' enabled=True bounds=-31992,-32000,820,558
+    [7] type=ControlType.Pane name='' class='EmbeddedBrowserTabRootView' enabled=True bounds=Empty
+    [8] type=ControlType.Pane name='' class='NativeFrameView' enabled=True bounds=-31992,-32000,820,558
+    [9] type=ControlType.Pane name='' class='ClientView' enabled=True bounds=-31992,-32000,820,558
+    [10] type=ControlType.Pane name='' class='EmbeddedBrowserDownloadView' enabled=True bounds=Empty
+TOP hwnd=0x30488 class=CabinetWClass title=Kiri rect=-32000,-32000 160x28 topmost=False
+  CHILD hwnd=0x100C44 class=UIRibbonCommandBarDock rect=-32000,-31942 0x834
+  CHILD hwnd=0x1C0A60 class=UIRibbonCommandBarDock rect=-30972,-31942 0x834
+  CHILD hwnd=0x130B24 class=UIRibbonCommandBarDock rect=-32000,-31969 1028x27
+  CHILD hwnd=0x150962 class=UIRibbonCommandBar rect=-32000,-31969 1028x27
+  CHILD hwnd=0x70C14 class=UIRibbonWorkPane rect=-32000,-31969 1028x27
+  CHILD hwnd=0x804FC class=NUIPane rect=-32000,-31969 1028x58
+  CHILD hwnd=0x604B4 class=NetUIHWND rect=-32000,-32000 1028x58
+  CHILD hwnd=0xA0D4A class=UIRibbonCommandBarDock rect=-32000,-31108 1028x0
+  CHILD hwnd=0x3048E class=WorkerW rect=-32000,-31942 0x35
+  CHILD hwnd=0x20490 class=ReBarWindow32 rect=-32000,-31942 0x35
+  CHILD hwnd=0x20492 class=TravelBand rect=-32000,-31942 81x32
+  CHILD hwnd=0x204A0 class=ToolbarWindow32 rect=-31996,-31940 77x30
+  CHILD hwnd=0xA0410 class=UpBand rect=-31919,-31941 24x29
+  CHILD hwnd=0x20496 class=ToolbarWindow32 rect=-31919,-31937 24x29
+  CHILD hwnd=0x302C2 class=Address Band Root rect=-31895,-31941 230x29
+  CHILD hwnd=0x30466 class=msctls_progress32 rect=-31893,-31937 226x23
+  CHILD hwnd=0x20494 class=Breadcrumb Parent rect=-31893,-31937 186x23
+  CHILD hwnd=0x502CA class=ToolbarWindow32 rect=-31893,-31937 186x23
+  CHILD hwnd=0x20480 class=ToolbarWindow32 rect=-31707,-31937 40x23
+  CHILD hwnd=0x120F1A class=ComboBoxEx32 rect=-31893,-31937 186x23
+  CHILD hwnd=0xC0DAA class=ComboBox rect=-31893,-31937 186x23
+  CHILD hwnd=0x260F38 class=Edit rect=-31869,-31934 142x17
+  CHILD hwnd=0x2048C class=SeparatorBand rect=-31661,-31927 6x1
+  CHILD hwnd=0x5041E class=UniversalSearchBand rect=-31655,-31941 204x29
+  CHILD hwnd=0x20498 class=Search Box rect=-31655,-31938 204x25
+  CHILD hwnd=0x2049A class=SearchEditBoxWrapperClass rect=-31650,-31938 194x25
+  CHILD hwnd=0x2049E class=DirectUIHWND rect=-31650,-31938 194x25
+  CHILD hwnd=0x204A8 class=SeparatorBand rect=-31447,-31927 7x1
+  CHILD hwnd=0x304EA class=ShellTabWindowClass rect=-32000,-31907 0x0
+  CHILD hwnd=0x100C0E class=DUIViewWndClassName rect=-32000,-31907 0x0
+  CHILD hwnd=0xC0926 class=DirectUIHWND rect=-32000,-31907 0x0
+  CHILD hwnd=0x40CB6 class=CtrlNotifySink rect=-32000,-31907 0x0
+  CHILD hwnd=0x20CBE class=NamespaceTreeControl rect=-32000,-31907 0x0
+  CHILD hwnd=0x2050E class=Static rect=-32000,-31907 0x0
+  CHILD hwnd=0xB0884 class=SysTreeView32 rect=-32000,-31907 179x776
+  CHILD hwnd=0x30D78 class=CtrlNotifySink rect=-31988,-31895 0x0
+  CHILD hwnd=0x20C32 class=Button rect=-31988,-31895 0x0
+  CHILD hwnd=0x4F0C08 class=CtrlNotifySink rect=-31988,-31895 0x0
+  CHILD hwnd=0xC0C4E class=Button rect=-31988,-31895 0x0
+  CHILD hwnd=0x1490A5E class=CtrlNotifySink rect=-32000,-31907 0x0
+  CHILD hwnd=0x20C54 class=Shell Preview Extension Host rect=-32000,-31907 0x0
+  CHILD hwnd=0x410F30 class=CtrlNotifySink rect=-32000,-31907 0x0
+  CHILD hwnd=0x21002 class=SHELLDLL_DefView rect=-32000,-31907 0x0
+  CHILD hwnd=0x20FD6 class=DirectUIHWND rect=-32000,-31907 0x0
+  CHILD hwnd=0xFB0500 class=CtrlNotifySink rect=-32000,-31907 0x0
+  CHILD hwnd=0x5905CE class=ScrollBar rect=-32000,-31907 0x0
+  CHILD hwnd=0x420A90 class=CtrlNotifySink rect=-32000,-31907 0x0
+  CHILD hwnd=0xC90C36 class=ScrollBar rect=-32000,-31907 0x0
+  CHILD hwnd=0x304E8 class=WorkerW rect=-32000,-31907 0x0
+  CHILD hwnd=0x30520 class=ReBarWindow32 rect=-32000,-31907 0x0
+  CHILD hwnd=0x304EC class=ToolbarWindow32 rect=-31998,-31907 0x0
+  CHILD hwnd=0x1D0966 class=msctls_statusbar32 rect=-32000,-31929 0x22
+  CHILD hwnd=0xB04BC class=UIRibbonWorkPane rect=-32000,-32000 100x100
+  UIA root name='Kiri' class='CabinetWClass' children=2
+  UIA descendants=11
+    [0] type=ControlType.Pane name='UIRibbonDockTop' class='UIRibbonCommandBarDock' enabled=True bounds=-32000,-31969,1028,27
+    [1] type=ControlType.Pane name='Ribbon' class='UIRibbonCommandBar' enabled=True bounds=-32000,-31969,1028,27
+    [2] type=ControlType.Pane name='Ribbon' class='UIRibbonWorkPane' enabled=True bounds=-32000,-31969,1028,27
+    [3] type=ControlType.Pane name='' class='NUIPane' enabled=True bounds=-32000,-31969,1028,58
+    [4] type=ControlType.Pane name='' class='NetUIHWND' enabled=True bounds=-32000,-32000,1028,58
+    [5] type=ControlType.TitleBar name='' class='' enabled=True bounds=-31960,-31997,112,28
+    [6] type=ControlType.MenuBar name='系统' class='' enabled=True bounds=-31992,-31992,22,22
+    [7] type=ControlType.MenuItem name='系统' class='' enabled=True bounds=-31992,-31992,22,22
+    [8] type=ControlType.Button name='还原' class='' enabled=True bounds=-31987,-31999,47,27
+    [9] type=ControlType.Button name='最大化' class='' enabled=True bounds=-31940,-31999,46,27
+    [10] type=ControlType.Button name='关闭' class='' enabled=True bounds=-31894,-31999,47,27

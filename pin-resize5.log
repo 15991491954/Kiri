@@ -1,0 +1,7 @@
+使用“1”个参数调用“SetImage”时发生异常:“所请求的剪贴板操作失败。”
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\pin-resize-clipboard.ps1:55 字符: 3
++   [System.Windows.Forms.Clipboard]::SetImage($bitmap)
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : ExternalException
+ 

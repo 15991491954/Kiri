@@ -1,0 +1,1 @@
+﻿$args | ForEach-Object { "[$_]" }

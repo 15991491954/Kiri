@@ -1,0 +1,238 @@
+diff --git a/src/windows/EditorWindow.tsx b/src/windows/EditorWindow.tsx
+index bee6c77..ce3d4a8 100644
+--- a/src/windows/EditorWindow.tsx
++++ b/src/windows/EditorWindow.tsx
+@@ -1,7 +1,7 @@
+ // EditorWindow — annotation editor for saved captures
+ // Screenshot tools share one document; viewing zoom never changes saved pixels.
+ 
+-import { OcrDialog } from "../ocr/TextHistory";
++import { OcrDialog } from "../ocr/OcrDialog";
+ import { QrOverlay } from "../qr/QrOverlay";
+ import type { AssetDto, QrScanDto } from "../lib/ipc";
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+diff --git a/src/windows/PinWindow.tsx b/src/windows/PinWindow.tsx
+index e96d5c7..720af74 100644
+--- a/src/windows/PinWindow.tsx
++++ b/src/windows/PinWindow.tsx
+@@ -1,7 +1,8 @@
+ import { useEffect, useRef, useState } from "react";
++import type { WheelEvent as ReactWheelEvent } from "react";
+ import { getCurrentWindow } from "@tauri-apps/api/window";
+ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+-import { mediaUrl, onAssetContentChanged, onPinOnTop } from "../lib/ipc";
++import { api, mediaUrl, onAssetContentChanged, onPinOnTop } from "../lib/ipc";
+ import { t } from "../i18n";
+ import { KiriIcon } from "../components/KiriIcons";
+ import "./pin-window.css";
+@@ -25,6 +26,31 @@ type MoveGesture = {
+   cancelled: boolean;
+ };
+ 
++type ZoomCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
++
++type ZoomGesture = {
++  applying: boolean;
++  pending: { factor: number; anchorX: number; anchorY: number } | null;
++  image: { width: number; height: number } | null;
++  report: (size: { width: number; height: number }) => void;
++};
++
++async function applyZoom(gesture: ZoomGesture) {
++  if (gesture.applying) return;
++  gesture.applying = true;
++  try {
++    while (gesture.pending) {
++      const step = gesture.pending;
++      gesture.pending = null;
++      const image = gesture.image;
++      const size = await api.zoomPin(step.factor, step.anchorX, step.anchorY,
++        image?.width ?? 0, image?.height ?? 0);
++      gesture.report(size);
++    }
++  } catch { gesture.pending = null; }
++  finally { gesture.applying = false; }
++}
++
+ async function applyMove(gesture: MoveGesture) {
+   if (!gesture.base || gesture.applying || gesture.cancelled) return;
+   gesture.applying = true;
+@@ -70,9 +96,62 @@ export function PinWindow({ id }: { id: string }) {
+   const resizeGesture = useRef<ResizeGesture | null>(null);
+   const moveGesture = useRef<MoveGesture | null>(null);
+   const latestMove = useRef<MoveGesture | null>(null);
+-  useEffect(() => () => {
+-    if (latestMove.current) latestMove.current.cancelled = true;
++  const zoomGesture = useRef<ZoomGesture | null>(null);
++  const imageSize = useRef<{ width: number; height: number } | null>(null);
++  const openedWidth = useRef(0);
++  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const zoomCorner = useRef<ZoomCorner>("top-left");
++  const [zoomHint, setZoomHint] = useState<{ percent: number; corner: ZoomCorner } | null>(null);
++  useEffect(() => {
++    void getCurrentWindow().innerSize()
++      .then(size => { openedWidth.current = size.width; })
++      .catch(() => {});
++    return () => {
++      if (latestMove.current) latestMove.current.cancelled = true;
++      if (zoomTimer.current) clearTimeout(zoomTimer.current);
++    };
+   }, []);
++  useEffect(() => {
++    // React installs wheel handlers passively, so only a native listener can
++    // stop the WebView's own control-wheel page zoom from competing with the
++    // pin's image zoom. The sizing itself stays in the React handler.
++    const stopPageZoom = (event: WheelEvent) => event.preventDefault();
++    window.addEventListener("wheel", stopPageZoom, { passive: false });
++    // Removal only matches on the capture flag, so the passive option is not
++    // repeated here.
++    return () => window.removeEventListener("wheel", stopPageZoom);
++  }, []);
++  const showZoom = (size: { width: number; height: number }) => {
++    // 100% means one image pixel per physical screen pixel, so the reference is
++    // the intrinsic bitmap width. A pin opened on a Retina display starts at
++    // 100%, while a library image fitted to a small reference starts below it.
++    const reference = imageSize.current?.width || openedWidth.current;
++    if (reference <= 0) return;
++    setZoomHint({
++      percent: Math.max(1, Math.round((size.width / reference) * 100)),
++      corner: zoomCorner.current,
++    });
++    if (zoomTimer.current) clearTimeout(zoomTimer.current);
++    zoomTimer.current = setTimeout(() => setZoomHint(null), 900);
++  };
++  const zoomBy = (factor: number, anchorX: number, anchorY: number) => {
++    if (!Number.isFinite(factor) || factor <= 0) return;
++    let gesture = zoomGesture.current;
++    if (!gesture) {
++      gesture = zoomGesture.current = { applying: false, pending: null, image: null,
++        report: showZoom };
++    }
++    gesture.image = imageSize.current;
++    // A fast wheel produces many events per native round trip; the factors add
++    // up, and only the frame in progress is lost to the bound.
++    gesture.pending = { factor: (gesture.pending?.factor ?? 1) * factor, anchorX, anchorY };
++    void applyZoom(gesture);
++  };
++  const takeOverFrame = () => {
++    // A drag or corner resize owns the frame from here on; a queued wheel step
++    // would otherwise move the window out from under the pointer that grabbed it.
++    if (zoomGesture.current) zoomGesture.current.pending = null;
++  };
+   useEffect(() => {
+     const subscription = onAssetContentChanged((assetId) => {
+       if (assetId === id) { setImageFailed(false); setRevision((value) => value + 1); }
+@@ -114,7 +193,9 @@ export function PinWindow({ id }: { id: string }) {
+     const next = !state.onTop;
+     setBusy(true); setError(false);
+     try {
+-      await getCurrentWindow().setAlwaysOnTop(next);
++      // The native side owns the topmost band: a pin that dropped out of it is
++      // repaired synchronously, which a WebView flag alone cannot do.
++      await api.setPinTopmost(next);
+       // A library repin received while this request was pending is newer.
+       if (state.generation === generation) {
+         state.onTop = next;
+@@ -124,8 +205,33 @@ export function PinWindow({ id }: { id: string }) {
+     catch { if (state.generation === generation) setError(true); }
+     finally { state.busy = false; setBusy(false); }
+   };
++  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
++    // A pointer gesture owns the frame while it runs: zooming would move the
++    // window out from under the coordinates the gesture already captured.
++    if (moveGesture.current || resizeGesture.current) return;
++    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
++    const delta = Math.max(-240, Math.min(240, event.deltaY * unit));
++    if (!delta) return;
++    const host = event.currentTarget;
++    const width = host.clientWidth || 1;
++    const height = host.clientHeight || 1;
++    const anchorX = Math.min(1, Math.max(0, event.clientX / width));
++    const anchorY = Math.min(1, Math.max(0, event.clientY / height));
++    // A zoom anchored at the pointer can push the opposite corner of the window
++    // off screen, so the percentage badge stays in the quadrant under the cursor.
++    zoomCorner.current =
++      `${anchorY <= 0.5 ? "top" : "bottom"}-${anchorX <= 0.5 ? "left" : "right"}`;
++    // One wheel notch is 100px and changes the size by 10%; trackpads send many
++    // small deltas, and the exponent makes those continuous instead of steppy.
++    zoomBy(Math.pow(1.1, -delta / 100), anchorX, anchorY);
++  };
+   return <div className="pin-window" aria-label={t("Screenshot Reference")}
+-    onContextMenu={event => event.preventDefault()}>
++    onWheel={handleWheel}
++    onContextMenu={event => event.preventDefault()}
++    onPointerDown={() => {
++      // Pins are all topmost; pointing at one brings it above its siblings.
++      void api.raisePin().catch(() => {});
++    }}>
+     <div className="pin-window__actions" onPointerDown={event => event.stopPropagation()}>
+       <button className="kiri-pin-action" type="button" disabled={busy}
+         title={t(onTop ? "Unpin" : "Pin on Top")} aria-label={t(onTop ? "Unpin" : "Pin on Top")}
+@@ -134,8 +240,11 @@ export function PinWindow({ id }: { id: string }) {
+         onClick={() => void getCurrentWindow().close()}><KiriIcon name="xmark" size={15} /></button>
+     </div>
+     {error && <p className="pin-window__error" role="alert">{t("Could not change window pinning on this desktop.")}</p>}
++    {zoomHint && <div className="pin-window__zoom" role="status"
++      data-corner={zoomHint.corner}>{zoomHint.percent}%</div>}
+     <main className="pin-window__image" onPointerDown={event => {
+       if (event.button !== 0) return;
++      takeOverFrame();
+       if (!/Macintosh|Mac OS X|Windows/i.test(navigator.userAgent)) {
+         void getCurrentWindow().startDragging().catch(() => {});
+         return;
+@@ -173,11 +282,21 @@ export function PinWindow({ id }: { id: string }) {
+       moveGesture.current = null;
+     }}>
+       {imageFailed ? <p role="alert">{t("Can't read this file")}</p> :
+-        <img key={revision} src={`${mediaUrl(id)}?v=${revision}`} alt={t("Pinned screenshot")} draggable={false} onError={() => setImageFailed(true)} />}
++        <img key={revision} src={`${mediaUrl(id)}?v=${revision}`} alt={t("Pinned screenshot")} draggable={false}
++          onLoad={event => {
++            const image = event.currentTarget;
++            // Intrinsic size in image pixels: the reference the zoom
++            // percentage is reported against.
++            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
++              imageSize.current = { width: image.naturalWidth, height: image.naturalHeight };
++            }
++          }}
++          onError={() => { imageSize.current = null; setImageFailed(true); }} />}
+     </main>
+     <div className="pin-window__resize" aria-hidden="true" onPointerDown={event => {
+         event.stopPropagation();
+         if (event.button !== 0) return;
++        takeOverFrame();
+         event.currentTarget.setPointerCapture(event.pointerId);
+         const gesture: ResizeGesture = { pointerId: event.pointerId, x: event.screenX, y: event.screenY,
+           base: null, pending: null, applying: false };
+diff --git a/src/windows/ViewerWindow.tsx b/src/windows/ViewerWindow.tsx
+index 53e0267..ad43466 100644
+--- a/src/windows/ViewerWindow.tsx
++++ b/src/windows/ViewerWindow.tsx
+@@ -7,7 +7,7 @@ import { api, mediaUrl, onAssetContentChanged, type AssetAvailability } from "..
+ import { VideoTrimPlayer, type VideoClosePreparation } from "./VideoTrimPlayer";
+ import { VideoCloseGuard } from "./VideoCloseGuard";
+ import { videoEditingCapabilities } from "./video-capabilities.js";
+-import { OcrDialog } from "../ocr/TextHistory";
++import { OcrDialog } from "../ocr/OcrDialog";
+ import { t } from "../i18n";
+ import { KiriIcon } from "../components/KiriIcons";
+ import { installViewerCopyShortcut } from "./viewer-copy-shortcut.js";
+diff --git a/src/windows/pin-window.css b/src/windows/pin-window.css
+index 20c0c32..a130933 100644
+--- a/src/windows/pin-window.css
++++ b/src/windows/pin-window.css
+@@ -10,6 +10,15 @@
+ .kiri-pin-action:disabled { opacity: .5; cursor: default; }
+ .pin-window__image p, .pin-window__error { margin: 0; padding: 8px 12px; background: var(--kiri-card); color: var(--kiri-secondary-label); font-size: 12px; text-align: center; }
+ .pin-window__error { position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 3; border-radius: 6px; }
++.pin-window__zoom { position: absolute; z-index: 3; padding: 3px 8px; border-radius: 6px;
++  background: rgba(17, 17, 17, .82); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums;
++  pointer-events: none; }
++/* The badge follows the corner nearest the pointer, because an anchored zoom
++   can push the opposite corner of the window off the screen. */
++.pin-window__zoom[data-corner="top-left"] { top: 8px; left: 8px; }
++.pin-window__zoom[data-corner="top-right"] { top: 40px; right: 8px; }
++.pin-window__zoom[data-corner="bottom-left"] { bottom: 8px; left: 8px; }
++.pin-window__zoom[data-corner="bottom-right"] { bottom: 8px; right: 8px; }
+ .pin-window__resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; z-index: 2; cursor: nwse-resize; }
+ .pin-window__resize::after { content: ""; position: absolute; bottom: 3px; right: 3px; width: 6px; height: 6px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; filter: drop-shadow(0 0 1px #000); opacity: 0; }
+ .pin-window:hover .pin-window__resize::after { opacity: 1; }

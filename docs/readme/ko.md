@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Kiri">
-  <h1>Kiri</h1>
+  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Lumen">
+  <h1>Lumen</h1>
   <p>스크린샷, 문자 인식, 화면 녹화. 캡처한 자료는 컴퓨터에 저장됩니다.</p>
   <p>macOS, Windows, Linux를 지원합니다.</p>
   <p><a href="https://kiri.yuxino.cn">공식 웹사이트</a> · <a href="https://github.com/yuxino/kiri/releases/latest">최신 버전 다운로드</a></p>
@@ -12,7 +12,7 @@
   </p>
 </div>
 
-![Kiri](../assets/readme-preview.png)
+![Lumen](../assets/readme-preview.png)
 
 ## 기능
 
@@ -27,15 +27,15 @@
 
 ## 시작하기
 
-1. macOS에서 `⇧⌘A`, Windows / Linux X11에서 `Shift+Ctrl+A`를 눌러 캡처 화면을 엽니다.
+1. `F1`로 캡처 화면을 열고, `F2`로 복사한 이미지나 텍스트를 붙이고, `F3`로 화면 녹화를 시작합니다.
 2. 스크린샷, 녹화 또는 OCR을 선택한 뒤 창을 클릭하거나 영역을 드래그합니다.
-3. 스크린샷은 `Enter`로 완료하고 `Esc`로 취소합니다. 완료한 이미지는 클립보드에 복사되고 라이브러리에 저장됩니다.
+3. 스크린샷은 `Enter`로 완료하고 `Esc`로 취소합니다. 완료한 이미지는 클립보드에 복사됩니다. 화면에 붙이려면 도구 모음의 📌를 누르세요.
 
 [설치 및 사용 안내](../usage.ko.md) · [동영상 편집](../video-editing.ko.md) · [Linux](../linux.md) · [문제 신고](https://github.com/yuxino/kiri/issues)
 
 ## 감사합니다
 
-코드를 작성하고, 문제를 신고하고, Kiri를 사용하거나 공유해 주신 모든 분께 감사합니다.
+코드를 작성하고, 문제를 신고하고, Lumen를 사용하거나 공유해 주신 모든 분께 감사합니다.
 
 [초기 Linux 지원](https://github.com/yuxino/kiri/pull/20)을 제공한 [@kerwin2046](https://github.com/kerwin2046)와 [Windows 텍스트 배율에 따른 캡처 정렬](https://github.com/yuxino/kiri/pull/61)을 수정한 [@LLLin000](https://github.com/LLLin000)에게 특별히 감사드립니다.
 

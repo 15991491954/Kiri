@@ -30,7 +30,7 @@ use image::ImageEncoder;
 /// Hard upper bound on how long a single portal round-trip may take.
 const PORTAL_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_SCREENSHOT_BYTES: u64 = 256 * 1024 * 1024;
-const PORTAL_ACCESS_GUIDANCE: &str = "Screenshot access was not granted. Request access from the Kiri Library, then try Capture again.";
+const PORTAL_ACCESS_GUIDANCE: &str = "Screenshot access was not granted. Request access from the Lumen Library, then try Capture again.";
 
 #[derive(Debug)]
 struct PortalAccessNotGranted(ashpd::Error);
@@ -71,25 +71,61 @@ impl Drop for FrozenCaptureWorkerPermit {
 
 /// Capture the active display as a frozen PNG.
 pub fn capture_active_display() -> Result<CapturedDisplay> {
+    run_frozen_capture_worker("kiri-frozen-capture", capture_active_display_inner)
+}
+
+/// Display ids that can be captured independently. Wayland's portal path
+/// freezes exactly one display, so it deliberately offers no secondary ids.
+pub fn display_ids() -> Result<Vec<u32>> {
+    if is_wayland() {
+        return Ok(Vec::new());
+    }
+    let mut ids = Vec::new();
+    for monitor in xcap::Monitor::all()? {
+        let id = monitor.id()?;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
+/// Freeze one already-known X11 monitor after the primary overlay is
+/// interactive.
+pub fn capture_display_by_id(id: u32) -> Result<CapturedDisplay> {
+    if is_wayland() {
+        bail!("Wayland capture currently supports one display.");
+    }
+    run_frozen_capture_worker("kiri-frozen-display", move || {
+        let monitor = xcap::Monitor::all()?
+            .into_iter()
+            .find(|monitor| monitor.id().ok() == Some(id))
+            .ok_or_else(|| anyhow!("The display is no longer available."))?;
+        capture_x11_monitor(monitor)
+    })
+}
+
+fn run_frozen_capture_worker<F>(name: &str, capture: F) -> Result<CapturedDisplay>
+where
+    F: FnOnce() -> Result<CapturedDisplay> + Send + 'static,
+{
     if FROZEN_CAPTURE_WORKER_ACTIVE
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
         bail!(
-            "A previous Linux screen capture is still in progress. Restart Kiri if capture remains unavailable."
+            "A previous Linux screen capture is still in progress. Restart Lumen if capture remains unavailable."
         );
     }
 
     let (sender, receiver) = mpsc::channel();
-    let worker = std::thread::Builder::new()
-        .name("kiri-frozen-capture".into())
-        .spawn(move || {
-            let result = {
-                let _permit = FrozenCaptureWorkerPermit;
-                capture_active_display_inner()
-            };
-            let _ = sender.send(result);
-        });
+    let worker = std::thread::Builder::new().name(name.into()).spawn(move || {
+        let result = {
+            let _permit = FrozenCaptureWorkerPermit;
+            capture()
+        };
+        let _ = sender.send(result);
+    });
     if let Err(error) = worker {
         FROZEN_CAPTURE_WORKER_ACTIVE.store(false, Ordering::Release);
         return Err(anyhow!("Could not start the Linux capture worker: {error}"));
@@ -115,7 +151,13 @@ fn capture_x11_display() -> Result<CapturedDisplay> {
     let pointer = connection
         .query_pointer(connection.setup().roots[screen].root)?
         .reply()?;
-    let monitor = xcap::Monitor::from_point(i32::from(pointer.root_x), i32::from(pointer.root_y))?;
+    capture_x11_monitor(xcap::Monitor::from_point(
+        i32::from(pointer.root_x),
+        i32::from(pointer.root_y),
+    )?)
+}
+
+fn capture_x11_monitor(monitor: xcap::Monitor) -> Result<CapturedDisplay> {
     let image = monitor.capture_image()?;
     let (width, height) = image.dimensions();
     let scale = f64::from(monitor.scale_factor().unwrap_or(1.0)).max(1.0);
@@ -138,6 +180,12 @@ fn capture_x11_display() -> Result<CapturedDisplay> {
         f64::from(width) / scale,
         f64::from(height) / scale,
     );
+    // Keep each overlay's hit-test list inside its own monitor; a window on a
+    // neighboring display must not become hoverable through the wrong overlay.
+    let monitor_left = f64::from(x);
+    let monitor_top = f64::from(y);
+    let monitor_right = monitor_left + f64::from(width);
+    let monitor_bottom = monitor_top + f64::from(height);
     let window_rects = xcap::Window::all()
         .unwrap_or_default()
         .into_iter()
@@ -145,11 +193,17 @@ fn capture_x11_display() -> Result<CapturedDisplay> {
             window.pid().ok() != Some(std::process::id()) && !window.is_minimized().unwrap_or(true)
         })
         .filter_map(|window| {
+            let left = f64::from(window.x().ok()?).max(monitor_left);
+            let top = f64::from(window.y().ok()?).max(monitor_top);
+            let right = (f64::from(window.x().ok()?) + f64::from(window.width().ok()?))
+                .min(monitor_right);
+            let bottom = (f64::from(window.y().ok()?) + f64::from(window.height().ok()?))
+                .min(monitor_bottom);
             let rect = Rect::new(
-                f64::from(window.x().ok()? - x) / scale,
-                f64::from(window.y().ok()? - y) / scale,
-                f64::from(window.width().ok()?) / scale,
-                f64::from(window.height().ok()?) / scale,
+                (left - monitor_left) / scale,
+                (top - monitor_top) / scale,
+                (right - left) / scale,
+                (bottom - top) / scale,
             );
             (rect.width > 0.0 && rect.height > 0.0).then_some(rect)
         })

@@ -17,6 +17,7 @@ import type { Point, Rect } from "./geom";
 import { handleTextEditorKey, isTextComposition, setTextComposition } from "./text-composition.js";
 import type { ColorPreset } from "./model";
 import { clampPoint, hitTestHandle } from "./geom";
+import { handleCursor } from "./cursors.js";
 import {
   AnnotationHistory,
   COLOR_HEX,
@@ -1295,15 +1296,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
               if (calloutHandleAt(selectedMark, p, 9 * hitTestScale.radial)) cursor = "crosshair";
             } else if ((toolRef.current === "select" || (textTool && selectedMark?.kind === "text")) &&
               selected !== null && current[selected] && !["line","arrow"].includes(current[selected].kind)) {
-              if (
-                hitTestHandle(
-                  p,
-                  selectionBounds(current[selected]),
-                  9 * hitTestScale.radial,
-                )
-              ) {
-                cursor = "crosshair";
-              }
+              const resizeHandle = hitTestHandle(
+                p,
+                selectionBounds(current[selected]),
+                9 * hitTestScale.radial,
+              );
+              if (resizeHandle) cursor = handleCursor(resizeHandle) ?? "crosshair";
             }
             if (
               cursor === "default" &&

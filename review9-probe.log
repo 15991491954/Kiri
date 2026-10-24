@@ -1,0 +1,268 @@
+=== overlay-ish windows (before drag) ===
+
+  Handle Class              Title              Visible Rect                
+  ------ -----              -----              ------- ----                
+26741860 Tauri Window       kiri                  True 2560,0 2560x1440    
+33359058 Tauri Window       kiri                  True 0,0 2560x1440       
+14224344 Tauri Window       Kiri (dev)           False 792,364 976x679     
+29231298 io.yuxino.kiri-sic io.yuxino.kiri-siw    True 0,0 16x16           
+  658980 Tauri Window       Clash Verge          False 1092,424 956x724    
+   67208 Tauri Window       Cursor BYOK           True -32000,-32000 160x28
+  197768 CabinetWClass      Kiri                  True -32000,-32000 160x28
+
+
+
+=== DOM before drag ===
+[
+  {
+    "href": "http://localhost:1420/index.html?window=overlay&captureToken=b0d3ddce51694f4cbfc3332470162195",
+    "dpr": 1,
+    "screen": {
+      "x": 2560,
+      "y": 0,
+      "w": 2560,
+      "h": 1440
+    },
+    "buttons": [
+      {
+        "label": null,
+        "title": null,
+        "text": "截图1",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "录屏2",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "文字3",
+        "visible": true
+      }
+    ],
+    "toolbar": false,
+    "bodyText": "截图 1 录屏 2 文字 3 拖动选择截图区域 · 单击选择窗体 · Esc 取消 · 按 1 / 2 / 3 切换模式"
+  },
+  {
+    "href": "http://localhost:1420/index.html?window=overlay&captureToken=cad7f23b554e46fc9d5d4bb99864b0a0",
+    "dpr": 1,
+    "screen": {
+      "x": 0,
+      "y": 0,
+      "w": 2560,
+      "h": 1440
+    },
+    "buttons": [
+      {
+        "label": null,
+        "title": null,
+        "text": "截图1",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "录屏2",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "文字3",
+        "visible": true
+      }
+    ],
+    "toolbar": false,
+    "bodyText": "截图 1 录屏 2 文字 3 拖动选择截图区域 · 单击选择窗体 · Esc 取消 · 按 1 / 2 / 3 切换模式"
+  }
+]
+=== DOM after drag ===
+[
+  {
+    "href": "http://localhost:1420/index.html?window=overlay&captureToken=b0d3ddce51694f4cbfc3332470162195",
+    "dpr": 1,
+    "screen": {
+      "x": 2560,
+      "y": 0,
+      "w": 2560,
+      "h": 1440
+    },
+    "buttons": [
+      {
+        "label": null,
+        "title": null,
+        "text": "截图1",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "录屏2",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "文字3",
+        "visible": true
+      }
+    ],
+    "toolbar": false,
+    "bodyText": "截图 1 录屏 2 文字 3 拖动选择截图区域 · 单击选择窗体 · Esc 取消 · 按 1 / 2 / 3 切换模式"
+  },
+  {
+    "href": "http://localhost:1420/index.html?window=overlay&captureToken=cad7f23b554e46fc9d5d4bb99864b0a0",
+    "dpr": 1,
+    "screen": {
+      "x": 0,
+      "y": 0,
+      "w": 2560,
+      "h": 1440
+    },
+    "buttons": [
+      {
+        "label": null,
+        "title": null,
+        "text": "截图1",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "录屏2",
+        "visible": true
+      },
+      {
+        "label": null,
+        "title": null,
+        "text": "文字3",
+        "visible": true
+      },
+      {
+        "label": "移动标注工具栏",
+        "title": "拖动可移动，方向键可微调。",
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "取消截图 · Esc",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "选择 (V)",
+        "title": null,
+        "text": "V",
+        "visible": true
+      },
+      {
+        "label": "画笔 (P)",
+        "title": null,
+        "text": "P",
+        "visible": true
+      },
+      {
+        "label": "矩形 (R)",
+        "title": null,
+        "text": "R",
+        "visible": true
+      },
+      {
+        "label": "直线 (L)",
+        "title": null,
+        "text": "L",
+        "visible": true
+      },
+      {
+        "label": "箭头 (A)",
+        "title": null,
+        "text": "A",
+        "visible": true
+      },
+      {
+        "label": "文字 (T)",
+        "title": null,
+        "text": "T",
+        "visible": true
+      },
+      {
+        "label": "序号标注 (N)",
+        "title": null,
+        "text": "N",
+        "visible": true
+      },
+      {
+        "label": "标签气泡 (B)",
+        "title": null,
+        "text": "B",
+        "visible": true
+      },
+      {
+        "label": "马赛克 (M)",
+        "title": null,
+        "text": "M",
+        "visible": true
+      },
+      {
+        "label": "水印（W）",
+        "title": null,
+        "text": "W",
+        "visible": true
+      },
+      {
+        "label": "撤销",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "重做",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "识别文字",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "识别二维码",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "滚动截图",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "调整选区尺寸",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "置顶截图",
+        "title": null,
+        "text": "",
+        "visible": true
+      },
+      {
+        "label": "完成并复制到剪贴板",
+        "title": null,
+        "text": "↵",
+        "visible": true
+      }
+    ],
+    "toolbar": false,
+    "bodyText": "坐标 1000, 750 色值 #00A7F5 按 Ctrl+C 复制色值 400 × 400 截图 1 录屏 2 文字 3 V P R L A T N B M W ↵"
+  }
+]

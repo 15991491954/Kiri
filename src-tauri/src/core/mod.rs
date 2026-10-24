@@ -11,5 +11,4 @@ pub mod policy;
 pub mod recording_controls;
 pub mod recording_recovery;
 pub mod scroll_document;
-pub mod shortcut;
 pub mod video_project;

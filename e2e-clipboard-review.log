@@ -1,0 +1,54 @@
+[PASS] the global F3 shortcut pins the clipboard image count=1
+[PASS] the clipboard itself is untouched 
+[PASS] the pin opens at native image size size=400x300
+[PASS] the pin window is visible 
+[PASS] the pin is borderless style=0x94000000
+[PASS] the pin is layered ex=0x8080088
+[PASS] the pin is topmost ex=0x8080088
+[PASS] the pin never activates ex=0x8080088
+[PASS] the pin is excluded from Kiri's own screenshots affinity=0x11
+[PASS] pasting does not change the foreground window 
+[PASS] the pin is above everything under the pointer hit=26348644 pin=26348644
+[PASS] dragging moves the pin delta=120,90
+[PASS] wheel up enlarges the hovered pin width 400 -> 440
+[PASS] zoom keeps the image aspect ratio ratio 1.3333 vs 1.3333
+[PASS] one wheel notch is 10 percent ratio=1.1
+[PASS] the zoom percentage badge is shown visible=1
+[PASS] the badge is topmost and click-through ex=0x80800A8
+[PASS] the badge sits inside the pin frame badge=1108,633 pin=1100,625
+[PASS] the badge hides after the scroll stops 
+[PASS] wheel down restores the previous size width=400 expected=400
+[PASS] a second paste creates an independent pin count=2
+[PASS] the two pins do not overlap first=1120,640 second=1994,434
+[PASS] the point under the pointer belongs to the first pin hit=26348644 first=26348644 second=5049684
+[PASS] the wheel only zooms the pin under the pointer hovered=400->440 other=260->260
+[PASS] a third pin opens count=3
+[PASS] all pins are topmost topmost=3/3
+[PASS] the pointer resolves to a pin before Escape hit=33296926
+[PASS] Escape closes only the pin under the pointer remaining=2 targetAlive=False
+[PASS] closing a pin does not change the foreground window 
+[PASS] F3 pins clipboard text as a card count=3
+[PASS] a copied image file becomes a pin count=4
+[PASS] pins add no WebView process before=39 after=39
+[PASS] four pins stay within a modest memory budget grew 16.3MB -> 16.7MB
+[PASS] pins stay above a newly focused application hit=33427998 pin=33427998
+[PASS] every pin is still topmost after the app switch topmost=4/4
+
+--- pin log lines ---
+[2026-10-22T20:33:12.373Z INFO  kiri_lib::pin::surface_windows] [pin] closed label=pin-1
+[2026-10-22T20:34:51.472Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=1 size=400x400
+[2026-10-22T20:34:51.472Z INFO  kiri_lib::commands] [pin] screenshot opened native asset_id=85d70c50-f86d-4f92-a1ea-ddc97c8f542b
+[2026-10-22T20:34:55.502Z INFO  kiri_lib::pin::surface_windows] [pin] closed label=pin-1
+[2026-10-22T20:45:46.961Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=1 size=400x300
+[2026-10-22T20:45:46.961Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:51.351Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=2 size=260x180
+[2026-10-22T20:45:51.351Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:53.293Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=3 size=200x200
+[2026-10-22T20:45:53.293Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:53.810Z INFO  kiri_lib::pin::surface_windows] [pin] closed label=pin-3
+[2026-10-22T20:45:54.741Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=4 size=364x104
+[2026-10-22T20:45:54.741Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:55.112Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=5 size=240x160
+[2026-10-22T20:45:55.112Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+
+35/35 checks passed

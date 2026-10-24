@@ -1,0 +1,215 @@
+   Compiling kiri v1.6.26 (E:\项目\Kiri录屏\Kiri\Kiri\src-tauri)
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `Window` is never constructed
+  --> src\capture\scroll.rs:29:5
+   |
+25 | pub enum ScrollTarget {
+   |          ------------ variant in this enum
+...
+29 |     Window {
+   |     ^^^^^^
+   |
+   = note: `ScrollTarget` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `export_video` is never used
+   --> src\video_export.rs:557:8
+    |
+557 | pub fn export_video(
+    |        ^^^^^^^^^^^^
+
+warning: function `export_video_with_annotations` is never used
+   --> src\video_export.rs:567:8
+    |
+567 | pub fn export_video_with_annotations(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `wait_for_link_launcher` is never used
+   --> src\qr_commands.rs:419:4
+    |
+419 | fn wait_for_link_launcher(
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `stop_link_launcher` is never used
+   --> src\qr_commands.rs:451:4
+    |
+451 | fn stop_link_launcher(child: &mut std::process::Child) {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: variants `Unsupported` and `Denied` are never constructed
+  --> src\platform\mod.rs:30:5
+   |
+28 | pub enum MicrophoneAccess {
+   |          ---------------- variants in this enum
+29 |     Authorized,
+30 |     Unsupported,
+   |     ^^^^^^^^^^^
+31 |     Denied,
+   |     ^^^^^^
+   |
+   = note: `MicrophoneAccess` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `window_capture_id` is never used
+   --> src\platform\mod.rs:461:8
+    |
+461 | pub fn window_capture_id(_app: &tauri::AppHandle, _label: &str) -> Option<u32> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: method `to_logical` is never used
+  --> src\pin\mod.rs:86:12
+   |
+57 | impl PinRect {
+   | ------------ method in this implementation
+...
+86 |     pub fn to_logical(self, scale: f64) -> Rect {
+   |            ^^^^^^^^^^
+
+warning: field `origin` is never read
+   --> src\pin\mod.rs:178:9
+    |
+173 | pub struct PinRecord {
+    |            --------- field in this struct
+...
+178 |     pub origin: PinOrigin,
+    |         ^^^^^^
+    |
+    = note: `PinRecord` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `get` and `set_hwnd` are never used
+   --> src\pin\mod.rs:237:12
+    |
+194 | impl PinRegistry {
+    | ---------------- methods in this implementation
+...
+237 |     pub fn get(&self, label: &str) -> Option<&PinRecord> {
+    |            ^^^
+...
+272 |     pub fn set_hwnd(&mut self, label: &str, hwnd: isize) {
+    |            ^^^^^^^^
+
+warning: function `close_all` is never used
+  --> src\pin\surface.rs:32:8
+   |
+32 | pub fn close_all() {
+   |        ^^^^^^^^^
+
+warning: function `close_all` is never used
+    --> src\pin\surface_windows.rs:1037:8
+     |
+1037 | pub fn close_all() {
+     |        ^^^^^^^^^
+
+warning: function `publish` is never used
+   --> src\portal_shortcuts.rs:155:4
+    |
+155 | fn publish(
+    |    ^^^^^^^
+
+warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never constructed
+   --> src\state.rs:605:5
+    |
+604 | pub enum RecoveryAction {
+    |          -------------- variants in this enum
+605 |     OpenSettings,
+    |     ^^^^^^^^^^^^
+606 |     QuitKiri,
+    |     ^^^^^^^^
+607 |     OpenInputMonitoringSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+608 |     OpenMicrophoneSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `kiri` (lib test) generated 15 warnings (run `cargo fix --lib -p kiri --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.93s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\kiri_lib-f2b5fa396335776e.exe)
+
+running 38 tests
+test pin::clipboard::tests::budget_is_measured_before_decoding_and_never_exceeds_the_cap ... ok
+test pin::clipboard::tests::non_image_paths_are_refused_before_any_io ... ok
+test pin::clipboard::tests::paste_is_bounded_by_the_file_filter ... ok
+test pin::clipboard::tests::text_budget_grows_with_the_string ... ok
+test pin::clipboard_source::tests::a_cascade_is_bounded_and_deduplicated ... ok
+test pin::clipboard_source::tests::an_image_wins_over_text_and_files ... ok
+test pin::clipboard_source::tests::extensions_are_case_insensitive_and_complete ... ok
+test pin::clipboard_source::tests::image_files_win_over_text_and_keep_their_order ... ok
+test pin::clipboard_source::tests::nothing_usable_is_none ... ok
+test pin::clipboard_source::tests::only_non_image_files_falls_through_to_text ... ok
+test pin::resample::tests::a_uniform_surface_stays_uniform_at_any_size ... ok
+test pin::resample::tests::a_zero_sized_request_is_clamped_instead_of_panicking ... ok
+test pin::resample::tests::one_to_one_never_resamples_or_copies ... ok
+test pin::resample::tests::parallel_rows_are_bit_identical_to_a_single_thread ... ok
+test pin::resample::tests::premultiplied_invariant_survives_both_filters ... ok
+test pin::resample::tests::shrinking_averages_every_source_pixel_instead_of_dropping_rows ... ok
+test pin::resample::tests::upscaling_preserves_the_corner_pixels_of_an_asymmetric_image ... ok
+test pin::surface_windows::tests::badge_geometry_scales_with_the_display ... ok
+test pin::surface_windows::tests::pin_class_is_distinct_from_the_host_and_badge ... ok
+test pin::tests::cascaded_pins_are_offset_but_stay_inside_the_work_area ... ok
+test pin::tests::hit_test_prefers_the_raised_pin_and_uses_half_open_edges ... FAILED
+test pin::tests::initial_frame_opens_at_native_size_and_shrinks_only_to_fit ... ok
+test pin::tests::minimum_size_doubles_on_a_two_hundred_percent_display ... FAILED
+test pin::tests::negative_monitor_coordinates_hit_correctly ... ok
+test pin::tests::premultiplied_conversion_never_leaves_a_channel_above_alpha ... ok
+test pin::tests::registry_rejects_the_seventeenth_pin_without_changing_state ... ok
+test pin::tests::removing_a_pin_returns_both_budgets_and_frees_its_label ... ok
+test pin::tests::source_budget_refuses_a_pin_that_would_exceed_it ... ok
+test pin::tests::zoom_keeps_the_pointer_anchor_fixed ... ok
+test pin::tests::zoom_never_exceeds_the_edge_or_pixel_caps ... ok
+test pin::tests::zoom_out_stops_at_the_minimum_size_and_keeps_the_aspect_ratio ... FAILED
+test pin::tests::zoom_percentage_is_measured_against_the_image_pixels ... ok
+test pin::text_image::tests::a_short_line_becomes_a_bounded_opaque_card ... FAILED
+test pin::text_image::tests::empty_text_is_rejected_instead_of_rendering_a_blank_pin ... ok
+test pin::text_image::tests::line_endings_are_normalized_and_trailing_space_removed ... ok
+test pin::text_image::tests::long_wrapping_text_stays_within_the_height_budget ... ok
+test pin::text_image::tests::rounded_corners_are_outside_and_edges_are_inside ... ok
+test pin::text_image::tests::truncation_respects_character_boundaries ... ok
+
+failures:
+
+---- pin::tests::hit_test_prefers_the_raised_pin_and_uses_half_open_edges stdout ----
+
+thread 'pin::tests::hit_test_prefers_the_raised_pin_and_uses_half_open_edges' (38728) panicked at src\pin\mod.rs:478:9:
+assertion `left == right` failed
+  left: Some("pin-2")
+ right: Some("pin-1")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pin::tests::minimum_size_doubles_on_a_two_hundred_percent_display stdout ----
+
+thread 'pin::tests::minimum_size_doubles_on_a_two_hundred_percent_display' (17988) panicked at src\pin\mod.rs:535:9:
+assertion `left == right` failed
+  left: (240, 120)
+ right: (320, 160)
+
+---- pin::tests::zoom_out_stops_at_the_minimum_size_and_keeps_the_aspect_ratio stdout ----
+
+thread 'pin::tests::zoom_out_stops_at_the_minimum_size_and_keeps_the_aspect_ratio' (28432) panicked at src\pin\mod.rs:511:9:
+assertion `left == right` failed
+  left: (120, 60)
+ right: (160, 80)
+
+---- pin::text_image::tests::a_short_line_becomes_a_bounded_opaque_card stdout ----
+
+thread 'pin::text_image::tests::a_short_line_becomes_a_bounded_opaque_card' (35692) panicked at src\pin\text_image.rs:249:9:
+assertion `left == right` failed
+  left: 0
+ right: 255
+
+
+failures:
+    pin::tests::hit_test_prefers_the_raised_pin_and_uses_half_open_edges
+    pin::tests::minimum_size_doubles_on_a_two_hundred_percent_display
+    pin::tests::zoom_out_stops_at_the_minimum_size_and_keeps_the_aspect_ratio
+    pin::text_image::tests::a_short_line_becomes_a_bounded_opaque_card
+
+test result: FAILED. 34 passed; 4 failed; 0 ignored; 0 measured; 457 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `--lib`

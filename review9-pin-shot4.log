@@ -1,0 +1,12 @@
+[PASS] the capture overlay opens target=kiri
+pin click: {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=087f8e5d9d9a44a39370c3fb4730e6cb"}
+[PASS] the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=087f8e5d9d9a44a39370c3fb4730e6cb"}
+[PASS] screenshot creates one native pin count=1
+[PASS] pin matches the captured rectangle pin=600,350 400x400
+[PASS] pin is visible 
+[PASS] the pin does not change the foreground window fg=13896102 expected=13896102
+[PASS] the pin is above the application under the pointer hit=17238254 pin=17238254
+[PASS] Escape closes the screenshot pin remaining=0
+[PASS] Escape leaves the foreground application alone 
+
+9/9 checks passed

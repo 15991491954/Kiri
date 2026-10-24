@@ -4,56 +4,67 @@
  */
 
 :root {
-  /* Monochrome action palette. Color is reserved for destructive/error states. */
-  --kiri-accent: #111111;
-  --kiri-accent-strong: #000000;
+  /* macOS-style accent. Blue is reserved for selection, focus rings, and the
+     primary action; the workspace itself stays neutral. */
+  --kiri-accent: #007aff;
+  --kiri-accent-strong: #0063d1;
   --kiri-on-accent: #ffffff;
-  --kiri-coral: #c83e36;
+  --kiri-coral: #ff3b30;
 
   /* Light scheme */
   --kiri-canvas: #ffffff;
-  --kiri-sidebar: #f5f5f5;
+  --kiri-sidebar: #f2f2f4;
   --kiri-card: #ffffff;
   --kiri-elevated: #ffffff;
-  --kiri-surface-border: #dedede;
-  --kiri-group-fill: #ededed;
-  --kiri-label: #0a0a0a;
-  --kiri-secondary-label: #606060;
-  --kiri-disabled-label: #969696;
+  --kiri-surface-border: rgba(0, 0, 0, 0.12);
+  --kiri-hairline: rgba(0, 0, 0, 0.08);
+  /* A window edge that reads as a light gray frame, not a white halo. */
+  --kiri-window-border: rgba(0, 0, 0, 0.16);
+  --kiri-group-fill: rgba(0, 0, 0, 0.055);
+  --kiri-label: #1d1d1f;
+  --kiri-secondary-label: #6e6e73;
+  --kiri-disabled-label: #a1a1a6;
 
   /* Dark scheme */
-  --kiri-canvas-dark: #080808;
-  --kiri-card-dark: #101010;
-  --kiri-elevated-dark: #181818;
-  --kiri-surface-border-dark: #383838;
-  --kiri-group-fill-dark: #232323;
-  --kiri-label-dark: #f7f7f7;
-  --kiri-secondary-label-dark: #b7b7b7;
-  --kiri-disabled-label-dark: #707070;
+  --kiri-canvas-dark: #1c1c1e;
+  --kiri-card-dark: #2c2c2e;
+  --kiri-elevated-dark: #3a3a3c;
+  --kiri-surface-border-dark: rgba(255, 255, 255, 0.14);
+  --kiri-hairline-dark: rgba(255, 255, 255, 0.09);
+  --kiri-window-border: rgba(255, 255, 255, 0.18);
+  --kiri-group-fill-dark: rgba(255, 255, 255, 0.08);
+  --kiri-label-dark: #f5f5f7;
+  --kiri-secondary-label-dark: #aeaeb2;
+  --kiri-disabled-label-dark: #6e6e73;
 
   /* Semantics */
-  --kiri-accent-soft-alpha-10: rgba(0, 0, 0, 0.07);
-  --kiri-accent-alpha-18: rgba(0, 0, 0, 0.16);
-  --kiri-accent-alpha-32: rgba(0, 0, 0, 0.3);
+  --kiri-accent-soft-alpha-10: rgba(0, 122, 255, 0.1);
+  --kiri-accent-alpha-18: rgba(0, 122, 255, 0.18);
+  --kiri-accent-alpha-32: rgba(0, 122, 255, 0.32);
   /* Spacing */
   --kiri-space-standard: 14px;
-  --kiri-space-page: 24px;
+  --kiri-space-page: 22px;
   --kiri-settings-content-width: 960px;
 
   /* Radii */
-  --kiri-radius-control: 8px;
-  --kiri-radius-badge: 6px;
-  --kiri-radius-card: 14px;
+  --kiri-radius-control: 6px;
+  --kiri-radius-badge: 5px;
+  --kiri-radius-card: 10px;
 
   /* Motion */
-  --kiri-motion-hover: 0.14s;
+  --kiri-motion-hover: 0.12s;
 
   /* Typography */
-  --kiri-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  --kiri-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Helvetica Neue", sans-serif;
 
   /* Solid action color (flat, no gradients). */
   --kiri-brand-solid: var(--kiri-accent-strong);
+
+  /* Window material */
+  --kiri-titlebar: rgba(246, 246, 248, 0.96);
+  --kiri-titlebar-dark: rgba(44, 44, 46, 0.96);
 }
 
 /* Editor/capture surfaces are always dark (darkAqua forced in the original). */
@@ -63,6 +74,8 @@
   --kiri-card: var(--kiri-card-dark);
   --kiri-elevated: var(--kiri-elevated-dark);
   --kiri-surface-border: var(--kiri-surface-border-dark);
+  --kiri-hairline: var(--kiri-hairline-dark);
+  --kiri-titlebar: var(--kiri-titlebar-dark);
   --kiri-group-fill: var(--kiri-group-fill-dark);
   --kiri-label: var(--kiri-label-dark);
   --kiri-secondary-label: var(--kiri-secondary-label-dark);
@@ -164,35 +177,55 @@ textarea {
   -webkit-user-select: text;
 }
 
-/* The main window keeps one navigation spine and one content origin. */
-.library-root { font-size: 14px; display: flex; height: 100%; position: relative; }
+/* The main window keeps one navigation spine and one content origin, under a
+   macOS-style titlebar that owns the window controls and the drag region. */
+.library-root {
+  font-size: 13px;
+  display: flex;
+  height: 100%;
+  position: relative;
+  box-sizing: border-box;
+  padding-top: 46px;
+  background: var(--kiri-canvas);
+  /* A small radius, only enough to read as a floating window. The window is
+     transparent so the corners really show the desktop; a maximized window
+     fills the screen and must stay square. */
+  border-radius: 10px;
+  overflow: hidden;
+  /* Clip every child (the titlebar's backdrop blur included) to the same
+     rounded rectangle. Without this, WebView2 paints the blur layer as a
+     square over the top corners, which read as a leftover white line. */
+  clip-path: inset(0 round 10px);
+}
+html[data-maximized="true"] .library-root { border-radius: 0; clip-path: none; }
+.library-root > .kiri-titlebar { position: absolute; top: 0; left: 0; right: 0; }
 .library-sidebar {
-  flex: 0 0 200px;
+  flex: 0 0 210px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 22px 12px;
+  padding: 10px 10px 12px;
   background: var(--kiri-sidebar);
-  border-right: 1px solid var(--kiri-surface-border);
+  border-right: 1px solid var(--kiri-hairline);
   overflow-y: auto;
 }
-.library-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 24px; }
-.library-sidebar__brand img { width: 32px; height: 32px; border-radius: 8px; }
-.library-sidebar__brand strong { font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
-.library-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; position: relative; }
-.library-control-panel { z-index: 2; flex: 0 0 auto; background: var(--kiri-card); border-bottom: 1px solid var(--kiri-surface-border); }
-.library-control-panel__primary { min-height: 86px; padding: 18px var(--kiri-space-page); box-sizing: border-box; display: flex; align-items: center; gap: 20px; }
+.library-sidebar__brand { display: none; }
+.library-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; position: relative; background: var(--kiri-canvas); }
+.library-control-panel { z-index: 2; flex: 0 0 auto; background: var(--kiri-canvas); border-bottom: 1px solid var(--kiri-hairline); }
+.library-control-panel__primary { min-height: 54px; padding: 10px var(--kiri-space-page) 8px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; }
+.library-control-panel__search { display: flex; flex: 1 1 auto; min-width: 0; }
+.library-control-panel__search .kiri-library-search { max-width: 320px; }
 .library-control-panel__titles { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 .library-control-panel__title { margin: 0; color: var(--kiri-label); font: 650 22px/1.2 var(--kiri-font-ui); letter-spacing: -.025em; }
 .library-control-panel__subtitle { color: var(--kiri-secondary-label); font: 400 13px/1.4 var(--kiri-font-ui); }
-.library-control-panel__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 68%; }
+.library-control-panel__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: none; }
 .library-control-panel__actions > .kiri-button { flex: 0 0 auto; white-space: nowrap; }
 .library-control-panel__actions svg { flex-shrink: 0; }
 .library-control-panel--settings { background: transparent; border-bottom: 0; }
-.library-control-panel--settings .library-control-panel__primary { width: 100%; max-width: calc(var(--kiri-settings-content-width) + 2 * var(--kiri-space-page)); min-height: 58px; margin-inline: auto; padding: 18px var(--kiri-space-page) 8px; }
+.library-control-panel--settings .library-control-panel__primary { width: 100%; max-width: calc(var(--kiri-settings-content-width) + 2 * var(--kiri-space-page)); min-height: 46px; margin-inline: auto; padding: 10px var(--kiri-space-page) 6px; }
 .library-control-panel--settings .library-control-panel__title { font-size: 20px; font-weight: 600; }
 
-.library-root .kiri-button { font-size: 13px; min-height: 36px; }
+.library-root .kiri-button { font-size: 12.5px; min-height: 28px; }
 .library-status-state {
   flex: 1;
   min-height: 0;
@@ -273,17 +306,17 @@ textarea {
 .kiri-library-search {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1 1 240px;
-  min-width: 160px;
-  max-width: 300px;
-  height: 36px;
-  padding: 0 9px 0 11px;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 150px;
+  max-width: 340px;
+  height: 28px;
+  padding: 0 8px 0 9px;
   box-sizing: border-box;
   color: var(--kiri-secondary-label);
-  background: color-mix(in srgb, var(--kiri-canvas) 46%, var(--kiri-elevated));
-  border: 1px solid color-mix(in srgb, var(--kiri-surface-border) 66%, transparent);
-  border-radius: var(--kiri-radius-control);
+  background: var(--kiri-group-fill);
+  border: 1px solid transparent;
+  border-radius: 7px;
   transition:
     background var(--kiri-motion-hover) ease-out,
     border-color var(--kiri-motion-hover) ease-out,
@@ -292,8 +325,8 @@ textarea {
 
 .kiri-library-search:focus-within {
   background: var(--kiri-elevated);
-  border-color: color-mix(in srgb, var(--kiri-accent) 72%, var(--kiri-surface-border));
-  box-shadow: 0 0 0 2px var(--kiri-accent-soft-alpha-10);
+  border-color: color-mix(in srgb, var(--kiri-accent) 68%, transparent);
+  box-shadow: 0 0 0 3px var(--kiri-accent-soft-alpha-10);
 }
 
 .kiri-library-search input {
@@ -304,7 +337,7 @@ textarea {
   color: var(--kiri-label);
   background: transparent;
   border: 0;
-  font: 400 13px var(--kiri-font-ui);
+  font: 400 12.5px var(--kiri-font-ui);
   appearance: none;
   -webkit-appearance: none;
 }
@@ -348,13 +381,16 @@ textarea {
   transform: scale(0.9);
 }
 
-.library-section-picker { display: flex; flex: 1; flex-direction: column; gap: 4px; min-height: 0; }
-.library-section-picker__footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--kiri-surface-border); }
-.library-section-picker__button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 10px; box-sizing: border-box; color: var(--kiri-secondary-label); background: transparent; border: 0; border-radius: 7px; font: 500 14px/1.4 var(--kiri-font-ui); text-align: left; cursor: pointer; }
-.library-section-picker__button svg { flex-shrink: 0; }
-.library-section-picker__button:hover:not([data-active]) { color: var(--kiri-label); background: var(--kiri-group-fill); }
-.library-section-picker__button[data-active] { color: var(--kiri-label); background: var(--kiri-group-fill); font-weight: 650; }
-.library-control-panel__filter-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 58px; padding: 10px var(--kiri-space-page); box-sizing: border-box; border-top: 1px solid var(--kiri-surface-border); }
+.library-section-picker { display: flex; flex: 1; flex-direction: column; gap: 2px; min-height: 0; }
+.library-section-picker__footer { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--kiri-hairline); }
+.library-section-picker__button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 5px 8px; box-sizing: border-box; color: var(--kiri-label); background: transparent; border: 0; border-radius: 6px; font: 500 13px/1.3 var(--kiri-font-ui); text-align: left; cursor: default; }
+.library-section-picker__button svg { flex-shrink: 0; color: var(--kiri-secondary-label); }
+.library-section-picker__button:hover:not([data-active]) { background: var(--kiri-group-fill); }
+.library-section-picker__button:active:not([data-active]) { background: color-mix(in srgb, var(--kiri-group-fill) 70%, var(--kiri-label)); }
+.library-section-picker__button[data-active] { color: var(--kiri-label); background: var(--kiri-accent-alpha-18); font-weight: 600; }
+.library-section-picker__button[data-active] svg { color: var(--kiri-accent); }
+.library-section-picker__button:focus-visible { outline: 2px solid var(--kiri-accent); outline-offset: -2px; }
+.library-control-panel__filter-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 40px; padding: 0 var(--kiri-space-page) 10px; box-sizing: border-box; }
 .library-control-panel__filter-rail .kiri-library-search { order: 2; flex: 0 1 220px; }
 
 .library-filter-bar {
@@ -534,56 +570,62 @@ button:active:not(:disabled) {
 
 /* Primary (accent fill) */
 .kiri-button--primary {
-  min-height: 34px;
-  padding: 0 14px;
+  min-height: 28px;
+  padding: 0 13px;
   color: var(--kiri-on-accent);
   background: var(--kiri-brand-solid);
-  border: 1px solid var(--kiri-brand-solid);
-  box-shadow: none;
+  border: 1px solid color-mix(in srgb, var(--kiri-brand-solid) 84%, #000000);
+  border-radius: 6px;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.14), inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
 }
 
 .kiri-button--primary:hover:not(:disabled) {
-  box-shadow: none;
-  opacity: 0.82;
+  background: color-mix(in srgb, var(--kiri-brand-solid) 90%, #000000);
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.16), inset 0 0.5px 0 rgba(255, 255, 255, 0.24);
 }
 
-/* Secondary (outline) */
+/* Secondary (push button) */
 .kiri-button--secondary {
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 28px;
+  padding: 0 11px;
   color: var(--kiri-label);
-  background: transparent;
+  background: var(--kiri-elevated);
   border: 1px solid var(--kiri-surface-border);
+  border-radius: 6px;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.08);
 }
 
 .kiri-button--secondary:hover:not(:disabled) {
-  background: var(--kiri-group-fill);
-  border-color: var(--kiri-accent);
+  background: color-mix(in srgb, var(--kiri-elevated) 88%, var(--kiri-group-fill));
+  border-color: var(--kiri-surface-border);
 }
 
 /* Destructive (red) */
 .kiri-button--destructive {
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 28px;
+  padding: 0 11px;
   color: var(--kiri-coral);
   background: transparent;
   border: 1px solid transparent;
+  border-radius: 6px;
 }
 
 .kiri-button--destructive:hover:not(:disabled) {
-  background: rgba(200, 62, 54, 0.1);
-  border-color: rgba(200, 62, 54, 0.35);
+  background: color-mix(in srgb, var(--kiri-coral) 12%, transparent);
+  border-color: color-mix(in srgb, var(--kiri-coral) 32%, transparent);
 }
 
 .kiri-button--destructive-fill {
   color: #ffffff;
   background: var(--kiri-coral);
-  border-color: var(--kiri-coral);
+  border-color: color-mix(in srgb, var(--kiri-coral) 84%, #000000);
+  border-radius: 6px;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.14);
 }
 
 .kiri-button--destructive-fill:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--kiri-coral) 86%, #000000);
-  border-color: color-mix(in srgb, var(--kiri-coral) 86%, #000000);
+  background: color-mix(in srgb, var(--kiri-coral) 88%, #000000);
+  border-color: color-mix(in srgb, var(--kiri-coral) 88%, #000000);
 }
 
 .kiri-button--ghost {
@@ -747,6 +789,31 @@ button:active:not(:disabled) {
   color: #000000;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
+
+/* Number badges advertise the 1/2/3 mode keys without changing button height. */
+.kiri-mode-btn__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.5);
+  font: 600 9.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1;
+}
+
+.kiri-mode-btn[data-active] .kiri-mode-btn__badge {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* The frozen screen can offer resize or move cursors; overlay chrome keeps a
+   neutral pointer so dragging a panel never looks like moving the region. */
+.kiri-capture-toolbar,
+.kiri-record-options { cursor: default; }
 
 .kiri-mode-btn:focus { outline:none; box-shadow:none; }
 .kiri-mode-btn:focus-visible { box-shadow:inset 0 0 0 1px #777; }

@@ -1,0 +1,13 @@
+src\record.rs:5:17: warning: unused import: `Path`
+src\capture\scroll.rs:29:5: warning: variant `Window` is never constructed
+src\gif.rs:289:8: warning: function `export_gif` is never used
+src\platform\mod.rs:30:5: warning: variants `Unsupported` and `Denied` are never constructed
+src\platform\mod.rs:49:19: warning: struct `TransientWindowPolicy` is never constructed
+src\platform\mod.rs:58:14: warning: method `policy` is never used
+src\platform\mod.rs:287:8: warning: function `window_capture_id` is never used
+src\portal_shortcuts.rs:155:4: warning: function `publish` is never used
+src\portal_shortcuts\model.rs:19:5: warning: multiple variants are never constructed
+src\portal_shortcuts\model.rs:69:12: warning: methods `clear`, `apply`, `bound`, and `any_bound` are never used
+src\state.rs:601:5: warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never constructed
+warning: `kiri` (lib) generated 11 warnings (run `cargo fix --lib -p kiri` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s

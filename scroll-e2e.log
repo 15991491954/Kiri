@@ -1,0 +1,19 @@
+[PASS] the capture overlay opens 
+True
+True
+True
+True
+True
+True
+True
+True
+True
+True
+True
+无法将“System.Object[]”类型的“System.Object[]”值转换为“System.Uri”类型。
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\scroll-capture-e2e.ps1:40 字符: 3
++   $socket.ConnectAsync([Uri]$target.webSocketDebuggerUrl, $token).Wai ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) []，ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : ConvertToFinalInvalidCastException
+ 

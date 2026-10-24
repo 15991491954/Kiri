@@ -67,7 +67,7 @@ test("CI signs updater artifacts without exposing a private key", () => {
   assert.match(release, /uploadUpdaterJson:\s*true/);
   assert.match(release, /uploadUpdaterSignatures:\s*true/);
   assert.match(packager, /security find-generic-password/);
-  assert.match(packager, /kiri\.app\.tar\.gz/);
+  assert.match(packager, /Lumen\.app\.tar\.gz/);
   assert.match(packager, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD/);
 });
 
@@ -195,7 +195,7 @@ test('opening a visible panel discovers an update without downloading it', async
   const h = updaterHarness(false, false, false, { visible: true });
   h.render(); await settleRequests(); h.render(); await settleRequests();
   assert.equal(h.checks(), 1);
-  assert.ok(nodes(h.render()).includes('Kiri v9.9.9 is available.'));
+  assert.ok(nodes(h.render()).includes('Lumen v9.9.9 is available.'));
   assert.equal(h.downloads(), 0);
   assert.deepEqual(h.installs, []);
   h.focus(); h.focus(); await settleRequests();
@@ -232,7 +232,7 @@ test('automatic failures stay quiet and retry only on a later panel activation',
   const h = updaterHarness(false,false,false,{visible:true,globals:{Date:{now:()=>now}},check:async()=>{throw Error('offline');}});
   h.render(); await settleRequests(); h.render(); await settleRequests();
   assert.equal(h.checks(),1);
-  assert.ok(nodes(h.render()).includes('Opening Kiri checks for updates.'));
+  assert.ok(nodes(h.render()).includes('Opening Lumen checks for updates.'));
   assert.equal(nodes(h.render()).some(n=>n?.props?.role==='alert'),false);
   now += 299999; h.focus(); await settleRequests(); assert.equal(h.checks(),1);
   now += 1; h.focus(); await settleRequests(); assert.equal(h.checks(),2);
@@ -243,7 +243,7 @@ test('a successful no-update check is cached for six hours without a timer', asy
   let now = 1000;
   const h = updaterHarness(false,false,false,{visible:true,globals:{Date:{now:()=>now}},check:async()=>null});
   h.render(); await settleRequests(); h.render(); await settleRequests();
-  assert.equal(h.checks(),1); assert.ok(nodes(h.render()).includes('Kiri v1.5.0 is up to date.'));
+  assert.equal(h.checks(),1); assert.ok(nodes(h.render()).includes('Lumen v1.5.0 is up to date.'));
   now += 6*60*60*1000-1; h.focus(); await settleRequests(); assert.equal(h.checks(),1);
   now += 1; h.focus(); await settleRequests(); assert.equal(h.checks(),2);
   h.unmount();
@@ -255,10 +255,10 @@ test('the settings notification follows discovered availability across navigatio
   const main = harness.mount('LibraryWindow');
   main.render(); await settleRequests(); main.render(); await settleRequests();
   const picker = () => nodes(main.render()).find(n=>n?.type?.name==='SegmentedPicker');
-  assert.equal(picker().props.options[4].notification,'Update available');
-  picker().props.onChange(4); main.render();
+  assert.equal(picker().props.options[2].notification,'Update available');
+  picker().props.onChange(2); main.render();
   picker().props.onChange(1); main.render();
-  assert.equal(picker().props.options[4].notification,'Update available');
+  assert.equal(picker().props.options[2].notification,'Update available');
   main.unmount();
 });
 

@@ -1,9 +1,9 @@
 use crate::qr_controller::Scan;
 use crate::{
-    commands::{asset_dto, AssetDto, RectDto},
+    commands::RectDto,
     core::asset::CaptureKind,
     qr::{self, QrCode},
-    state::{emit_library_changed, AppState},
+    state::AppState,
 };
 use base64::Engine;
 use serde::Serialize;
@@ -83,16 +83,19 @@ pub async fn scan_qr(
                     .as_ref()
                     .filter(|s| {
                         Some(s.capture_id) == owner.as_ref().map(|o| o.capture_id)
-                            && s.overlay_labels.contains(&label)
+                            && s.has_overlay(&label)
                     })
                     .ok_or("The QR request was canceled.")?;
+                let display = session
+                    .display_for_overlay(&label)
+                    .ok_or("The QR request was canceled.")?;
                 crate::ocr_commands::FrozenPngSource {
-                    png: session.display.png_data.clone(),
-                    declared_width: session.display.pixel_width,
-                    declared_height: session.display.pixel_height,
-                    display_width: session.display.screen_frame.width,
-                    display_height: session.display.screen_frame.height,
-                    scale: session.display.backing_scale,
+                    png: display.png_data.clone(),
+                    declared_width: display.pixel_width,
+                    declared_height: display.pixel_height,
+                    display_width: display.screen_frame.width,
+                    display_height: display.screen_frame.height,
+                    scale: display.backing_scale,
                 }
             };
             crate::ocr_commands::crop_frozen_png(source, selection)?.png
@@ -138,7 +141,7 @@ pub async fn scan_qr(
         let capture = state.capture.lock().unwrap();
         if let Some(owner) = &owner {
             if !capture.session.as_ref().is_some_and(|s| {
-                s.capture_id == owner.capture_id && s.overlay_labels.contains(&label)
+                s.capture_id == owner.capture_id && s.has_overlay(&label)
             }) {
                 requests.clear(&label);
                 return Err("The QR request was canceled.".into());
@@ -226,7 +229,7 @@ fn selected(
         .ok_or("The QR request was canceled.")?;
     if let Some(id) = scan.capture_id {
         if !capture.session.as_ref().is_some_and(|s| {
-            s.capture_id == id && s.overlay_labels.iter().any(|l| l == window.label())
+            s.capture_id == id && s.has_overlay(window.label())
         }) {
             return Err("The QR request was canceled.".into());
         }
@@ -260,8 +263,8 @@ pub async fn qr_action(
     request_id: String,
     index: usize,
     action: String,
-) -> Result<Option<AssetDto>, String> {
-    let (scan, code) = selected(&window, &app, &request_id, index)?;
+) -> Result<(), String> {
+    let (_scan, code) = selected(&window, &app, &request_id, index)?;
     let text = code
         .text
         .as_deref()
@@ -269,141 +272,10 @@ pub async fn qr_action(
     match action.as_str() {
         "copy" => {
             crate::platform::write_text_to_clipboard(text).map_err(|e| e.to_string())?;
-            Ok(None)
+            Ok(())
         }
         "open" => {
             open_link(&app, text, Some((window, request_id, index))).await?;
-            Ok(None)
-        }
-        "favorite" | "unfavorite" => {
-            let label = window.label().to_string();
-            tauri::async_runtime::spawn_blocking(move || {
-                let crop = if action == "favorite" {
-                    Some(qr::crop_code(&scan.png, &code)?)
-                } else {
-                    None
-                };
-                let state = app.state::<AppState>();
-                let capture = state.capture.lock().unwrap();
-                let scans = state.qr_requests.scans.lock().unwrap();
-                let request_current = scans.get(&label).is_some_and(|s| s.id == scan.id)
-                    && scan.capture_id.is_none_or(|id| {
-                        capture.session.as_ref().is_some_and(|s| {
-                            s.capture_id == id && s.overlay_labels.contains(&label)
-                        })
-                    });
-                let mut context = state.library.lock().unwrap();
-                // selected() already accepted Favorite with a frozen PNG and
-                // payload. Closing its result does not retract that explicit
-                // save, but it must never write to a replacement library.
-                validate_qr_favorite_save(
-                    &action,
-                    request_current,
-                    scan.library_identity,
-                    (
-                        context.expected_library_id(),
-                        context.expected_library_generation(),
-                    ),
-                )?;
-                let library = context.library_mut().map_err(|e| e.to_string())?;
-                let asset = if let Some((png, width, height)) = crop {
-                    Some(
-                        library
-                            .import_qr(&png, width as i64, height as i64, code.text.unwrap())
-                            .map_err(|e| e.to_string())?,
-                    )
-                } else {
-                    if let Some(asset) = library
-                        .all_assets(false)
-                        .iter()
-                        .find(|a| a.qr_text == code.text)
-                    {
-                        library
-                            .move_to_trash(&asset.id)
-                            .map_err(|e| e.to_string())?;
-                    }
-                    None
-                };
-                drop(context);
-                drop(scans);
-                drop(capture);
-                emit_library_changed(&app);
-                Ok(asset.as_ref().map(asset_dto))
-            })
-            .await
-            .map_err(|_| "Could not save this QR code.".to_string())?
-        }
-        _ => Err("Invalid QR action.".into()),
-    }
-}
-
-fn validate_qr_favorite_save(
-    action: &str,
-    request_current: bool,
-    expected_library: (uuid::Uuid, uuid::Uuid),
-    current_library: (uuid::Uuid, uuid::Uuid),
-) -> Result<(), String> {
-    if action == "unfavorite" && !request_current {
-        return Err("The QR request was canceled.".into());
-    }
-    if expected_library != current_library {
-        return Err("The library changed during QR recognition.".into());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn list_qr_favorites(
-    window: WebviewWindow,
-    app: AppHandle,
-    query: String,
-) -> Result<Vec<AssetDto>, String> {
-    if window.label() != "library" {
-        return Err("QR favorites are only available from the library.".into());
-    }
-    let state = app.state::<AppState>();
-    let mut context = state.library.lock().unwrap();
-    Ok(context
-        .library()
-        .map_err(|e| e.to_string())?
-        .search(&query, false)
-        .iter()
-        .filter(|a| a.qr_text.is_some() && a.is_favorite)
-        .map(asset_dto)
-        .collect())
-}
-
-#[tauri::command]
-pub async fn qr_favorite_action(
-    window: WebviewWindow,
-    app: AppHandle,
-    id: String,
-    action: String,
-) -> Result<(), String> {
-    if window.label() != "library" {
-        return Err("QR favorites are only available from the library.".into());
-    }
-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid QR favorite.")?;
-    let text = {
-        let state = app.state::<AppState>();
-        let mut context = state.library.lock().unwrap();
-        let library = context.library_mut().map_err(|e| e.to_string())?;
-        let asset = library
-            .asset_by_id(&id)
-            .filter(|a| a.trashed_at.is_none() && a.is_favorite && a.qr_text.is_some())
-            .ok_or("Invalid QR favorite.")?;
-        let text = asset.qr_text.clone().unwrap();
-        if action == "remove" {
-            library.move_to_trash(&id).map_err(|e| e.to_string())?;
-        }
-        text
-    };
-    match action.as_str() {
-        "copy" => crate::platform::write_text_to_clipboard(&text).map_err(|e| e.to_string()),
-        "copyImage" => crate::commands::copy_asset(app, window, id.to_string()),
-        "open" => open_link(&app, &text, None).await,
-        "remove" => {
-            emit_library_changed(&app);
             Ok(())
         }
         _ => Err("Invalid QR action.".into()),
@@ -647,8 +519,6 @@ fn open_web_url(url: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_qr_favorite_save;
-
     #[test]
     fn editor_revision_is_accepted_only_from_its_matching_image_editor() {
         let id = uuid::Uuid::new_v4();
@@ -710,23 +580,5 @@ mod tests {
     fn missing_launcher_is_an_open_failure() {
         let command = std::process::Command::new("/kiri-missing-link-launcher");
         assert!(super::wait_for_link_launcher(command, std::time::Duration::from_secs(1)).is_err());
-    }
-
-    #[test]
-    fn accepted_favorite_survives_result_close_but_unfavorite_requires_its_owner() {
-        let identity = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
-        assert!(validate_qr_favorite_save("favorite", false, identity, identity).is_ok());
-        assert!(validate_qr_favorite_save("unfavorite", false, identity, identity).is_err());
-    }
-
-    #[test]
-    fn accepted_favorite_cannot_write_to_a_replacement_library_or_generation() {
-        let identity = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
-        for replacement in [
-            (uuid::Uuid::new_v4(), identity.1),
-            (identity.0, uuid::Uuid::new_v4()),
-        ] {
-            assert!(validate_qr_favorite_save("favorite", false, identity, replacement).is_err());
-        }
     }
 }

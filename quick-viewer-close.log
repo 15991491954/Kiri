@@ -1,0 +1,33 @@
+✔ missing video X closes without detaching its native guard (107.1594ms)
+✔ missing video Escape closes without detaching its native guard (2.5276ms)
+✔ missing video Cmd+W closes without detaching its native guard (1.2898ms)
+✔ missing video Ctrl+W closes without detaching its native guard (1.0722ms)
+✔ ready fixture.png X closes without video preparation or a dialog (0.9856ms)
+✔ ready fixture.png native closes without video preparation or a dialog (0.6808ms)
+✔ ready fixture.gif X closes without video preparation or a dialog (0.6796ms)
+✔ ready fixture.gif Escape closes without video preparation or a dialog (0.8747ms)
+✔ unreadable playback failure remains closable with the persistent native listener (0.8721ms)
+✔ libraryUnavailable playback failure remains closable with the persistent native listener (0.8938ms)
+✔ ready playback failure remains closable with the persistent native listener (0.6649ms)
+✔ missing video native title-bar close cannot be stranded by player cleanup (0.6435ms)
+✔ restoring video's loading state keeps the native guard and allows close (1.0931ms)
+✔ failed and restored video keeps one native close listener (2.0282ms)
+✔ ready video close waits for saving and closes only after it succeeds (0.7476ms)
+✔ ready video X save failure keeps its close confirmation (0.553ms)
+✔ ready video export blocks X close without attempting autosave (0.4917ms)
+✔ ready video native save failure keeps its close confirmation (0.5724ms)
+✔ ready video export blocks native close without attempting autosave (0.4306ms)
+✔ player flush stays stable across parent renders and busy registration changes (0.5188ms)
+✔ player failure clears its export block before native close (0.5768ms)
+✔ restored ready video X uses its current save guard (0.7931ms)
+✔ restored ready video Escape uses its current save guard (0.8103ms)
+✔ restored ready video Cmd+W uses its current save guard (0.897ms)
+✔ restored ready video Ctrl+W uses its current save guard (0.7917ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5412.6193

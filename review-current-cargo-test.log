@@ -1,0 +1,669 @@
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `Window` is never constructed
+  --> src\capture\scroll.rs:29:5
+   |
+25 | pub enum ScrollTarget {
+   |          ------------ variant in this enum
+...
+29 |     Window {
+   |     ^^^^^^
+   |
+   = note: `ScrollTarget` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `export_gif` is never used
+   --> src\gif.rs:289:8
+    |
+289 | pub fn export_gif(video: &Path, max_long_edge: u32, fps: u32) -> Result<(PathBuf, f64)> {
+    |        ^^^^^^^^^^
+
+warning: variants `Unsupported` and `Denied` are never constructed
+  --> src\platform\mod.rs:30:5
+   |
+28 | pub enum MicrophoneAccess {
+   |          ---------------- variants in this enum
+29 |     Authorized,
+30 |     Unsupported,
+   |     ^^^^^^^^^^^
+31 |     Denied,
+   |     ^^^^^^
+   |
+   = note: `MicrophoneAccess` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `TransientWindowPolicy` is never constructed
+  --> src\platform\mod.rs:49:19
+   |
+49 | pub(super) struct TransientWindowPolicy {
+   |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `policy` is never used
+  --> src\platform\mod.rs:58:14
+   |
+57 | impl TransientWindowRole {
+   | ------------------------ method in this implementation
+58 |     const fn policy(self) -> TransientWindowPolicy {
+   |              ^^^^^^
+
+warning: function `window_capture_id` is never used
+   --> src\platform\mod.rs:461:8
+    |
+461 | pub fn window_capture_id(_app: &tauri::AppHandle, _label: &str) -> Option<u32> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `publish` is never used
+   --> src\portal_shortcuts.rs:155:4
+    |
+155 | fn publish(
+    |    ^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\portal_shortcuts\model.rs:19:5
+   |
+17 | pub enum Status {
+   |          ------ variants in this enum
+18 |     Unsupported,
+19 |     Checking,
+   |     ^^^^^^^^
+20 |     Unavailable,
+   |     ^^^^^^^^^^^
+21 |     Ready,
+   |     ^^^^^
+22 |     Connecting,
+   |     ^^^^^^^^^^
+23 |     Active,
+   |     ^^^^^^
+24 |     Declined,
+   |     ^^^^^^^^
+25 |     Failed,
+   |     ^^^^^^
+26 |     Closed,
+   |     ^^^^^^
+   |
+   = note: `Status` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: methods `clear`, `apply`, `bound`, and `any_bound` are never used
+   --> src\portal_shortcuts\model.rs:69:12
+    |
+ 49 | impl Snapshot {
+    | ------------- methods in this implementation
+...
+ 69 |     pub fn clear(&mut self, status: Status) {
+    |            ^^^^^
+...
+ 77 |     pub fn apply(&mut self, shortcuts: Vec<(String, Option<String>)>, version: u32) {
+    |            ^^^^^
+...
+ 97 |     pub fn bound(&self, id: &str) -> bool {
+    |            ^^^^^
+...
+105 |     pub fn any_bound(&self) -> bool {
+    |            ^^^^^^^^^
+
+warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never constructed
+   --> src\state.rs:605:5
+    |
+604 | pub enum RecoveryAction {
+    |          -------------- variants in this enum
+605 |     OpenSettings,
+    |     ^^^^^^^^^^^^
+606 |     QuitKiri,
+    |     ^^^^^^^^
+607 |     OpenInputMonitoringSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+608 |     OpenMicrophoneSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `export_video` is never used
+   --> src\video_export.rs:557:8
+    |
+557 | pub fn export_video(
+    |        ^^^^^^^^^^^^
+
+warning: function `export_video_with_annotations` is never used
+   --> src\video_export.rs:567:8
+    |
+567 | pub fn export_video_with_annotations(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `wait_for_link_launcher` is never used
+   --> src\qr_commands.rs:419:4
+    |
+419 | fn wait_for_link_launcher(
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `stop_link_launcher` is never used
+   --> src\qr_commands.rs:451:4
+    |
+451 | fn stop_link_launcher(child: &mut std::process::Child) {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: `kiri` (lib) generated 11 warnings (run `cargo fix --lib -p kiri` to apply 1 suggestion)
+warning: `kiri` (lib test) generated 10 warnings (6 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\kiri_lib-15b3c46ea0969f04.exe)
+
+running 499 tests
+test capture::scroll::tests::pixel_grid_preserves_odd_dimensions_and_display_local_origin ... ok
+test capture::scroll::tests::malformed_and_off_display_regions_fail_closed ... ok
+test capture::tests::native_capture_failure_survives_a_later_stop_request ... ok
+test capture::windows::tests::crop_produces_exact_frame_and_pads_out_of_bounds_pixels ... ok
+test capture::scroll_frames::tests::byte_budget_applies_independently_of_frame_limit ... ok
+test capture::scroll_frames::tests::shutdown_drains_frames_and_disconnects_after_last_sender ... ok
+test capture::tests::display_identity_fails_closed_on_disconnect_or_topology_change ... ok
+test capture::tests::display_identity_survives_enumeration_reordering ... ok
+test capture::tests::invalid_tail_frame_is_not_hidden_by_expected_shutdown ... ok
+test capture::scroll_frames::tests::odd_dimensions_are_preserved_and_invalid_frames_are_rejected ... ok
+test capture::tests::native_close_during_an_expected_stop_is_not_a_failure ... ok
+test capture::tests::windows_monitor_frame_keeps_secondary_display_origin ... ok
+test capture::windows::tests::audio_config_rank_prefers_stereo_float_at_48khz ... ok
+test capture::windows::tests::crop_honors_row_padding_and_swaps_rgba_to_bgra ... ok
+test capture::scroll_frames::tests::overload_retains_ordered_bridge_frames_and_latest_without_exceeding_budget ... ok
+test capture::tests::display_identity_fails_closed_on_ambiguous_exact_matches ... ok
+test capture::windows::tests::frozen_capture_wait_propagates_success ... ok
+test capture::windows::tests::frozen_capture_wait_propagates_errors_before_and_after_first_frame ... ok
+test capture::windows::tests::frozen_capture_wait_reports_a_disconnected_worker ... ok
+test capture::windows::tests::frozen_window_rect_rejects_offscreen_and_tiny_candidates ... ok
+test capture::windows::tests::frozen_window_rect_is_clipped_and_scaled_into_monitor_coordinates ... ok
+test capture::windows::tests::recording_border_is_disabled_only_after_access_is_granted ... ok
+test capture::windows::tests::frozen_capture_fast_png_round_trips_rgba_pixels ... ok
+test capture::windows::tests::recording_border_permission_failure_keeps_recording_available ... ok
+test capture::windows::tests::recording_border_skips_permission_on_older_windows ... ok
+test capture::windows::tests::recording_border_skips_permission_when_support_query_fails ... ok
+test capture::windows::tests::session_display_ids_round_trip_through_enumeration_positions ... ok
+test capture::windows::tests::windows_capture_monitor_index_rejects_overflow ... ok
+test capture::windows::tests::windows_capture_monitor_indices_are_one_based ... ok
+test commands::command_security_tests::capture_double_failure_requires_a_global_error_after_the_overlay_closes ... ok
+test commands::command_security_tests::capture_confirmation_validates_png_before_consuming_the_session ... ok
+test commands::command_security_tests::editor_committed_action_returns_revision_even_when_external_action_fails ... ok
+test commands::command_security_tests::editor_save_action_matches_its_native_destination ... ok
+test commands::command_security_tests::editor_revision_mismatch_retains_tokens_and_skips_external_action ... ok
+test commands::command_security_tests::editor_document_must_match_asset_pixels_and_aspect_ratio ... ok
+test commands::command_security_tests::editor_save_destination_requires_the_native_token_without_consuming_it ... ok
+test commands::command_security_tests::editor_crop_uses_the_exact_staged_source_pixels_and_rejects_bad_bounds ... ok
+test commands::command_security_tests::recording_notice_exposes_only_known_device_and_display_recovery ... ok
+test commands::command_security_tests::raw_video_frame_queue_has_a_hard_capacity ... ok
+test commands::command_security_tests::editable_capture_source_matches_the_staged_pixel_dimensions ... ok
+test commands::command_security_tests::frontend_error_log_is_single_line_and_bounded ... ok
+test commands::command_security_tests::recording_notice_preserves_missing_selected_input_recovery ... ok
+test commands::command_security_tests::recording_notice_keeps_unknown_native_details_private ... ok
+test commands::command_security_tests::shortcut_settings_read_access_only_allows_library_and_fixed_control_panel ... ok
+test commands::command_security_tests::shortcut_status_reflects_native_registration ... ok
+test core::annotation::tests::annotation_appearance_defaults_and_clamps_visual_sizes ... ok
+test core::annotation::tests::appearance_patches_merge_against_latest_shared_preferences ... ok
+test core::annotation::tests::label_direction_roundtrips_without_changing_legacy_text_or_preferences ... ok
+test core::annotation::tests::parses_every_supported_mark_and_round_trips ... ok
+test core::annotation::tests::mosaic_shapes_validate_corners_and_keep_legacy_brushes_compatible ... ok
+test core::annotation::tests::validates_source_dimensions_and_canvas_ratio_against_the_image ... ok
+test core::annotation::tests::rejects_unknown_fields_kinds_enums_and_duplicate_ids ... ok
+test core::annotation::tests::watermark_grid_bounds_match_document_density_and_boundary_tiles ... ok
+test core::annotation::tests::watermark_preferences_merge_with_legacy_defaults_and_normalize_integer_controls ... ok
+test core::asset::tests::decodes_legacy_long_image_kind ... ok
+test core::asset::tests::searchable_text_matches_swift ... ok
+test core::asset::tests::json_round_trip_keeps_swift_shape ... ok
+test core::annotation::tests::rejects_non_finite_programmatic_geometry_and_oversized_json ... ok
+test core::annotation::tests::watermark_schema_rejects_invalid_fields_geometry_and_unbounded_text ... ok
+test core::gif_timing::tests::elapsed_rounding_stays_within_half_a_centisecond_at_every_frame ... ok
+test core::annotation::tests::numbered_notes_validate_content_and_old_preferences_keep_defaults ... ok
+test batch_export::tests::existing_file_is_never_overwritten ... ok
+test capture::windows::tests::frozen_capture_wait_times_out_before_first_frame ... ok
+test commands::command_security_tests::failed_merge_removes_only_its_partial_output ... ok
+test commands::command_security_tests::failed_recording_import_retains_completed_segments_for_recovery ... ok
+test core::library::tests::atomic_write_cleans_its_temporary_file_when_replacement_fails ... ok
+test commands::command_security_tests::replacement_png_must_decode_and_match_the_indexed_dimensions ... ok
+test core::library::tests::atomic_write_replaces_existing_content_without_temporary_leaks ... ok
+test core::library::tests::annotated_import_rolls_back_all_files_when_index_persistence_fails ... ok
+test core::library::tests::annotation_projects_reject_non_image_assets_before_writing_files ... ok
+test capture::windows::tests::frozen_capture_wait_allows_slow_postprocessing_after_first_frame ... ok
+test capture::windows::tests::frozen_capture_wait_continues_after_a_slow_postprocessing_warning ... ok
+test commands::command_security_tests::editor_save_failures_return_stable_errors ... ok
+test commands::command_security_tests::rejected_missing_record_removal_does_not_notify_or_delete ... ok
+test core::library::tests::annotated_import_keeps_the_swift_index_shape_and_loads_valid_project ... ok
+test core::gif_timing::tests::actual_long_gif_delays_and_metadata_keep_the_1850_frame_timing ... ok
+test core::library::tests::batch_delete_reports_cleanup_failure_after_committing_index ... ok
+test core::library::tests::filenames_use_local_timestamp_and_lowercase_uuid ... ok
+test core::library::tests::exclusive_copies_preserve_an_existing_destination_and_the_source ... ok
+test core::library::tests::batch_persist_failure_keeps_memory_disk_and_files ... ok
+test core::library::tests::all_assets_splits_trashed_from_active ... ok
+test core::library::tests::batch_validation_failure_has_no_partial_mutation_or_persist ... ok
+test core::library::tests::corrupt_projects_are_reported_and_explicit_clear_recovers ... ok
+test core::library::tests::editor_revision_cas_rejects_changes_to_flat_document_or_source ... ok
+test core::library::tests::editor_crop_replaces_clean_source_rendered_image_and_index_dimensions ... ok
+test core::library::tests::editor_snapshots_use_the_current_flat_for_none_and_invalid_projects ... ok
+test core::library::tests::imports_and_lists_assets ... ok
+test core::library::tests::empty_trash_keeps_index_and_files_when_persist_fails ... ok
+test core::library::tests::editor_cas_restores_all_files_after_invalid_project_write_failure ... ok
+test core::library::tests::index_round_trips_with_corrupt_fallback ... ok
+test core::library::tests::file_size_tracks_current_media_without_changing_the_index ... ok
+test core::library::tests::guarded_remove_succeeds_only_for_a_missing_asset ... ok
+test commands::command_security_tests::removing_missing_record_notifies_after_commit_even_when_cleanup_fails ... ok
+test core::library::tests::rejects_invalid_extensions ... ok
+test core::library::tests::editor_cas_saves_none_valid_and_invalid_projects ... ok
+test core::library::tests::rejects_unsafe_and_duplicate_index_entries ... ok
+test core::library::tests::empty_trash_reports_annotation_cleanup_failure_after_committing_index ... ok
+test core::library::tests::empty_trash_removes_only_trashed ... ok
+test core::library::tests::rename_copy_fallback_keeps_bytes_timestamp_and_does_not_overwrite ... ok
+test core::library::tests::named_import_is_persisted_and_searchable_without_changing_the_source ... ok
+test core::library::tests::search_matches_swift_fields ... ok
+test core::library::tests::rename_rejects_invalid_names_and_never_overwrites_unindexed_files ... ok
+test core::library::tests::legacy_first_save_snapshots_source_and_later_saves_keep_it_immutable ... ok
+test core::library::tests::stable_import_recovers_a_synced_file_left_before_index_persist ... ok
+test core::library::tests::restores_only_a_still_missing_asset_and_preserves_metadata ... ok
+test core::library::tests::schema_valid_but_asset_mismatched_documents_fall_back_to_the_current_flat ... ok
+test core::library::tests::stable_import_rejects_ready_content_that_does_not_match_the_source ... ok
+test core::library::tests::semantically_invalid_document_falls_back_to_the_current_flat ... ok
+test core::library::tests::stable_import_reuses_a_legacy_index_filename ... ok
+test core::library::tests::batch_mutations_persist_once_for_multiple_assets ... ok
+test core::library::tests::stable_recording_import_is_idempotent_across_retries ... ok
+test core::library::tests::permanent_delete_keeps_index_and_file_when_persist_fails ... ok
+test core::library::tests::rename_index_failure_keeps_original_and_allows_retry ... ok
+test core::library::tests::editor_cas_clear_updates_flat_and_removes_projects_in_all_states ... ok
+test core::library::tests::permanent_delete_reports_annotation_cleanup_failure_after_committing_index ... ok
+test core::library::tests::rename_preserves_existing_video_drafts_and_open_editor_revision ... ok
+test core::library_location::tests::missing_remembered_default_root_stays_unavailable ... ok
+test core::library_location::tests::missing_remembered_custom_root_stays_unavailable ... ok
+test core::library_location::tests::cancelled_migration_keeps_the_source_context_ready ... ok
+test core::library_location::tests::marker_identity_is_required_for_existing_locations ... ok
+test core::library::tests::valid_editor_snapshot_returns_the_matching_document_and_clean_source ... ok
+test core::locale::tests::native_labels_respect_saved_choices_and_system_fallback ... ok
+test core::locale::tests::resolves_system_and_saved_languages ... ok
+test core::library_location::tests::offline_v1_location_rejects_an_arbitrary_same_id_copy ... ok
+test core::ocr_provider::tests::defaults_to_local_without_profiles ... ok
+test core::ocr_provider::tests::persisted_metadata_rejects_unknown_secret_fields ... ok
+test core::ocr_provider::tests::permits_exact_loopback_http_and_builds_endpoint ... ok
+test core::ocr_provider::tests::rejects_non_exact_loopback_and_url_smuggling_fields ... ok
+test core::library::tests::video_project_survives_a_failed_permanent_delete ... ok
+test core::pin_placement::tests::disconnected_or_rescaled_displays_cannot_open_an_offscreen_reference ... ok
+test core::pin_placement::tests::large_selection_is_not_shrunk_to_the_old_reference_cap ... ok
+test core::pin_placement::tests::recent_origins_are_bounded_and_cropped_images_do_not_reuse_stale_geometry ... ok
+test core::pin_placement::tests::retina_reference_keeps_logical_selection_size_and_negative_display_origin ... ok
+test core::pin_placement::tests::tiny_reference_is_reachable_at_the_bottom_right_edge ... ok
+test core::policy::tests::bit_rate_clamps_to_policy_range ... ok
+test core::policy::tests::elapsed_label_formats_like_swift ... ok
+test core::policy::tests::even_dimension_keeps_even_and_floors_odd ... ok
+test core::policy::tests::gif_eligibility_accepts_any_positive_duration ... ok
+test core::policy::tests::gif_normalization_preserves_saved_audio_preferences ... ok
+test core::policy::tests::legacy_recording_options_default_to_mp4 ... ok
+test core::policy::tests::normalized_options_disable_highlights_without_cursor ... ok
+test core::policy::tests::pixel_dimension_scales_and_floors_to_even ... ok
+test core::policy::tests::recording_output_format_serializes_for_frontend_ipc ... ok
+test core::policy::tests::selected_microphone_and_fixed_countdown_survive_preference_roundtrip ... ok
+test core::recording_controls::tests::every_edge_tiny_regions_and_negative_desktops_remain_reachable ... ok
+test core::recording_controls::tests::follows_small_selection_instead_of_display_corner ... ok
+test core::recording_controls::tests::full_display_respects_reserved_desktop_areas ... ok
+test core::recording_controls::tests::moves_above_bottom_edge_and_beside_tall_selection ... ok
+test core::recording_controls::tests::user_drag_is_preserved_but_clamped_after_content_or_monitor_change ... ok
+test core::recording_controls::tests::windows_monitor_matching_uses_the_physical_desktop ... ok
+test core::library_location::tests::located_library_can_replace_a_missing_path_without_fallback ... ok
+test core::ocr_provider::tests::rejects_stale_revision_and_insecure_remote_http ... ok
+test core::library::tests::rename_preserves_annotations_thumbnails_and_recoverable_trash ... ok
+test core::recording_recovery::tests::discovers_a_fully_copied_video_when_its_manifest_is_missing ... ok
+test core::ocr_provider::tests::deleting_active_profile_returns_to_local ... ok
+test core::recording_recovery::tests::ignores_invalid_manifests_and_symlinked_media ... ok
+test core::library_location::tests::online_v1_location_is_upgraded_to_a_durable_generation ... ok
+test core::ocr_provider::tests::save_uses_revision_and_preserves_credential_pointer ... ok
+test core::library::tests::missing_video_recovery_preserves_mp4_and_mov_containers ... ok
+test core::library::tests::trash_restore_and_permanent_delete ... ok
+test core::library_location::tests::migration_rejects_nested_destinations_and_non_regular_files ... ok
+test core::library_location::tests::migration_copies_and_verifies_the_whole_library ... ok
+test core::library::tests::stale_or_incomplete_projects_fail_closed_and_can_be_cleared ... ok
+test core::recording_recovery::tests::cleanup_proof_rejects_a_different_library_file ... ok
+test core::scroll_document::tests::duplicates_and_reading_pauses_never_finish_or_extend ... ok
+test core::library_location::tests::migration_preserves_legacy_ocr_metadata ... ok
+test core::library_location::tests::migration_generation_rejects_the_old_source_during_locate ... ok
+test core::recording_recovery::tests::video_import_proof_rejects_a_changed_source ... ok
+test core::scroll_document::tests::native_frame_throughput ... ignored, explicit release-mode throughput measurement
+test core::scroll_document::tests::empty_and_ambiguous_repeated_content_cannot_invent_motion ... ok
+test core::library_location::tests::replacing_a_same_identity_library_never_drops_unique_assets ... ok
+test core::library::tests::direct_permanent_deletion_preserves_other_library_and_trash_assets ... ok
+test core::library_location::tests::replacing_a_same_identity_library_preserves_unknown_target_files ... ok
+test core::recording_recovery::tests::verified_cleanup_keeps_recovery_when_the_library_copy_changed ... ok
+test core::recording_recovery::tests::persists_lists_and_removes_a_completed_recording ... ok
+test core::library_location::tests::replacing_a_same_identity_library_rejects_divergent_asset_bytes ... ok
+test core::library_location::tests::migration_preserves_video_projects_and_changes_open_revision ... ok
+test core::library::tests::editor_crop_rolls_back_files_and_dimensions_after_each_write_failure ... ok
+test core::scroll_document::tests::lost_overlap_retains_progress_and_relocates_anywhere_already_seen ... ok
+test core::scroll_document::tests::repeated_rejection_keeps_its_result_but_a_bridge_invalidates_the_cache ... ok
+test core::scroll_document::tests::native_preview_region_copies_across_prepended_strips_and_clips_bounds ... ok
+test core::scroll_document::tests::selecting_large_fixed_bars_removes_them_before_extending ... ok
+test core::scroll_document::tests::significant_changed_content_is_not_committed_as_a_scroll ... ok
+test core::scroll_document::tests::route_order_does_not_change_the_result ... ok
+test core::scroll_document::tests::rejected_frame_cache_has_a_separate_native_pixel_budget ... ok
+test core::scroll_document::tests::changed_number_at_the_same_viewport_is_not_unchanged ... ok
+test core::scroll_document::tests::arbitrary_reverse_trajectory_has_exact_pixels_and_no_duplicates ... ok
+test core::shortcut::tests::kiri_shortcut_is_shift_control_a ... ok
+test core::scroll_document::tests::sparse_dynamic_patch_does_not_break_tracking_or_rewrite_old_pixels ... ok
+test core::scroll_document::tests::thin_fixed_edge_is_removed_without_repeating_it ... ok
+test core::video_project::tests::video_project_decodes_stickers_and_rejects_invalid_pngs ... ok
+test core::scroll_document::tests::viewport_tracks_prepends_and_revisits ... ok
+test core::video_project::tests::video_project_detects_same_size_source_modification ... ok
+test core::video_project::tests::video_project_preserves_shared_watermark_data_and_rejects_oversized_text ... ok
+test core::video_project::tests::video_project_invalid_and_oversized_sidecars_are_read_only ... ok
+test core::video_project::tests::video_project_invalid_new_edit_keeps_prior_good_draft ... ok
+test core::video_project::tests::video_project_saves_reloads_without_changing_source_or_index ... ok
+test core::video_project::tests::video_project_validates_edit_ranges_bounds_and_closed_schema ... ok
+test core::video_project::tests::video_project_source_drift_preserves_the_previous_draft ... ok
+test core::video_project::tests::video_project_stale_saves_and_changed_library_copies_cannot_overwrite ... ok
+test diagnostics::tests::persistent_log_does_not_rotate_at_the_limit ... ok
+test dock_settings::tests::changing_dock_presence_preserves_the_open_focused_settings_window ... ok
+test diagnostics::tests::persistent_log_keeps_one_previous_bounded_file ... ok
+test core::video_project::tests::video_project_survives_trash_restore_then_is_permanently_removed ... ok
+test dock_settings::tests::atomic_preference_replacement_round_trips_both_values ... ok
+test dock_settings::tests::restoring_dock_presence_does_not_reopen_hidden_windows_or_interrupt_capture ... ok
+test dock_settings::tests::missing_or_invalid_preference_preserves_the_visible_default ... ok
+test gif::tests::windows_media_foundation_export_smoke ... ignored, requires KIRI_TEST_MP4 to point at a local H.264 MP4 fixture
+test dock_settings::tests::staging_does_not_change_the_saved_preference ... ok
+test gif::tests::scaling_caps_landscape_and_portrait_long_edges ... ok
+test core::scroll_document::tests::soft_card_edges_refine_to_exact_rows_instead_of_rejecting_nearby_offsets ... ok
+test media_import::tests::clipboard_image_is_validated_and_normalized ... ok
+test media_import::tests::directories_and_disguised_files_are_rejected ... ok
+test media_import::tests::images_are_copied_and_normalized_without_changing_source ... ok
+test media_import::tests::imported_names_are_readable_bounded_and_do_not_include_paths ... ok
+test media_import::tests::gray_icc_conversion_expands_to_srgb_without_changing_alpha ... ok
+test media_playback::tests::capability_routes_reject_unknown_hosts_methods_paths_and_bodies ... ok
+test media_import::tests::png_and_jpeg_imports_convert_adobe_rgb_to_srgb_without_changing_sources ... ok
+test media_playback::tests::opened_playback_sources_survive_rename_and_removal ... ok
+test microphone::devices::tests::ipc_exposes_identifiers_and_names_without_fabricated_default_entry ... ok
+test microphone::devices::tests::stable_identifiers_select_between_same_named_inputs_and_reject_removed_devices ... ok
+test microphone::tests::meter_has_silence_floor_and_decibel_scale ... ok
+test ocr::linux_model_tests::local_ocr_does_not_mistake_a_model_directory_for_a_model_file ... ok
+test media_playback::tests::playback_content_type_matches_preserved_mov_and_mp4_containers ... ok
+test ocr::linux_model_tests::local_ocr_honors_the_explicit_data_directory ... ok
+test media_playback::tests::playback_streams_get_head_suffix_ranges_and_unsatisfiable_ranges ... ok
+test ocr::linux_model_tests::local_ocr_only_selects_installed_supported_language_models ... ok
+test ocr::windows_tests::converts_decoded_rgba_pixels_to_windows_bgra_order ... ok
+test ocr_commands::tests::crops_selection_at_backing_scale ... ok
+test ocr_commands::tests::local_retry_runs_at_most_twice_and_preserves_the_first_error ... ok
+test ocr_commands::tests::rejects_out_of_bounds_and_dimension_mismatch ... ok
+test ocr_controller::tests::cancel_during_in_flight_prevents_restore ... ok
+test ocr_controller::tests::active_remote_profile_requires_a_system_credential ... ok
+test media_import::tests::icc_conversion_retains_transparency_and_sixteen_bit_precision ... ok
+test ocr_controller::tests::empty_key_update_preserves_existing_credential ... ok
+test ocr_controller::tests::failed_metadata_publish_removes_the_new_credential ... ok
+test ocr_controller::tests::externally_missing_active_credential_fails_closed_and_persists_local ... ok
+test ocr_controller::tests::pending_request_expires ... ok
+test ocr_controller::tests::replacing_owner_request_prevents_failed_request_resurrection ... ok
+test ocr_controller::tests::failed_key_replacement_keeps_old_revision_and_removes_new_credential ... ok
+test ocr_controller::tests::same_label_in_a_new_capture_cannot_access_the_old_request ... ok
+test ocr_controller::tests::manager_defaults_local_and_never_serializes_credential_pointer ... ok
+test ocr_controller::tests::failed_delete_publish_restores_the_old_credential ... ok
+test ocr_controller::tests::startup_preserves_a_credential_when_profile_delete_was_not_published ... ok
+test ocr_controller::tests::startup_finishes_a_published_profile_delete ... ok
+test ocr_controller::tests::startup_rolls_back_an_unpublished_credential_replacement ... ok
+test ocr_controller::tests::startup_finishes_a_published_credential_replacement ... ok
+test pin::clipboard::tests::budget_is_measured_before_decoding_and_never_exceeds_the_cap ... ok
+test pin::clipboard::tests::text_budget_grows_with_the_string ... ok
+test pin::clipboard::tests::non_image_paths_are_refused_before_any_io ... ok
+test pin::clipboard_source::tests::extensions_are_case_insensitive_and_complete ... ok
+test pin::clipboard_source::tests::an_image_wins_over_text_and_files ... ok
+test pin::clipboard_source::tests::a_cascade_is_bounded_and_deduplicated ... ok
+test pin::clipboard_source::tests::image_files_win_over_text_and_keep_their_order ... ok
+test pin::clipboard_source::tests::nothing_usable_is_none ... ok
+test pin::clipboard_source::tests::only_non_image_files_falls_through_to_text ... ok
+test pin::resample::tests::a_zero_sized_request_is_clamped_instead_of_panicking ... ok
+test pin::resample::tests::one_to_one_never_resamples_or_copies ... ok
+test pin::resample::tests::a_uniform_surface_stays_uniform_at_any_size ... ok
+test pin::resample::tests::shrinking_averages_every_source_pixel_instead_of_dropping_rows ... ok
+test pin::surface_windows::tests::badge_geometry_scales_with_the_display ... ok
+test pin::resample::tests::upscaling_preserves_the_corner_pixels_of_an_asymmetric_image ... ok
+test pin::surface_windows::tests::menu_labels_cover_supported_languages_and_default_to_english ... ok
+test pin::surface_windows::tests::pin_class_is_distinct_from_the_host_and_badge ... ok
+test pin::resample::tests::premultiplied_invariant_survives_both_filters ... ok
+test pin::tests::a_shared_display_budget_counts_every_other_pin_exactly_once ... ok
+test pin::tests::a_work_area_smaller_than_the_minimum_pin_does_not_panic ... ok
+test pin::tests::cascaded_pins_are_offset_but_stay_inside_the_work_area ... ok
+test pin::tests::hit_test_prefers_the_raised_pin_and_uses_half_open_edges ... ok
+test pin::tests::initial_frame_opens_at_native_size_and_shrinks_only_to_fit ... ok
+test pin::tests::minimum_size_doubles_on_a_two_hundred_percent_display ... ok
+test pin::tests::negative_monitor_coordinates_hit_correctly ... ok
+test pin::tests::premultiplied_conversion_never_leaves_a_channel_above_alpha ... ok
+test pin::tests::registry_rejects_the_seventeenth_pin_without_changing_state ... ok
+test pin::tests::registry_reports_the_display_bytes_of_one_pin ... ok
+test pin::tests::removing_a_pin_returns_both_budgets_and_frees_its_label ... ok
+test pin::tests::source_budget_refuses_a_pin_that_would_exceed_it ... ok
+test pin::tests::zoom_keeps_the_pointer_anchor_fixed ... ok
+test pin::tests::zoom_never_exceeds_the_edge_or_pixel_caps ... ok
+test pin::tests::zoom_out_stops_at_the_minimum_size_and_keeps_the_aspect_ratio ... ok
+test pin::tests::zoom_percentage_is_measured_against_the_image_pixels ... ok
+test pin::text_image::tests::empty_text_is_rejected_instead_of_rendering_a_blank_pin ... ok
+test pin::text_image::tests::line_endings_are_normalized_and_trailing_space_removed ... ok
+test pin::text_image::tests::rounded_corners_are_outside_and_edges_are_inside ... ok
+test pin::text_image::tests::soft_breaks_only_split_whitespace_free_runs ... ok
+test pin::text_image::tests::a_short_line_becomes_a_bounded_opaque_card ... ok
+test platform::tests::only_passive_scroll_region_is_hidden_from_accessibility ... ok
+test platform::tests::ripple_is_stationary_without_changing_existing_window_levels ... ok
+test platform::tests::topmost_guard_repairs_only_pins_that_still_want_to_be_on_top ... ok
+test platform::tests::transient_windows_join_full_screen_spaces ... ok
+test gif::tests::cancel_and_library_commit_have_one_winner ... ok
+test pin::text_image::tests::truncation_respects_character_boundaries ... ok
+test platform::tests::windows_mixed_dpi_frames_round_trip_to_physical_monitor_bounds ... ok
+test platform::tests::zoom_scales_a_pin_around_the_point_under_the_pointer ... ok
+test platform::tests::zoom_stays_within_reachable_and_affordable_bounds ... ok
+test platform::windows::tests::shell_paths_preserve_names_and_remove_canonical_prefixes ... ok
+test portal_shortcuts::model::tests::adding_bindings_after_empty_setup_or_revocation_restores_opt_in ... ok
+test portal_shortcuts::model::tests::empty_unknown_and_duplicate_bindings_never_activate ... ok
+test platform::windows::tests::message_loop_shutdown_wakes_joins_and_is_idempotent ... ok
+test portal_shortcuts::model::tests::partial_results_and_revocations_replace_confirmed_bindings ... ok
+test protocol::tests::annotation_source_query_requires_one_exact_revision_hash ... ok
+test portal_shortcuts::model::tests::fail_closed_on_every_nonactive_transition ... ok
+test protocol::tests::deleting_assets_evicts_only_their_cached_thumbnails ... ok
+test pin::resample::tests::parallel_rows_are_bit_identical_to_a_single_thread ... ok
+test protocol::tests::clearing_an_edited_asset_invalidates_its_thumbnail ... ok
+test protocol::tests::deletion_selects_thumbnails_under_the_barrier_even_when_cleanup_fails ... ok
+test protocol::tests::frozen_capture_requires_exact_per_capture_token_and_clear_revokes_it ... ok
+test protocol::tests::ignores_invalid_and_multi_media_ranges ... ok
+test protocol::tests::media_head_response_returns_metadata_without_a_body ... ok
+test protocol::tests::media_response_keeps_full_image_and_gif_compatibility ... ok
+test protocol::tests::media_response_preserves_imported_video_content_types ... ok
+test protocol::tests::annotation_source_revision_returns_only_the_exact_snapshot_bytes ... ok
+test protocol::tests::media_response_bounds_large_suffix_to_the_file_tail ... ok
+test protocol::tests::media_response_reads_only_the_bounded_requested_range ... ok
+test protocol::tests::media_response_reports_unsatisfiable_ranges ... ok
+test protocol::tests::missing_media_responses_are_never_cached ... ok
+test protocol::tests::opened_media_handles_survive_asset_rename_and_old_path_removal ... ok
+test protocol::tests::parses_bounded_and_open_media_ranges ... ok
+test protocol::tests::parses_suffix_media_ranges ... ok
+test protocol::tests::preview_resolution_and_cache_hits_hold_the_mutation_barrier ... ok
+test protocol::tests::protocol_route_preserves_query_outside_the_encoded_path ... ok
+test protocol::tests::protocol_routes_accept_legacy_and_tauri_windows_forms ... ok
+test protocol::tests::protocol_routes_fail_closed_on_bad_or_ambiguous_paths ... ok
+test protocol::tests::rejects_valid_but_unsatisfiable_media_ranges ... ok
+test protocol::tests::thumbnail_cache_enforces_entry_limit_and_refreshes_hits ... ok
+test protocol::tests::thumbnail_cache_evicts_least_recent_entries_within_budgets ... ok
+test protocol::tests::preview_invalidation_waits_for_in_flight_generation_and_removes_its_result ... ok
+test protocol::tests::video_response_rejects_unbounded_and_invalid_range_requests ... ok
+test protocol::tests::full_image_previews_keep_original_pixels_without_polluting_thumbnail_cache ... ok
+test pin::text_image::tests::long_wrapping_text_stays_within_the_height_budget ... ok
+test qr::tests::adjacent_stretched_codes_keep_separate_positions ... ok
+test qr::tests::damaged_codes_stay_locatable_and_unsafe_payloads_stay_plain_content ... ok
+test qr::tests::invalid_images_fail_without_results ... ok
+test qr::tests::empty_threshold_retries_do_not_invent_codes ... ok
+test core::scroll_document::tests::white_text_document_tracks_across_blank_gaps_and_repeated_rule_lines ... ok
+test qr::tests::links_are_explicit_web_urls_without_credentials_or_controls ... ok
+test qr::tests::merging_caps_physical_codes_but_still_upgrades_existing_results ... ok
+test qr::tests::merging_upgrades_unreadable_codes_without_duplicating_or_downgrading_them ... ok
+test qr::tests::initially_empty_scans_keep_results_from_later_thresholds ... ok
+test core::scroll_document::tests::a_new_strip_patch_is_repaired_only_after_displaced_clean_observations ... ok
+test core::scroll_document::tests::one_pixel_steps_keep_indexing_across_strip_boundaries ... ok
+test qr::tests::plain_colon_text_and_embedded_urls_do_not_get_link_warnings ... ok
+test core::scroll_document::tests::skipped_numbered_paragraphs_cannot_match_older_repeated_body_text ... ok
+test qr::tests::partial_scans_merge_codes_from_different_contrast_ranges ... ok
+test qr_commands::tests::editor_qr_scans_its_exact_clean_source_and_rejects_a_changed_revision ... ok
+test qr::tests::low_contrast_codes_survive_unrelated_bright_and_dark_backgrounds ... ok
+test qr_commands::tests::editor_revision_is_accepted_only_from_its_matching_image_editor ... ok
+test qr_controller::tests::canceled_and_destroyed_owners_cannot_publish_or_escape_single_flight ... ok
+test qr_controller::tests::other_owner_and_stale_request_ids_cannot_cancel_or_replace_current_scan ... ok
+test qr_controller::tests::saved_images_are_scoped_to_the_library_or_the_matching_editor ... ok
+test record::tests::audio_queue_attach_discards_pre_roll_without_a_false_overload ... ok
+test record::tests::audio_queue_budget_is_derived_from_pcm_time ... ok
+test record::tests::audio_queue_drains_then_closes_after_last_sender ... ok
+test record::tests::audio_queue_receive_releases_capacity ... ok
+test qr::tests::neighboring_finders_do_not_create_cross_image_targets ... ok
+test record::tests::audio_queue_overload_is_a_segment_integrity_error ... ok
+test record::tests::capture_and_pipe_faults_are_segment_integrity_errors ... ok
+test record::tests::audio_queue_rejects_overload_without_exceeding_its_byte_bound ... ok
+test record::tests::audio_queue_sender_observes_receiver_close ... ok
+test record::tests::delayed_audio_handoff_is_a_segment_integrity_error_without_sleeping ... ok
+test record::tests::native_audio_converts_mono_float_to_stereo_pcm ... ok
+test record::tests::native_audio_mixer_combines_system_and_microphone ... ok
+test record::tests::native_audio_mixer_rejects_unbounded_input_skew ... ok
+test record::tests::native_frame_buffer_is_flipped_bottom_to_top ... ok
+test record::tests::recording_clock_counts_static_time_and_excludes_every_pause ... ok
+test record::tests::recording_frame_count_preserves_subframe_and_exact_boundaries ... ok
+test remote_ocr::tests::client_initialization_installs_a_crypto_provider ... ok
+test qr::tests::rotated_and_perspective_codes_retain_supported_finder_geometry ... ok
+test remote_ocr::tests::endpoint_and_status_errors_never_echo_sensitive_inputs ... ok
+test core::scroll_document::tests::dimensions_and_limits_are_checked_before_allocation_or_mutation ... ok
+test remote_ocr::tests::enforces_png_signature_and_size_limit ... ok
+test remote_ocr::tests::client_initialization_is_idempotent_across_threads ... ok
+test remote_ocr::tests::enforces_response_size_limit_while_streaming ... ok
+test remote_ocr::tests::only_explicit_local_hosts_may_use_plain_http_and_bypass_proxy ... ok
+test remote_ocr::tests::parses_first_choice_without_mutating_text ... ok
+test remote_ocr::tests::rejects_invalid_or_empty_responses_without_retaining_body ... ok
+test remote_ocr::tests::request_body_uses_chat_completions_multimodal_shape ... ok
+test scroll_capture::tests::busy_preview_encoder_does_not_build_or_queue_more_images ... ok
+test scroll_capture::tests::cancellation_never_emits_a_startup_failure_notice ... ok
+test scroll_capture::tests::cancellation_rejects_pending_finish_and_commit_is_single_flight ... ok
+test scroll_capture::tests::detail_crop_keeps_native_width_and_follows_the_accepted_edge_within_budget ... ok
+test scroll_capture::tests::destroyed_window_cancels_only_its_own_running_session ... ok
+test scroll_capture::tests::close_acknowledgement_does_not_release_session_before_native_removal ... ok
+test scroll_capture::tests::controls_stay_outside_capture_including_negative_screen_coordinates ... ok
+test scroll_capture::tests::expected_teardown_does_not_reclassify_startup_failure_as_cancellation ... ok
+test scroll_capture::tests::full_display_controls_require_exclusion_and_fit_the_display ... ok
+test scroll_capture::tests::late_destroyed_and_cleanup_cannot_cancel_or_release_replacement_session ... ok
+test scroll_capture::tests::detail_png_and_coordinates_publish_as_one_snapshot_even_when_encoding_lags ... ok
+test scroll_capture::tests::native_removal_does_not_release_before_origin_restoration_finishes ... ok
+test scroll_capture::tests::panel_moves_reject_invalid_coordinates_or_unrepresentable_geometry ... ok
+test scroll_capture::tests::panel_moves_use_physical_pixels_and_clamp_negative_origin_displays ... ok
+test scroll_capture::tests::pending_finish_stays_exclusive_while_native_stop_and_drain_owns_request ... ok
+test scroll_capture::tests::raw_frame_conversion_respects_stride_and_odd_dimensions ... ok
+test scroll_capture::tests::restarting_a_source_has_its_own_first_frame_deadline_without_discarding_document ... ok
+test scroll_capture::tests::startup_diagnostic_retains_native_error_chain_and_failed_stage ... ok
+test scroll_capture::tests::startup_exclusion_errors_distinguish_windows_version_composition_and_api_failure ... ok
+test scroll_capture::tests::startup_retains_existing_selection_and_escape_messages ... ok
+test scroll_capture::tests::startup_window_and_stream_failures_produce_action_specific_notices ... ok
+test scroll_capture::tests::native_removal_wait_observes_progress_and_has_a_deadline ... ok
+test scroll_capture::tests::x11_panel_moves_choose_the_nearest_available_outside_region ... ok
+test shortcut_settings::tests::accepting_recorded_key_needs_release_before_dispatching_again ... ok
+test shortcut_settings::tests::accepts_library_supported_keys_with_optional_modifiers_and_roundtrips ... ok
+test shortcut_settings::tests::actions_and_statuses_serialize_for_settings ... ok
+test shortcut_settings::tests::disabled_recording_bindings_stay_unregistered_and_saved_global_choices_win ... ok
+test shortcut_settings::tests::disabling_releases_one_binding_and_rolls_back_failed_write ... ok
+test scroll_capture::tests::x11_fractional_dpi_rounding_never_reduces_the_capture_gap ... ok
+test shortcut_settings::tests::dormant_candidate_validation_failure_preserves_saved_binding_without_native_operations ... ok
+test shortcut_settings::tests::distinct_defaults_identify_each_action_without_locking ... ok
+test qr::tests::standard_wechat_codes_decode_locally_and_custom_schemes_stay_content ... ok
+test shortcut_settings::tests::duplicate_rejected_but_same_action_and_unassigned_allowed ... ok
+test shortcut_settings::tests::expanded_keys_persist_with_their_canonical_identity_and_detect_duplicates ... ok
+test shortcut_settings::tests::legacy_capture_wins_over_new_conflicting_default ... ok
+test shortcut_settings::tests::media_permission_failure_keeps_previous_and_returns_specific_guidance ... ok
+test shortcut_settings::tests::one_occupied_recording_key_does_not_skip_the_other_or_touch_global_keys ... ok
+test shortcut_settings::tests::partial_preferences_prioritize_saved_choices_over_defaults ... ok
+test qr::tests::real_single_multi_duplicate_and_unicode_codes_keep_their_positions ... ok
+test shortcut_settings::tests::persisted_disabled_and_custom_bindings_override_legacy ... ok
+test shortcut_settings::tests::queued_start_and_stop_reconcile_only_the_latest_scope ... ok
+test shortcut_settings::tests::recording_bindings_are_dormant_until_active_and_release_on_stop ... ok
+test shortcut_settings::tests::registers_before_release_and_rolls_back_failed_write ... ok
+test shortcut_settings::tests::rejects_modifier_only_unknown_and_malformed_bindings ... ok
+test shortcut_settings::tests::release_clears_old_native_id_after_binding_replacement ... ok
+test shortcut_settings::tests::release_failure_discards_candidate_and_preserves_previous ... ok
+test shortcut_settings::tests::registration_failure_keeps_previous_without_persisting ... ok
+test shortcut_settings::tests::retry_same_unregistered_binding_rolls_back_failed_write ... ok
+test startup_settings::tests::autostart_requires_an_exact_option_after_the_program_name ... ok
+test shortcut_settings::tests::shortcut_recording_requires_library_focus_and_blur_clears_it ... ok
+test shortcut_settings::tests::special_key_labels_are_readable_on_both_platform_styles ... ok
+test shortcut_settings::tests::stop_during_native_registration_leaves_no_recording_keys_owned ... ok
+test shortcut_settings::tests::valid_dormant_candidate_saves_without_registering_or_testing_live_conflicts ... ok
+test startup_settings::tests::shell_disabled_startup_is_distinct_from_a_missing_approval_record ... ok
+test state::tests::cancelled_startup_cannot_attach_to_a_replacement_session ... ok
+test state::tests::capture_mode_names_match_the_frontend_contract ... ok
+test state::tests::capture_mode_preference_round_trips_and_falls_back ... ok
+test state::tests::countdown_messages_are_scoped_to_a_pending_session ... ok
+test state::tests::capture_start_gate_rejects_overlap_and_reopens_after_drop ... ok
+test state::tests::completed_segments_can_be_transferred_before_failure_cleanup ... ok
+test state::tests::delayed_recording_action_cannot_mutate_a_replacement_session ... ok
+test state::tests::duplicate_error_message_is_seen_only_once ... ok
+test state::tests::capture_schedule_gate_coalesces_a_cross_thread_burst ... ok
+test state::tests::failed_resume_restores_paused_session_without_losing_segments ... ok
+test state::tests::failed_stop_moves_resources_out_and_returns_to_idle ... ok
+test state::tests::final_destroyed_overlay_consumes_capture_session ... ok
+test state::tests::finishing_an_old_save_keeps_the_newer_background_job ... ok
+test state::tests::only_current_startup_can_publish_active_resources ... ok
+test core::scroll_document::tests::continuous_numbered_paragraphs_still_locate_and_extend_in_both_directions ... ok
+test state::tests::overlays_resolve_only_their_bound_display ... ok
+test state::tests::recording_controls_present_once_per_live_session_and_respect_focus_choice ... ok
+test state::tests::recording_shortcuts_follow_live_session_not_countdown_or_finalization ... ok
+test state::tests::urlencode_escapes_spaces_and_keeps_words ... ok
+test state::tests::recording_save_remains_visible_after_live_session_returns_to_idle ... ok
+test support_info::tests::report_contains_only_support_fields_and_handles_unavailable_displays ... ok
+test state::tests::toast_position_is_top_centered_on_screen ... ok
+test support_info::tests::report_preserves_mixed_display_scales_without_names_or_locations ... ok
+test support_info::tests::system_metadata_cannot_inject_extra_report_lines ... ok
+test core::scroll_document::tests::native_webkit_large_first_motion_preserves_exact_body_in_both_directions ... ok
+test tests::desktop_controls_and_capture_launch_without_opening_library ... ok
+test tests::desktop_commands_dispatch_only_explicit_supported_actions ... ok
+test tests::only_a_completed_left_tray_click_opens_the_panel ... ok
+test tests::capture_start_uses_its_named_background_thread ... ok
+test tests::tray_labels_cover_supported_languages_and_default_to_english ... ok
+test tests::scrolling_desktop_commands_are_exact_and_cancel_wins_conflicting_flags ... ok
+test tests::tray_language_switch_keeps_action_ids_and_replaces_every_label ... ok
+test thumbnail::tests::thumbnail_dimensions_never_upscale_or_collapse_an_edge ... ok
+test video_export::tests::allows_reordering_but_rejects_overlaps_and_excess_segments ... ok
+test video_export::tests::export_control_cancels_before_reading_or_native_media_work ... ok
+test video_export::tests::legacy_effect_payloads_keep_solid_masks_and_hard_cut_zoom ... ok
+test video_export::tests::annotation_payload_limits_and_geometry_are_validated ... ok
+test video_export::tests::export_control_progress_is_bounded_monotonic_and_throttled ... ok
+test video_export::tests::export_control_stops_source_copy_between_chunks ... ok
+test video_export::tests::new_effects_keep_native_discriminants_and_validate_independent_intervals ... ok
+test video_export::tests::rejects_invalid_and_out_of_bounds_ranges ... ok
+test video_export::tests::segment_speed_defaults_and_limits ... ok
+test video_export::tests::validates_effect_rectangles_timing_and_zoom_overlap ... ok
+test video_export::windows_export::annotations::tests::zoom_enters_holds_and_returns_to_full_frame_symmetrically ... ok
+test video_export::windows_export::speed::tests::speed_map_preserves_requested_order_and_each_boundary ... ok
+test video_export::windows_export::tests::privacy_mask_is_clipped_and_mapped_into_zoom_viewport ... ok
+test video_export::windows_export::annotations::tests::layers_above_a_mask_remain_visible_and_layers_below_are_covered ... ok
+test video_project_commands::tests::commands_only_accept_the_exact_owning_viewer ... ok
+test video_export::windows_export::tests::privacy_mask_rounding_never_reveals_requested_pixels ... ok
+test video_export::windows_export::annotations::tests::presentation_effect_pixels_respect_bounds_background_and_fade ... ok
+test window_tasks::tests::resident_window_requests_finish_in_submission_order ... ok
+test window_tasks::tests::submission_returns_while_window_task_waits_for_the_event_loop ... ok
+test scroll_capture::tests::revisiting_updates_detail_direction_without_growing_document_and_unmatched_keeps_pixels ... ok
+test video_export::tests::export_control_cancel_and_import_have_one_winner ... ok
+test thumbnail::tests::image_thumbnail_preserves_aspect_ratio_and_bounds_dimensions ... ok
+test core::scroll_document::tests::odd_native_pixel_displacements_do_not_round_at_retina_size ... ok
+test core::scroll_document::tests::first_motion_proves_the_learned_body_beside_large_blank_gaps ... ok
+test core::scroll_document::tests::revisiting_initial_noisy_position_confirms_a_displaced_clean_repair ... ok
+test record::tests::windows_encoder_keeps_static_frame_duration_without_paused_time ... ok
+test qr::tests::dense_montages_recover_low_contrast_codes_after_the_global_finder_limit ... ok
+test video_export::windows_export::tests::windows_native_video_export_smoke ... FAILED
+test core::scroll_document::tests::fixed_edge_learning_preserves_every_initial_visible_body_pixel ... ok
+test core::scroll_document::tests::rendered_chat_fixed_composer_and_shadow_follow_both_directions_without_burning_edges ... ok
+test qr::tests::dense_montages_recover_more_than_eight_codes_without_merging_duplicate_payloads ... ok
+test qr::tests::large_montages_recover_unobserved_bottom_rows_with_original_coordinates ... ok
+test core::scroll_document::tests::rendered_chat_blank_margin_reopens_on_small_steps_and_long_revisits ... ok
+test core::scroll_document::tests::fixed_edges_cannot_hide_changed_numbers_behind_a_short_exact_repeat ... ok
+test core::scroll_document::tests::faint_gradient_rows_do_not_expand_the_matching_body_on_reverse_and_revisit ... ok
+
+failures:
+
+---- video_export::windows_export::tests::windows_native_video_export_smoke stdout ----
+
+thread 'video_export::windows_export::tests::windows_native_video_export_smoke' (48676) panicked at src\video_export_windows.rs:477:13:
+GIF duration 6
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    video_export::windows_export::tests::windows_native_video_export_smoke
+
+test result: FAILED. 496 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 39.66s
+
+error: test failed, to rerun pass `--lib`

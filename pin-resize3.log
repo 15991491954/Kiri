@@ -1,0 +1,11 @@
+[PASS] the capture overlay opens count=2
+[FAIL] the toolbar pin action is reachable {"ok":false,"labels":[]}
+{"ok":false,"labels":["鍙栨秷","閫夋嫨楹﹀厠椋?]}
+[FAIL] the pin opens count=0
+no pin
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\pin-resize-e2e.ps1:89 字符: 28
++   if ($pins.Count -ne 1) { throw "no pin" }
++                            ~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (no pin:String) [], RuntimeException
+    + FullyQualifiedErrorId : no pin
+ 

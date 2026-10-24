@@ -17,7 +17,7 @@ const MARKER_SCHEMA_VERSION: u32 = 2;
 const LEGACY_SCHEMA_VERSION: u32 = 1;
 const LOCATION_CONFIG_FILENAME: &str = "library-location.json";
 const LIBRARY_MARKER_FILENAME: &str = ".kiri-library.json";
-pub const MANAGED_LIBRARY_DIRECTORY_NAME: &str = "Kiri Library";
+pub const MANAGED_LIBRARY_DIRECTORY_NAME: &str = "Lumen Library";
 
 #[derive(Debug, Error)]
 pub enum LibraryLocationError {
@@ -1112,30 +1112,25 @@ mod tests {
     }
 
     #[test]
-    fn migration_preserves_ocr_text_and_its_source_snapshot() {
+    fn migration_preserves_legacy_ocr_metadata() {
         let directory = tempfile::tempdir().unwrap();
         let source_root = directory.path().join("source");
         let target = directory.path().join("destination");
         let id = uuid::Uuid::new_v4();
-        let mut library = create_library(&source_root, id);
-        let record = library
-            .import_ocr(
-                b"ocr-pixels",
-                120,
-                80,
-                "保留换行\nKeep this text".into(),
-                None,
-            )
-            .unwrap();
+        create_library(&source_root, id);
+        let index_path = source_root.join("library.json");
+        let mut index: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
+        index[0]["ocrText"] = serde_json::json!("first line\nKeep this text");
+        std::fs::write(&index_path, serde_json::to_vec_pretty(&index).unwrap()).unwrap();
         let prepared =
             migrate_library(&migration_source(&source_root, id), &target, false).unwrap();
-        let migrated = prepared.library.asset_by_id(&record.id).unwrap();
-        assert_eq!(migrated.ocr_text, record.ocr_text);
+        let migrated = &prepared.library.all_assets(false)[0];
         assert_eq!(
-            std::fs::read(prepared.library.asset_url(migrated)).unwrap(),
-            b"ocr-pixels"
+            migrated.ocr_text.as_deref(),
+            Some("first line\nKeep this text")
         );
-        assert_eq!(prepared.library.search("换行", false)[0].id, record.id);
+        assert_eq!(prepared.library.search("KEEP THIS", false)[0].id, migrated.id);
     }
 
     #[test]

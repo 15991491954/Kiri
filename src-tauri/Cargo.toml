@@ -1,6 +1,6 @@
 [package]
 name = "kiri"
-version = "1.6.26"
+version = "1.6.27"
 description = "Kiri - a fast, local-first capture workspace"
 authors = ["yuxino"]
 edition = "2021"
@@ -24,7 +24,6 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -34,7 +33,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 arboard = "3"
-image = { version = "0.25", default-features = false, features = ["png", "gif", "jpeg", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif", "jpeg", "webp", "bmp"] }
 moxcms = "0.8.1"
 sys-locale = "0.3"
 dirs = "6"
@@ -158,6 +157,7 @@ windows = { version = "0.62", features = [
     "Win32_Media_MediaFoundation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Accessibility",
     "Win32_System_Threading",
     "Win32_System_Registry",
     "Win32_Security",

@@ -1,0 +1,81 @@
+✔ the repository has one canonical Tauri and Cargo project (0.7654ms)
+✔ pinned screenshot windows get only their dedicated topmost permission (0.6499ms)
+✔ image close completion adds destroy only to image-editor callers (0.4636ms)
+✔ installed Tauri close listener requires destroy only after the guard allows closure (0.4256ms)
+✔ permission-sensitive macOS entry points never allow ad-hoc signing (1.1886ms)
+✔ macOS releases use one verified Universal DMG (0.2811ms)
+✔ macOS exact-artifact acceptance can install a verified prebuilt app (0.1808ms)
+✔ release CI does not create an intentional red light or ad-hoc macOS package (0.334ms)
+✔ release Windows job parsing accepts LF and CRLF (0.3642ms)
+✔ release native gates validate the actual installed bundle and keep failure evidence (1.3461ms)
+✔ release gate regression rejects missing, optional and failure-ignoring native checks (2.1819ms)
+✔ completed migration material stays in Git history (0.2327ms)
+✔ Markdown link paths ignore queries and anchors but preserve encoded filename characters (0.2413ms)
+✔ current Markdown and HTML documentation links resolve inside the repository (26.741ms)
+✖ translation dictionaries stay aligned and contain no orphaned keys (150.7938ms)
+✖ CSS custom properties are defined once they are used and are not orphaned (3.3594ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 14
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 263.3928
+
+✖ failing tests:
+
+test at scripts\repository-hygiene.test.mjs:272:1
+✖ translation dictionaries stay aligned and contain no orphaned keys (150.7938ms)
+  AssertionError [ERR_ASSERTION]: orphaned translation keys: Import media, Import local images or videos, Drop images or videos to import, Paste Image (Cmd/Ctrl+V), Clipboard image added to Library., Could not paste an image from the clipboard.
+  + actual - expected
+  
+  + [
+  +   'Import media',
+  +   'Import local images or videos',
+  +   'Drop images or videos to import',
+  +   'Paste Image (Cmd/Ctrl+V)',
+  +   'Clipboard image added to Library.',
+  +   'Could not paste an image from the clipboard.'
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/repository-hygiene.test.mjs:288:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'Import media', 'Import local images or videos', 'Drop images or videos to import', 'Paste Image (Cmd/Ctrl+V)', 'Clipboard image added to Library.', 'Could not paste an image from the clipboard.' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at scripts\repository-hygiene.test.mjs:293:1
+✖ CSS custom properties are defined once they are used and are not orphaned (3.3594ms)
+  AssertionError [ERR_ASSERTION]: undefined CSS variables
+  + actual - expected
+  
+  + [
+  +   'kiri-titlebar'
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/repository-hygiene.test.mjs:300:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'kiri-titlebar' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

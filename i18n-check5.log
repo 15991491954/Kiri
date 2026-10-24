@@ -1,0 +1,38 @@
+✔ all seven complete dictionaries preserve placeholders and their order (10.0509ms)
+✔ locale resolution and live formatting cover every selectable language (51.9387ms)
+✔ a language change received during startup wins over the stale saved preference (15.4618ms)
+✔ OS locale is used only without a saved choice and cannot overwrite a newer event (5.6865ms)
+✔ native Portal labels match each complete UI dictionary without embedding the dictionaries (1.9552ms)
+✔ an open confirmation follows language changes without freezing the library's translated copy (185.3911ms)
+✔ confirmation localizes the batch count while preserving caller-owned raw text (15.5238ms)
+✔ playback scrubbing updates without native range events and ends only once (81.5783ms)
+✔ effect slider drags form one undo transaction, including pointer capture loss (9.4486ms)
+✔ state matching rejects negated selectors and no-op declarations (0.5535ms)
+✔ every native button uses a class with a stylesheet hover state (828.6427ms)
+✔ buttons that can be disabled keep a visible disabled state (307.0476ms)
+✔ the shared control contract keeps focus, press, and disabled states (6.0098ms)
+✔ hover feedback stays in stylesheets instead of pointer event mutation (2.3544ms)
+✔ the repository has one canonical Tauri and Cargo project (0.7858ms)
+✔ pinned screenshot windows get only their dedicated topmost permission (0.6365ms)
+✔ image close completion adds destroy only to image-editor callers (0.432ms)
+✔ installed Tauri close listener requires destroy only after the guard allows closure (0.4477ms)
+✔ permission-sensitive macOS entry points never allow ad-hoc signing (1.0773ms)
+✔ macOS releases use one verified Universal DMG (0.2837ms)
+✔ macOS exact-artifact acceptance can install a verified prebuilt app (0.1804ms)
+✔ release CI does not create an intentional red light or ad-hoc macOS package (0.3392ms)
+✔ release Windows job parsing accepts LF and CRLF (0.1592ms)
+✔ release native gates validate the actual installed bundle and keep failure evidence (0.7092ms)
+✔ release gate regression rejects missing, optional and failure-ignoring native checks (1.0783ms)
+✔ completed migration material stays in Git history (0.1564ms)
+✔ Markdown link paths ignore queries and anchors but preserve encoded filename characters (0.2456ms)
+✔ current Markdown and HTML documentation links resolve inside the repository (24.6381ms)
+✔ translation dictionaries stay aligned and contain no orphaned keys (172.0929ms)
+✔ CSS custom properties are defined once they are used and are not orphaned (4.1032ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1559.1764

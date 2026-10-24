@@ -18,7 +18,9 @@ const THUMBNAIL_CACHE_MAX_ENTRIES: usize = 256;
 pub(crate) const MEDIA_RANGE_MAX_BYTES: u64 = 1024 * 1024;
 
 pub struct ProtocolStore {
-    frozen_capture: Mutex<Option<FrozenCapture>>,
+    /// Frozen display frames keyed by the unguessable token embedded in each
+    /// overlay URL. A capture session owns one entry per display.
+    frozen_captures: Mutex<HashMap<String, FrozenCapture>>,
     thumbnails: Mutex<ThumbnailCache>,
     thumbnail_generation: Mutex<()>,
 }
@@ -26,7 +28,7 @@ pub struct ProtocolStore {
 impl ProtocolStore {
     pub fn new() -> Self {
         Self {
-            frozen_capture: Mutex::new(None),
+            frozen_captures: Mutex::new(HashMap::new()),
             thumbnails: Mutex::new(ThumbnailCache::with_limits(
                 THUMBNAIL_CACHE_MAX_BYTES,
                 THUMBNAIL_CACHE_MAX_ENTRIES,
@@ -113,17 +115,16 @@ impl ThumbnailCache {
 
 struct FrozenCapture {
     capture_id: uuid::Uuid,
-    token: String,
     png: Arc<[u8]>,
 }
 
 pub fn set_frozen_png(store: &ProtocolStore, capture_id: uuid::Uuid, png: Arc<[u8]>) -> String {
     let token = uuid::Uuid::new_v4().simple().to_string();
-    *store.frozen_capture.lock().unwrap() = Some(FrozenCapture {
-        capture_id,
-        token: token.clone(),
-        png,
-    });
+    store
+        .frozen_captures
+        .lock()
+        .unwrap()
+        .insert(token.clone(), FrozenCapture { capture_id, png });
     token
 }
 
@@ -174,13 +175,14 @@ pub fn clear_thumbnails(store: &ProtocolStore) {
 }
 
 pub fn clear_frozen_png_for_capture(store: &ProtocolStore, capture_id: uuid::Uuid) {
-    let mut frozen_capture = store.frozen_capture.lock().unwrap();
-    if frozen_capture
-        .as_ref()
-        .is_some_and(|capture| capture.capture_id == capture_id)
-    {
-        *frozen_capture = None;
-    }
+    // One capture session publishes one frozen frame per display. Teardown
+    // must revoke every token at once, including frames added after the
+    // overlay that confirms first started loading.
+    store
+        .frozen_captures
+        .lock()
+        .unwrap()
+        .retain(|_, capture| capture.capture_id != capture_id);
 }
 
 fn annotation_source_revision(query: Option<&str>) -> Option<String> {
@@ -419,10 +421,14 @@ fn frozen_png_for_path(store: &ProtocolStore, path: &str) -> Option<Vec<u8>> {
     {
         return None;
     }
-    let capture = store.frozen_capture.lock().unwrap();
-    let capture = capture.as_ref()?;
-    constant_time_eq(requested_token.as_bytes(), capture.token.as_bytes())
-        .then(|| capture.png.as_ref().to_vec())
+    let captures = store.frozen_captures.lock().unwrap();
+    // Compare against every live token rather than using the map's hash lookup
+    // so a rejected token never gets timing feedback beyond the fixed-length
+    // comparison. A session has at most one token per display.
+    captures
+        .iter()
+        .find(|(token, _)| constant_time_eq(requested_token.as_bytes(), token.as_bytes()))
+        .map(|(_, capture)| capture.png.as_ref().to_vec())
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
@@ -930,9 +936,15 @@ mod tests {
         let store = ProtocolStore::new();
         let capture_id = uuid::Uuid::new_v4();
         let token = set_frozen_png(&store, capture_id, vec![1, 2, 3].into());
+        let secondary = set_frozen_png(&store, capture_id, vec![4, 5].into());
+        let other_capture = set_frozen_png(&store, uuid::Uuid::new_v4(), vec![9].into());
         assert_eq!(
             frozen_png_for_path(&store, &format!("frozen/{token}.png")),
             Some(vec![1, 2, 3])
+        );
+        assert_eq!(
+            frozen_png_for_path(&store, &format!("frozen/{secondary}.png")),
+            Some(vec![4, 5])
         );
         assert!(frozen_png_for_path(&store, "frozen.png").is_none());
         assert!(
@@ -944,8 +956,15 @@ mod tests {
             frozen_png_for_path(&store, &format!("frozen/{token}.png")),
             Some(vec![1, 2, 3])
         );
+        // Every display token for the ending capture is revoked together; a
+        // different live capture keeps its own frames.
         clear_frozen_png_for_capture(&store, capture_id);
         assert!(frozen_png_for_path(&store, &format!("frozen/{token}.png")).is_none());
+        assert!(frozen_png_for_path(&store, &format!("frozen/{secondary}.png")).is_none());
+        assert_eq!(
+            frozen_png_for_path(&store, &format!("frozen/{other_capture}.png")),
+            Some(vec![9])
+        );
     }
 
     #[test]

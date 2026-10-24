@@ -1,4 +1,4 @@
-# Utiliser Kiri
+# Utiliser Lumen
 
 [简体中文](usage.zh-CN.md) · [English](usage.md) · [繁體中文](usage.zh-TW.md) · [日本語](usage.ja.md) · [Deutsch](usage.de.md) · [한국어](usage.ko.md) · **Français**
 
@@ -10,7 +10,7 @@
 
 | Plateforme | Installation |
 | --- | --- |
-| macOS 14+ · Apple silicon et Intel | Ouvrez le `.dmg` Universal et glissez Kiri dans Applications. |
+| macOS 14+ · Apple silicon et Intel | Ouvrez le `.dmg` Universal et glissez Lumen dans Applications. |
 | Windows 11 · x64 | Exécutez l’installateur `.exe`, ou extrayez le ZIP Portable et lancez `kiri.exe`. |
 | Ubuntu 24.04 · x64 · GNOME / X11 | Téléchargez le `.deb`, puis exécutez `sudo apt install ./kiri_VERSION_amd64.deb` avec le nom réel du fichier. |
 
@@ -24,13 +24,13 @@ Dock macOS : Réglages → Afficher dans le Dock modifie immédiatement l’icô
 
 ## Langue
 
-Réglages → Général → Langue propose English, 简体中文, 繁體中文, 日本語, Deutsch, 한국어 et Français. Votre choix s’applique immédiatement à toutes les fenêtres de Kiri et reste mémorisé après un redémarrage. Au premier lancement, Kiri suit la langue du système. Changer la langue d’interface ne change pas les données de langue OCR installées sous Linux.
+Réglages → Général → Langue propose English, 简体中文, 繁體中文, 日本語, Deutsch, 한국어 et Français. Votre choix s’applique immédiatement à toutes les fenêtres de Lumen et reste mémorisé après un redémarrage. Au premier lancement, Lumen suit la langue du système. Changer la langue d’interface ne change pas les données de langue OCR installées sous Linux.
 
 ## Capture
 
-Appuyez sur ⇧⌘A sous macOS ou Shift+Ctrl+A sous Windows / Linux X11, puis sélectionnez une fenêtre ou faites glisser une zone. Sous Wayland, utilisez le bouton de capture ou attribuez `kiri --capture` dans les réglages du bureau. Les bureaux compatibles proposent aussi Réglages → Raccourcis → Raccourcis du bureau Wayland pour autoriser Capturer, Suspendre/Reprendre et Arrêter. Ubuntu 24.04 / GNOME 46 conserve la solution par commandes.
+Appuyez sur F1, puis sélectionnez une fenêtre ou faites glisser une zone. F2 épingle l’image ou le texte copié à l’écran, et F3 démarre un enregistrement. Sous Wayland, utilisez le bouton de capture ou attribuez `kiri --capture` dans les réglages du bureau. Les bureaux compatibles proposent aussi Réglages → Raccourcis → Raccourcis du bureau Wayland pour autoriser Capturer, Suspendre/Reprendre et Arrêter. Ubuntu 24.04 / GNOME 46 conserve la solution par commandes.
 
-Sous macOS, Windows et Linux, l’exécutable Kiri accepte aussi `--capture`, `--record`, `--ocr` et `--library` pour ouvrir respectivement la sélection de capture d’écran, la sélection d’enregistrement, la reconnaissance de texte et la fenêtre principale, que Kiri soit déjà lancé ou non.
+Sous macOS, Windows et Linux, l’exécutable Lumen accepte aussi `--capture`, `--record`, `--ocr` et `--library` pour ouvrir respectivement la sélection de capture d’écran, la sélection d’enregistrement, la reconnaissance de texte et la fenêtre principale, que Lumen soit déjà lancé ou non.
 
 Choisissez Capture d’écran, Enregistrer ou OCR. La barre de capture propose aussi la reconnaissance QR. Entrée confirme une capture ; Échap annule. Les captures vont dans le presse-papiers et la bibliothèque locale. Sous macOS, Windows et X11, cliquez sur un champ dans Réglages → Raccourcis et appuyez sur la touche voulue ; vous pouvez aussi effacer ou rétablir une attribution. Les commandes d’enregistrement ne sont actives que pendant celui-ci.
 
@@ -40,11 +40,11 @@ Sous macOS, si vous changez la disposition des écrans, la résolution ou l’é
 
 Pendant la saisie d’une annotation, Ctrl/Cmd+Z annule les modifications du texte et Maj+Entrée ajoute une ligne. Échap quitte d’abord la saisie ; un deuxième Échap annule la capture. Fermer une image modifiée avec des changements non enregistrés propose Enregistrer, Ignorer ou Continuer à modifier.
 
-Sous GNOME Wayland, si la première capture n’affiche pas de demande d’autorisation, ouvrez la bibliothèque et demandez l’accès depuis la bannière d’erreur. Autorisez les captures dans la boîte de dialogue GNOME, puis réessayez. Kiri supprime l’image d’autorisation. Consultez le [guide Linux](linux.md).
+Sous GNOME Wayland, si la première capture n’affiche pas de demande d’autorisation, ouvrez la bibliothèque et demandez l’accès depuis la bannière d’erreur. Autorisez les captures dans la boîte de dialogue GNOME, puis réessayez. Lumen supprime l’image d’autorisation. Consultez le [guide Linux](linux.md).
 
 Le panneau de préparation propose MP4 / GIF, Démarrer et quatre icônes côte à côte : son du système, microphone, pointeur et indicateurs de clic. Le démarrage lance toujours un compte à rebours de trois secondes ; les GIF sont sans son. Le panneau s’adapte à la sélection et aux bords de l’écran.
 
-La petite flèche à côté du microphone permet de choisir un périphérique d’entrée réel sans modifier celui par défaut du système. Si le périphérique choisi est indisponible ou déconnecté, Kiri affiche une erreur au lieu de changer de microphone silencieusement.
+La petite flèche à côté du microphone permet de choisir un périphérique d’entrée réel sans modifier celui par défaut du système. Si le périphérique choisi est indisponible ou déconnecté, Lumen affiche une erreur au lieu de changer de microphone silencieusement.
 
 ## Captures défilantes
 
@@ -56,9 +56,9 @@ La sélection reste visible pendant la capture et l’extérieur est assombri. L
 
 L’aperçu suit la partie actuelle de la capture originale, ajustée à la largeur du panneau. Son échelle reste la même lorsque la capture s’allonge. Faites défiler cet aperçu pour l’examiner, puis éloignez le pointeur pour reprendre le suivi. Faites glisser le titre pour déplacer le panneau, ou le texte d’état en mode compact. Le panneau reste sur l’écran capturé et, sous X11, hors de la sélection.
 
-Après défilement, Kiri retire les en-têtes et pieds de page fixes identifiés. Des ombres peuvent rester aux bords que vous n’avez pas revisités. Si Kiri demande une reprise, revenez sur la zone concernée avant d’enregistrer l’image complète.
+Après défilement, Lumen retire les en-têtes et pieds de page fixes identifiés. Des ombres peuvent rester aux bords que vous n’avez pas revisités. Si Lumen demande une reprise, revenez sur la zone concernée avant d’enregistrer l’image complète.
 
-Si une vue ne peut pas être raccordée, Kiri conserve le résultat continu et vous invite à revenir au contenu capturé. Revenez, puis parcourez la zone manquante. Le contenu sauté avec la barre de défilement doit être affiché pour être capturé. **Enregistrer la zone capturée** sauvegarde uniquement le résultat partiel actuel, sans compléter les contenus manquants ou incertains. En cas d’échec de sauvegarde, le résultat est conservé pour réessayer.
+Si une vue ne peut pas être raccordée, Lumen conserve le résultat continu et vous invite à revenir au contenu capturé. Revenez, puis parcourez la zone manquante. Le contenu sauté avec la barre de défilement doit être affiché pour être capturé. **Enregistrer la zone capturée** sauvegarde uniquement le résultat partiel actuel, sans compléter les contenus manquants ou incertains. En cas d’échec de sauvegarde, le résultat est conservé pour réessayer.
 
 Disponible sur macOS, Windows et Linux X11, mais pas sur Wayland. Sur macOS, la sélection doit tenir entièrement dans une fenêtre d’application normale. La capture reste liée à cette fenêtre et exclut les fenêtres flottantes externes ainsi que les autres fenêtres de la même application. Déplacer, redimensionner ou rendre indisponible la fenêtre source arrête la capture en conservant la progression. Windows et X11 capturent toujours la zone d’écran et n’excluent pas automatiquement les fenêtres flottantes externes : gardez-les hors de la sélection.
 
@@ -86,7 +86,7 @@ En mode Capture, survolez l’écran pour agrandir les pixels d’origine et voi
 
 ## Conversion GIF
 
-Pour convertir un MP4 de la bibliothèque en GIF, Kiri vérifie d’abord le décodage vidéo, puis commence l’encodage GIF. Vous pouvez annuler pendant la vérification ou la conversion, et annuler plusieurs tâches ensemble. La vidéo d’origine reste conservée. L’annulation est indisponible dès que l’enregistrement final dans la bibliothèque commence.
+Pour convertir un MP4 de la bibliothèque en GIF, Lumen vérifie d’abord le décodage vidéo, puis commence l’encodage GIF. Vous pouvez annuler pendant la vérification ou la conversion, et annuler plusieurs tâches ensemble. La vidéo d’origine reste conservée. L’annulation est indisponible dès que l’enregistrement final dans la bibliothèque commence.
 
 ## Bibliothèque et retours
 

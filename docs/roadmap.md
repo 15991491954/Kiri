@@ -12,7 +12,7 @@ history.
 - [x] Tauri 2 + Rust + React project skeleton
 - [x] Platform-independent core (geometry, recording policy, shortcut, library)
 - [x] Frozen-display capture (macOS ScreenCaptureKit, Windows xcap/WGC)
-- [x] Exclusive global shortcut (⇧⌘A / Shift+Ctrl+A)
+- [x] Exclusive global shortcut (F1)
 - [x] Overlay: mode selector, window hover outline, region drag, 8 handles
 - [x] Annotation canvas: pen, rectangle, line, arrow, text, mosaic
 - [x] Annotation history (undo/redo), inline text editing, live sizing
@@ -62,7 +62,7 @@ Release validation still open:
 
 ## v1.6 — Linux capture workspace
 
-Kiri supports Ubuntu 24.04 / GNOME, with X11 compatibility.
+Lumen supports Ubuntu 24.04 / GNOME, with X11 compatibility.
 See [Linux setup and acceptance](linux.md) for installation and verification details.
 
 - [x] X11 frozen capture and window bounds through `xcap`

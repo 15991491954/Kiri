@@ -1,0 +1,17 @@
+[PASS] the library window renders its React shell target=kiri
+[PASS] the main window is visible hwnd=6229758
+[PASS] the client area is the configured size client=1000x680
+[PASS] no native title bar is drawn above the toolbar clientOffsetY=0
+[PASS] the title bar drag moves the window attempt=1 from=780,360 delta=64,42
+[PASS] the zoom traffic light is reachable {"ok":true}
+[PASS] zoom maximizes the window 
+[PASS] the zoom traffic light restores the window {"ok":true}
+[PASS] restore returns the window to its size 
+[PASS] the minimize traffic light is reachable {"ok":true}
+[PASS] minimize hides the window 
+shortcut probe: {"capture":"F1","record":"F3","ocr":"Shift+Ctrl+Alt+O","library":"Shift+Ctrl+Alt+L","pastePin":"F2","recordingPauseResume":"Shift+Ctrl+Alt+P","recordingStop":"Shift+Ctrl+Alt+S"}
+
+[PASS] F1/F2/F3 are the declared defaults {"capture":"F1","record":"F3","ocr":"Shift+Ctrl+Alt+O","library":"Shift+Ctrl+Alt+L","pastePin":"F2","recordingPauseResume":"Shift+Ctrl+Alt+P","recordingStop":"Shift+Ctrl+Alt+S"}
+
+
+12/12 checks passed

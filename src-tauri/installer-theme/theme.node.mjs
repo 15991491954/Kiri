@@ -22,8 +22,9 @@ test('pinned offline bundle matches this application and all seven installer lan
     assert.equal((files[`${language}.nsh`].toString().match(/^LangString /gm) || []).length, 27);
   }
   const theme = files['theme.nsh'].toString();
-  assert.equal((theme.match(/^LangString /gm) || []).length, 56);
-  assert.ok(theme.includes(`MUI_FINISHPAGE_LINK_LOCATION "${lock.repository}"`));
+  assert.equal((theme.match(/^LangString /gm) || []).length, 49);
+  assert.doesNotMatch(theme, /MUI_FINISHPAGE_LINK_(?:LOCATION|COLOR)/);
+  assert.doesNotMatch(theme, /github/i);
   assert.doesNotMatch(theme, /^\s*(?:Section|Exec(?:Shell|Wait)?|WriteReg\w+|Delete|RMDir)\b/m);
   assert.doesNotMatch(theme, /!define MUI_PAGE_CUSTOMFUNCTION_(?:PRE|LEAVE)/);
   assert.match(theme, /user32::MapDialogRect/);

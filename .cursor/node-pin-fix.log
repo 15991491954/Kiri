@@ -1,0 +1,90 @@
+✔ annotation completion holds one interaction lock until the action settles (0.5802ms)
+✔ digits 1, 2 and 3 select screenshot, record and OCR (2.2966ms)
+✔ mode keys stay inert while annotations or results own the overlay (0.1943ms)
+✔ cycling wraps in both directions (0.9745ms)
+✔ wheel movement below the threshold accumulates without switching (0.3303ms)
+✔ crossing the threshold switches once and ignores momentum (0.8595ms)
+✔ upward wheel movement reports the negative direction (0.1277ms)
+✔ zero and non-finite deltas leave the accumulator untouched (0.5913ms)
+✔ line and page wheel modes are normalised to pixels (0.2236ms)
+✔ hover and click agree for overlapping app and floating windows at scale 1, DPR 1 (142.2696ms)
+✔ hover and click agree for overlapping app and floating windows at scale 2, DPR 2 (8.6177ms)
+✔ hover and click agree for overlapping app and floating windows at scale 2, DPR 2.5 (10.3106ms)
+✔ overlapping windows follow native front-to-back order rather than area (4.2564ms)
+✔ dragging across a hovered window commits the manual release endpoint in either direction (6.3198ms)
+✔ small and clipped windows use the logical eight-point threshold at Retina scale (10.1398ms)
+✔ switching to recording before selection preserves hover and click geometry (9.0406ms)
+✔ scrolling starts from the selected region only when live annotation content is empty (2.3941ms)
+✔ an unsupported desktop keeps scrolling unavailable without starting a capture (1.6814ms)
+✔ the mode selector advertises and honours the 1/2/3 keys (2.5236ms)
+✔ the wheel cycles capture modes in place and ignores panel scrolling (2.1793ms)
+✔ selection handles and the region interior preview their drag cursor (2.1385ms)
+✔ the overlay remembers the last mode with one debounced write (368.9063ms)
+✔ a peer overlay that never changed modes leaves the remembered mode alone (374.0121ms)
+✔ confirming before the debounce still saves the mode the user picked (1.1846ms)
+✔ a fresh pin keeps its builder state despite a transient false native snapshot (97.5938ms)
+✔ a reused pin event restores the button and the next click unpins (1.7485ms)
+✔ a library repin wins over the completion of an older pending unpin (1.2324ms)
+✔ failed native changes keep the pin state and rapid repeated clicks make one request (0.7441ms)
+✔ pointing at a topmost pin raises it above its sibling pins (0.5706ms)
+✔ a stale rejected toggle does not show an error after a successful library repin (0.5087ms)
+✔ borderless references drag only from the image and retain accessible close controls (0.7315ms)
+✔ borderless corner resize preserves aspect and coalesces pending Retina updates (1.6003ms)
+✔ Macintosh image dragging uses physical positions and coalesces movement (2.7557ms)
+✔ a short Macintosh drag retains its last position while the native origin is loading (1.2566ms)
+✔ cancelled and unmounted Macintosh drags cannot apply a late origin or pending movement (1.0811ms)
+✔ a newer Macintosh drag invalidates an older delayed origin (0.5097ms)
+✔ Windows image dragging uses physical positions and coalesces movement (0.4541ms)
+✔ a short Windows drag retains its last position while the native origin is loading (0.3539ms)
+✔ cancelled and unmounted Windows drags cannot apply a late origin or pending movement (0.7053ms)
+✔ a newer Windows drag invalidates an older delayed origin (0.5075ms)
+✔ Windows drag waits for both native origin and display scale, independent of WebView content zoom (1.1518ms)
+✔ right clicks never drag or expose the browser image menu; Linux retains native dragging (0.8909ms)
+✔ the wheel scales the pin around the pointer and shows the resulting percentage (0.8568ms)
+✔ the percentage badge stays in the quadrant under the pointer (0.454ms)
+✔ scrolling down zooms out around the pointer instead of the window centre (0.8019ms)
+✔ a wheel burst keeps one native resize in flight and adds the rest up (0.5956ms)
+✔ zooming waits until a drag gesture releases the window frame (0.4363ms)
+✔ a drag started during a wheel burst drops the queued zoom step (0.4028ms)
+✔ zooming waits until a corner resize releases the window frame (0.7699ms)
+✔ the opening size is the zoom reference until the image reports its pixels (0.4347ms)
+✔ a failed zoom hides the percentage and leaves the next wheel usable (0.429ms)
+✔ saved image revisions refresh only their pin and recover an image load failure (0.4399ms)
+✖ direct pin exports annotations once and waits for confirmation before closing (40.5701ms)
+✖ failed pin confirmation keeps the overlay open and releases completion for retry (26.0994ms)
+✖ normal completion retains its non-pinning action (18.8283ms)
+✔ the toolbar exposes direct pin, disables it while completing, and isolates keyboard activation (39.025ms)
+ℹ tests 56
+ℹ suites 0
+ℹ pass 53
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1350.3646
+
+✖ failing tests:
+
+test at scripts\pin-window.test.mjs:456:1
+✖ direct pin exports annotations once and waits for confirmation before closing (40.5701ms)
+  ReferenceError: setAnnotationError is not defined
+      at eval (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:108:21)
+      at step (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:34:23)
+      at Object.eval [as next] (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:15:53)
+      at fulfilled (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:6:58)
+
+test at scripts\pin-window.test.mjs:473:1
+✖ failed pin confirmation keeps the overlay open and releases completion for retry (26.0994ms)
+  ReferenceError: setAnnotationError is not defined
+      at eval (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:108:21)
+      at step (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:34:23)
+      at Object.eval [as throw] (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:15:53)
+      at rejected (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:7:65)
+
+test at scripts\pin-window.test.mjs:485:1
+✖ normal completion retains its non-pinning action (18.8283ms)
+  ReferenceError: setAnnotationError is not defined
+      at eval (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:108:21)
+      at step (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:34:23)
+      at Object.eval [as next] (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:15:53)
+      at fulfilled (eval at captureCompletion (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/pin-window.test.mjs:452:20), <anonymous>:6:58)

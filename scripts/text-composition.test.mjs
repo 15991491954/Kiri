@@ -217,6 +217,7 @@ function windowHandler(filename, name, overrides = {}) {
   const context = { isTextComposition, document: { querySelector: () => null }, completionLock: { locked: false },
     colorPicker: { onCopyKeyDown: () => false },
     qrRequestRef: { current: null }, readOnlyRef: { current: false }, closeQr: action("closeQr"),
+    confirmedRef: { current: false },
     phaseRef: { current: "annotating" }, tool: "select",
     canvasRef: { current: { cancelTextEditing: () => false,
       undo: action("undo"), redo: action("redo"), deleteSelection: action("delete") } },

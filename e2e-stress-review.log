@@ -1,0 +1,32 @@
+[PASS] eighteen pastes open exactly the sixteen-pin cap count=16
+[PASS] the app is still running after cap refusals 
+[PASS] all sixteen pins stay topmost topmost=16/16
+[PASS] sixteen small pins stay inside the byte budget grew 15.1MB -> 20.8MB
+[PASS] the burst really zoomed the hovered pin width 320 -> 5609
+[PASS] a thirty-notch burst stays under the 8000px edge size=5609x4207
+[PASS] a burst keeps the image aspect ratio ratio=1.3333
+[PASS] the app survives a burst zoom 
+[PASS] thirty notches down restore the original size width=320 expected=320
+[PASS] the pointer resolves to a pin before Escape 
+[FAIL] Escape closes exactly one of sixteen pins before=16 after=16
+[FAIL] Escape cycles the remaining pins down to zero remaining=16
+[PASS] the app stays alive with no pins left 
+[PASS] closing pins releases their memory idle=20MB start=15.1MB
+
+--- pin log lines ---
+[2026-10-22T20:50:08.669Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=11 size=320x240
+[2026-10-22T20:50:08.669Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:50:08.827Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=12 size=320x240
+[2026-10-22T20:50:08.828Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:50:09.003Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=13 size=320x240
+[2026-10-22T20:50:09.003Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:50:09.176Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=14 size=320x240
+[2026-10-22T20:50:09.176Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:50:09.326Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=15 size=320x240
+[2026-10-22T20:50:09.326Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:50:09.491Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=16 size=320x240
+[2026-10-22T20:50:09.491Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+
+12/14 checks passed
+  - Escape closes exactly one of sixteen pins (before=16 after=16)
+  - Escape cycles the remaining pins down to zero (remaining=16)

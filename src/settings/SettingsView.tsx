@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { ChoiceSelect } from "../components/ChoiceSelect";
-import { stateDetails, type AppUpdater } from "./useAppUpdater";
+import { type AppUpdater } from "./useAppUpdater";
 import { KiriIcon } from "../components/KiriIcons";
 import { fmt, getLanguage, languageNames, languages, onLanguageChange, setLanguage, t, type KiriLanguage } from "../i18n";
 import {
@@ -222,6 +222,16 @@ export function SettingsView({ updater }: { updater: AppUpdater }) {
 
 function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
   const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "error">("idle");
+  const [cacheState, setCacheState] = useState<"idle" | "busy" | { removed: number } | "error">("idle");
+  const clearing = useRef(false);
+  const clearCache = async () => {
+    if (clearing.current) return;
+    clearing.current = true;
+    setCacheState("busy");
+    try { setCacheState({ removed: await api.clearImageCache() }); }
+    catch { setCacheState("error"); }
+    finally { clearing.current = false; }
+  };
   const copying = useRef(false);
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -236,81 +246,7 @@ function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
     catch { setCopyState("error"); }
     finally { copying.current = false; }
   };
-  const { currentVersion, isWindows, isPortable, manualUpdates, updateState,
-    checkForUpdates, downloadUpdate, installUpdate, restartUpdatedApp, openRecoveryPage } = updater;
-  let status = t(manualUpdates ? "Linux updates are installed manually from a downloaded package." : isPortable
-    ? "Portable version: download the latest ZIP from Releases to update."
-    : "Opening Kiri checks for updates.");
-  if (updateState.kind === "checking") {
-    status = t("Checking…");
-  } else if (updateState.kind === "upToDate") {
-    status = fmt("Kiri %@ is up to date.", `v${currentVersion}`);
-  } else if (updateState.kind === "available") {
-    status = fmt("Kiri %@ is available.", `v${updateState.version}`);
-  } else if (updateState.kind === "downloading") {
-    const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    status = updateState.total
-      ? fmt("Downloading… %@", `${Math.min(100, Math.round((updateState.downloaded / updateState.total) * 100))}% · ${size(Math.min(updateState.downloaded, updateState.total))} / ${size(updateState.total)}`)
-      : fmt("Downloading… %@", size(updateState.downloaded));
-  } else if (updateState.kind === "verifying") {
-    status = t("Verifying update signature…");
-  } else if (updateState.kind === "downloaded") {
-    status = t("Download and signature verification complete. Ready to install.");
-  } else if (updateState.kind === "installing") {
-    status = t(
-      updateState.isWindows
-        ? "Kiri will close briefly and reopen after the update."
-        : "Installing the signed update…",
-    );
-  } else if (updateState.kind === "readyToRestart") {
-    status = t("Update installed. Restart Kiri when you're ready.");
-  } else if (updateState.kind === "relaunching") {
-    status = t("Restarting Kiri…");
-  } else if (updateState.kind === "error") {
-    const errors: Record<string, string> = {
-      check: "Couldn't check for updates. Try again.",
-      download: "Couldn't download the update. Try again.",
-      install: "Couldn't install the update. Try again.",
-      relaunch: "Couldn't restart Kiri. Try again.",
-      open: "Couldn't open the update page. Try again.",
-    };
-    status = t(errors[updateState.action]);
-  }
-
-  const details = stateDetails(updateState);
-  const busy = ["checking", "downloading", "verifying", "installing", "relaunching"].includes(updateState.kind);
-
-  const runPrimaryAction = () => {
-    if (isPortable || manualUpdates) return void openRecoveryPage();
-    if (isPortable === null) return;
-    if (busy) return;
-    if (updateState.kind === "available") return void downloadUpdate();
-    if (updateState.kind === "downloaded") return void installUpdate();
-    if (updateState.kind === "readyToRestart") return void restartUpdatedApp();
-    if (updateState.kind === "error") {
-      if (updateState.action === "download") return void downloadUpdate();
-      if (updateState.action === "install") return void installUpdate();
-      if (updateState.action === "relaunch") return void restartUpdatedApp();
-      if (updateState.action === "open") return void openRecoveryPage();
-    }
-    return void checkForUpdates();
-  };
-
-  const buttonLabel = (isPortable || manualUpdates) ? t("Open Releases Page") : updateState.kind === "checking"
-    ? t("Checking…")
-    : updateState.kind === "downloading" || updateState.kind === "verifying"
-      ? t(updateState.kind === "verifying" ? "Verifying update signature…" : "Downloading…")
-      : updateState.kind === "downloaded"
-        ? t(isWindows ? "Install and Restart" : "Install Update")
-        : updateState.kind === "installing"
-          ? t("Installing…")
-          : updateState.kind === "readyToRestart" || updateState.kind === "relaunching"
-            ? t(updateState.kind === "relaunching" ? "Restarting…" : "Restart and Finish Update")
-            : updateState.kind === "available"
-              ? t("Download Update")
-              : updateState.kind === "error"
-                ? t("Retry")
-                : t("Check for Updates");
+  const { currentVersion, isWindows } = updater;
 
   return (
     <section className="kiri-settings-section kiri-settings-section--about" aria-labelledby="about-settings-title">
@@ -322,47 +258,12 @@ function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
       <div className="kiri-settings-card kiri-version-row">
         <div className="kiri-update-copy">
           <div className="kiri-version-title">
-            <strong>Kiri</strong>
+            <strong>Lumen</strong>
             <span className="kiri-settings-badge">
               {fmt("Version %@", currentVersion ? `v${currentVersion}` : "—")}
             </span>
           </div>
-          <span
-            id="kiri-update-status"
-            role={updateState.kind === "error" ? "alert" : "status"}
-            aria-live={updateState.kind === "error" ? "assertive" : "polite"}
-          >
-            {status}
-          </span>
-          {updateState.kind === "downloading" && (
-            <progress
-              className="kiri-update-progress"
-              max={updateState.total}
-              value={updateState.total ? Math.min(updateState.downloaded, updateState.total) : undefined}
-              aria-label={t("Update download progress")}
-            />
-          )}
-          {details?.notes && (
-            <div className="kiri-update-notes" aria-label={t("Release notes")}>
-              <strong>{t("What's new")}</strong>
-              <p>{details.notes}</p>
-            </div>
-          )}
-        </div>
-        <div className="kiri-update-actions" role="group" aria-label={t("About")}>
-          <button
-            type="button"
-            className={updater.hasUpdate
-              ? "kiri-button kiri-button--primary kiri-update-button"
-              : "kiri-button kiri-button--secondary kiri-update-button"}
-            disabled={busy || isPortable === null}
-            aria-describedby="kiri-update-status"
-            onClick={runPrimaryAction}
-          >
-            {buttonLabel}
-          </button>
-        </div>
-        <div className="kiri-support-actions" role="group" aria-label={t("About")}>
+          <div className="kiri-support-actions" role="group" aria-label={t("About")}>
           <button type="button" className="kiri-button kiri-button--secondary"
             disabled={copyState === "copying"} aria-label={t("Copy Info")}
             onClick={() => void copyInfo()}>
@@ -371,11 +272,21 @@ function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
           </button>
           {copyState === "error" && <span className="kiri-support-copy-status" role="alert">{t("Couldn't copy info. Try again.")}</span>}
           <SupportLinks isWindows={isWindows} />
-          {updateState.kind === "error" && (
-            <button
-              type="button"
-              className="kiri-button kiri-button--ghost"
-              onClick={() => void openRecoveryPage()}
+          <button type="button" className="kiri-button kiri-button--secondary"
+            disabled={cacheState === "busy"} onClick={() => void clearCache()}>
+            {t(cacheState === "busy" ? "Clearing…" : "Clear Image Cache")}
+          </button>
+          {cacheState === "error" && (
+            <span className="kiri-support-copy-status" role="alert">{t("Couldn't clear the image cache. Try again.")}</span>
+          )}
+          {typeof cacheState === "object" && cacheState !== null && (
+            <span className="kiri-support-copy-status" role="status">
+              {cacheState.removed === 0
+                ? t("No cached images to clear")
+                : fmt("%d images removed", cacheState.removed)}
+            </span>
+          )}
+          
             >
               {t("Open Releases Page")}
             </button>
@@ -478,7 +389,7 @@ function GeneralSettingsSection() {
       <div className="kiri-settings-card kiri-language-row">
         <div>
           <strong>{t("Language")}</strong>
-          <span>{t("Changes apply to every Kiri window.")}</span>
+          <span>{t("Changes apply to every Lumen window.")}</span>
           {languageError && <span role="alert">{t("Could not save the language preference.")}</span>}
         </div>
         <ChoiceSelect
@@ -629,7 +540,7 @@ function DeleteProfileDialog({
       >
         <h2 id={titleId}>{t("Delete OCR Profile?")}</h2>
         <p>{fmt("The profile “%@” and its saved API key will be removed.", profile.name)}</p>
-        {active && <p>{t("Kiri will switch back to Local OCR after deletion.")}</p>}
+        {active && <p>{t("Lumen will switch back to Local OCR after deletion.")}</p>}
         {error && (
           <div className="kiri-settings-form-error" role="alert">
             {error}

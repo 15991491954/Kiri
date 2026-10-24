@@ -1,0 +1,982 @@
+﻿diff --git a/src-tauri/src/core/asset.rs b/src-tauri/src/core/asset.rs
+index 26ccc49..0235e87 100644
+--- a/src-tauri/src/core/asset.rs
++++ b/src-tauri/src/core/asset.rs
+@@ -73,13 +73,14 @@ pub struct CaptureAsset {
+     pub filename: String,
+     #[serde(skip_serializing_if = "Option::is_none", default)]
+     pub title: Option<String>,
+-    /// Recognized text; its image asset is an immutable OCR source snapshot.
++    /// Legacy text from removed OCR-history records. Retained so old libraries
++    /// keep searching and round-tripping it; new captures leave this unset.
+     #[serde(skip_serializing_if = "Option::is_none", default)]
+     pub ocr_text: Option<String>,
+-    /// Original recognition retained after a user correction; absent until edited.
++    /// Legacy original recognition preserved by the removed text editor.
+     #[serde(skip_serializing_if = "Option::is_none", default)]
+     pub ocr_original_text: Option<String>,
+-    /// Saved QR payload; absent in older libraries.
++    /// Legacy payload from removed QR-favorite records.
+     #[serde(skip_serializing_if = "Option::is_none", default)]
+     pub qr_text: Option<String>,
+     /// User-assigned labels (metadata only, like the Swift roadmap's Tags).
+diff --git a/src-tauri/src/core/library.rs b/src-tauri/src/core/library.rs
+index ba8f014..fcb3d34 100644
+--- a/src-tauri/src/core/library.rs
++++ b/src-tauri/src/core/library.rs
+@@ -20,12 +20,6 @@ use crate::core::video_project::{self, VideoProject, VideoProjectError, VideoPro
+ pub enum AssetLibraryError {
+     #[error("asset not found")]
+     AssetNotFound,
+-    #[error("OCR text is empty or exceeds the size limit")]
+-    InvalidOcrText,
+-    #[error("this asset is not an active OCR history record")]
+-    UnsupportedOcrRecord,
+-    #[error("the OCR text changed since it was opened")]
+-    OcrTextChanged,
+     #[error("invalid filename")]
+     InvalidFilename,
+     #[error("a file with that name already exists")]
+@@ -398,93 +392,9 @@ impl AssetLibrary {
+             source_application,
+             created_at,
+             None,
+-            None,
+-            None,
+-        )
+-    }
+-
+-    /// One index commit owns both text and source; failure removes the new PNG.
+-    pub fn import_ocr(
+-        &mut self,
+-        png: &[u8],
+-        width: i64,
+-        height: i64,
+-        text: String,
+-        source_application: Option<String>,
+-    ) -> Result<CaptureAsset> {
+-        if text.trim().is_empty() || text.len() > 1024 * 1024 {
+-            return Err(AssetLibraryError::InvalidOcrText);
+-        }
+-        self.import_data_inner(
+-            png,
+-            CaptureKind::Image,
+-            "png",
+-            width,
+-            height,
+-            None,
+-            source_application,
+-            None,
+-            None,
+-            Some(text),
+-            None,
+-        )
+-    }
+-
+-    /// Store a QR crop and searchable payload in one atomic index commit.
+-    /// Matching active records are reused rather than duplicated.
+-    pub fn import_qr(
+-        &mut self,
+-        png: &[u8],
+-        width: i64,
+-        height: i64,
+-        text: String,
+-    ) -> Result<CaptureAsset> {
+-        if text.is_empty() || text.len() > 16 * 1024 {
+-            return Err(AssetLibraryError::InvalidOcrText);
+-        }
+-        if let Some(existing) = self.index.iter().find(|a| {
+-            a.trashed_at.is_none() && a.qr_text.as_deref() == Some(&text)
+-        }).cloned() {
+-            self.set_favorite(true, &existing.id)?;
+-            return Ok(self.asset_by_id(&existing.id).unwrap().clone());
+-        }
+-        self.import_data_inner(
+-            png, CaptureKind::Image, "png", width, height,
+-            None, None, None, None, None, Some(text),
+         )
+     }
+ 
+-    /// A correction changes only the searchable text; the source PNG is untouched.
+-    /// The original recognition is retained on the first edit and cleared on reset.
+-    pub fn update_ocr_text(
+-        &mut self,
+-        id: &uuid::Uuid,
+-        expected_text: &str,
+-        replacement: Option<String>,
+-    ) -> Result<CaptureAsset> {
+-        let current = self.asset_by_id(id).ok_or(AssetLibraryError::AssetNotFound)?;
+-        if current.kind != CaptureKind::Image || current.trashed_at.is_some() || current.ocr_text.is_none() {
+-            return Err(AssetLibraryError::UnsupportedOcrRecord);
+-        }
+-        if current.ocr_text.as_deref() != Some(expected_text) {
+-            return Err(AssetLibraryError::OcrTextChanged);
+-        }
+-        let (next_text, original) = match replacement {
+-            Some(text) => {
+-                if text.trim().is_empty() || text.len() > 1024 * 1024 {
+-                    return Err(AssetLibraryError::InvalidOcrText);
+-                }
+-                (text, current.ocr_original_text.clone().or_else(|| current.ocr_text.clone()))
+-            }
+-            None => (current.ocr_original_text.clone().ok_or(AssetLibraryError::UnsupportedOcrRecord)?, None),
+-        };
+-        self.update(id, |asset| {
+-            asset.ocr_text = Some(next_text);
+-            asset.ocr_original_text = original;
+-        })?;
+-        Ok(self.asset_by_id(id).expect("updated OCR asset remains present").clone())
+-    }
+-
+     /// Imports a flattened image together with its immutable clean source and
+     /// frontend-owned annotation document. The Swift-compatible index remains
+     /// unchanged; the project lives entirely under `Annotations/`.
+@@ -512,8 +422,6 @@ impl AssetLibrary {
+             source_application,
+             created_at,
+             Some((clean_source, document)),
+-            None,
+-            None,
+         )
+     }
+ 
+@@ -529,8 +437,6 @@ impl AssetLibrary {
+         source_application: Option<String>,
+         created_at: Option<f64>,
+         annotation_project: Option<(&[u8], &serde_json::Value)>,
+-        ocr_text: Option<String>,
+-        qr_text: Option<String>,
+     ) -> Result<CaptureAsset> {
+         self.validate_storage_layout()?;
+         if annotation_project.is_some() && kind != CaptureKind::Image {
+@@ -538,7 +444,7 @@ impl AssetLibrary {
+         }
+         let safe_extension = Self::validated_extension(file_extension)?;
+         let persisted_created_at = Self::normalized_date(created_at.unwrap_or_else(now_ms));
+-        let mut asset = Self::make_asset(
++        let asset = Self::make_asset(
+             kind,
+             &safe_extension,
+             pixel_width,
+@@ -547,9 +453,6 @@ impl AssetLibrary {
+             source_application,
+             persisted_created_at,
+         );
+-        asset.ocr_text = ocr_text;
+-        asset.is_favorite = qr_text.is_some();
+-        asset.qr_text = qr_text;
+         let file_url = self.asset_url(&asset);
+         atomic_write(&file_url, data)?;
+ 
+@@ -809,25 +712,6 @@ impl AssetLibrary {
+     /// editor. Invalid projects fail open only to the current flattened image;
+     /// their untrusted documents and sources are never applied.
+     pub fn load_editor_snapshot(&self, id: &uuid::Uuid) -> Result<LoadedEditorSnapshot> {
+-        // OCR records retain their screenshot for read-only viewing and QR
+-        // recognition. They never gain an editable annotation project.
+-        if let Some(asset) = self.asset_by_id(id).filter(|asset| {
+-            asset.kind == CaptureKind::Image && asset.ocr_text.is_some()
+-        }) {
+-            let source = std::fs::read(self.readable_asset_url(asset)?)?;
+-            return Ok(LoadedEditorSnapshot {
+-                revision_sha256: editor_revision_sha256(
+-                    EditorAnnotationState::None,
+-                    (asset.pixel_width, asset.pixel_height),
+-                    &source,
+-                    None,
+-                    None,
+-                ),
+-                state: EditorAnnotationState::None,
+-                document: None,
+-                source,
+-            });
+-        }
+         let EditorSnapshotFiles {
+             rendered,
+             source,
+@@ -1174,7 +1058,7 @@ impl AssetLibrary {
+             .asset_by_id(id)
+             .cloned()
+             .ok_or(AssetLibraryError::AssetNotFound)?;
+-        if asset.kind != CaptureKind::Image || asset.ocr_text.is_some() {
++        if asset.kind != CaptureKind::Image {
+             return Err(AssetLibraryError::UnsupportedAnnotationAsset);
+         }
+         Ok(asset)
+@@ -2149,162 +2033,6 @@ mod tests {
+         assert_eq!(library.load_video_project(&asset.id, library_id, generation).unwrap(), saved);
+     }
+ 
+-    #[test]
+-    fn qr_favorites_persist_deduplicate_search_and_restore_from_trash() {
+-        let directory = tempfile::tempdir().unwrap();
+-        let root = directory.path().join("qr-library");
+-        let mut library = AssetLibrary::open(root.clone()).unwrap();
+-        let png = include_bytes!("../../tests/fixtures/qr/url.png");
+-        let source = image::load_from_memory(png).unwrap();
+-        let record = library.import_qr(png, source.width() as i64, source.height() as i64, "https://example.org/kiri-safe".into()).unwrap();
+-        assert!(record.is_favorite);
+-        assert!(record.ocr_text.is_none());
+-        let same = library.import_qr(b"another fixture", 120, 120, record.qr_text.clone().unwrap()).unwrap();
+-        assert_eq!(same.id, record.id);
+-        assert_eq!(library.all_assets(false).len(), 1);
+-        let mut reopened = AssetLibrary::open_existing(root.clone()).unwrap();
+-        assert_eq!(std::fs::read(reopened.asset_url(&record)).unwrap(), png);
+-        assert_eq!(reopened.search("KIRI-SAFE", false)[0].qr_text, record.qr_text);
+-        reopened.move_to_trash(&record.id).unwrap();
+-        assert!(reopened.search("KIRI-SAFE", false).is_empty());
+-        reopened.restore(&record.id).unwrap();
+-        assert!(reopened.asset_by_id(&record.id).unwrap().is_favorite);
+-        assert_eq!(AssetLibrary::open_existing(root).unwrap().search("KIRI-SAFE", false).len(), 1);
+-    }
+-
+-    #[test]
+-    fn qr_favorite_import_failure_is_atomic() {
+-        let directory = tempfile::tempdir().unwrap();
+-        let mut library = AssetLibrary::open(directory.path().join("qr-library")).unwrap();
+-        library.persist_fail.set(true);
+-        assert!(library.import_qr(include_bytes!("../../tests/fixtures/qr/url.png"), 296, 296, "content".into()).is_err());
+-        assert!(library.all_assets(false).is_empty());
+-        assert_eq!(std::fs::read_dir(&library.assets_url).unwrap().count(), 0);
+-    }
+-
+-    #[test]
+-    fn ocr_history_round_trip_search_and_recoverable_trash() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root.clone()).unwrap();
+-        let record = library
+-            .import_ocr(
+-                b"snapshot",
+-                120,
+-                80,
+-                "绗竴琛孿nSecond line".into(),
+-                Some("TextEdit".into()),
+-            )
+-            .unwrap();
+-        let mut reopened = AssetLibrary::open_existing(root).unwrap();
+-        assert_eq!(
+-            reopened.search("SECOND", false)[0].ocr_text.as_deref(),
+-            Some("绗竴琛孿nSecond line")
+-        );
+-        assert_eq!(reopened.search("绗竴琛?, false)[0].id, record.id);
+-        reopened.move_to_trash(&record.id).unwrap();
+-        assert!(reopened.search("SECOND", false).is_empty());
+-        assert_eq!(reopened.search("SECOND", true)[0].id, record.id);
+-        reopened.restore(&record.id).unwrap();
+-        assert_eq!(reopened.search("SECOND", false)[0].id, record.id);
+-        assert_eq!(
+-            std::fs::read(reopened.asset_url(&record)).unwrap(),
+-            b"snapshot"
+-        );
+-        reopened.permanently_delete(&record.id).unwrap();
+-        assert!(!reopened.asset_url(&record).exists());
+-        assert!(reopened.all_assets(true).is_empty());
+-    }
+-
+-    #[test]
+-    fn ocr_history_import_failure_leaves_no_orphan_image_or_index_entry() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root.clone()).unwrap();
+-        library.persist_fail.set(true);
+-        assert!(library
+-            .import_ocr(b"snapshot", 120, 80, "text".into(), None)
+-            .is_err());
+-        assert!(library.index.is_empty());
+-        assert_eq!(std::fs::read_dir(root.join("Assets")).unwrap().count(), 0);
+-        assert!(AssetLibrary::open_existing(root).unwrap().index.is_empty());
+-    }
+-
+-    #[test]
+-    fn ocr_history_rejects_empty_and_oversized_text_before_writing() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root.clone()).unwrap();
+-        for text in [" \n ".into(), "x".repeat(1024 * 1024 + 1)] {
+-            assert!(matches!(
+-                library.import_ocr(b"snapshot", 120, 80, text, None),
+-                Err(AssetLibraryError::InvalidOcrText)
+-            ));
+-        }
+-        assert!(library.index.is_empty());
+-        assert_eq!(std::fs::read_dir(root.join("Assets")).unwrap().count(), 0);
+-    }
+-
+-    #[test]
+-    fn ocr_corrections_keep_the_source_and_original_until_reset() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root.clone()).unwrap();
+-        let record = library.import_ocr(b"snapshot", 120, 80, "tezt".into(), None).unwrap();
+-        let corrected = library.update_ocr_text(&record.id, "tezt", Some("text".into())).unwrap();
+-        assert_eq!(corrected.ocr_original_text.as_deref(), Some("tezt"));
+-        assert_eq!(library.search("text", false)[0].id, record.id);
+-        assert!(library.search("tezt", false).is_empty());
+-        assert!(matches!(library.update_ocr_text(&record.id, "tezt", Some("stale".into())), Err(AssetLibraryError::OcrTextChanged)));
+-        assert!(matches!(library.update_ocr_text(&record.id, "text", Some("  ".into())), Err(AssetLibraryError::InvalidOcrText)));
+-        let corrected = library.update_ocr_text(&record.id, "text", Some("text!".into())).unwrap();
+-        assert_eq!(corrected.ocr_original_text.as_deref(), Some("tezt"));
+-        let mut reopened = AssetLibrary::open_existing(root).unwrap();
+-        assert_eq!(reopened.asset_by_id(&record.id).unwrap().ocr_original_text.as_deref(), Some("tezt"));
+-        let restored = reopened.update_ocr_text(&record.id, "text!", None).unwrap();
+-        assert_eq!(restored.ocr_text.as_deref(), Some("tezt"));
+-        assert!(restored.ocr_original_text.is_none());
+-        assert_eq!(std::fs::read(reopened.asset_url(&record)).unwrap(), b"snapshot");
+-    }
+-
+-    #[test]
+-    fn failed_ocr_correction_keeps_the_persisted_text() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root.clone()).unwrap();
+-        let record = library.import_ocr(b"snapshot", 120, 80, "tezt".into(), None).unwrap();
+-        library.persist_fail.set(true);
+-        assert!(library.update_ocr_text(&record.id, "tezt", Some("text".into())).is_err());
+-        assert_eq!(library.asset_by_id(&record.id).unwrap().ocr_text.as_deref(), Some("tezt"));
+-        assert_eq!(AssetLibrary::open_existing(root).unwrap().asset_by_id(&record.id).unwrap().ocr_text.as_deref(), Some("tezt"));
+-    }
+-
+-    #[test]
+-    fn ocr_source_snapshot_survives_original_edit_and_delete() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root).unwrap();
+-        let original = library
+-            .import_data(
+-                b"original",
+-                CaptureKind::Image,
+-                "png",
+-                120,
+-                80,
+-                None,
+-                None,
+-                None,
+-            )
+-            .unwrap();
+-        let record = library
+-            .import_ocr(b"original", 120, 80, "text".into(), None)
+-            .unwrap();
+-        std::fs::write(library.asset_url(&original), b"edited").unwrap();
+-        library.permanently_delete(&original.id).unwrap();
+-        assert_eq!(
+-            std::fs::read(library.asset_url(&record)).unwrap(),
+-            b"original"
+-        );
+-        assert!(matches!(
+-            library.annotation_asset(&record.id),
+-            Err(AssetLibraryError::UnsupportedAnnotationAsset)
+-        ));
+-    }
+-
+     fn temp_root() -> (tempfile::TempDir, PathBuf) {
+         let dir = tempfile::tempdir().unwrap();
+         let path = dir.path().to_path_buf();
+@@ -2920,26 +2648,6 @@ mod tests {
+         );
+     }
+ 
+-    #[test]
+-    fn ocr_image_snapshots_allow_reading_but_keep_annotation_saves_rejected() {
+-        let (_dir, root) = temp_root();
+-        let mut library = AssetLibrary::open(root).unwrap();
+-        let asset = library.import_ocr(b"ocr-source", 100, 80, "text".into(), None).unwrap();
+-        let snapshot = library.load_editor_snapshot(&asset.id).unwrap();
+-        assert_eq!(snapshot.state, EditorAnnotationState::None);
+-        assert_eq!(snapshot.document, None);
+-        assert_eq!(snapshot.source, b"ocr-source");
+-        assert!(matches!(
+-            library.save_editor_snapshot(&asset.id, &snapshot.revision_sha256, b"edited", None),
+-            Err(AssetLibraryError::UnsupportedAnnotationAsset)
+-        ));
+-        assert_eq!(std::fs::read(library.asset_url(&asset)).unwrap(), b"ocr-source");
+-        std::fs::write(library.asset_url(&asset), b"replaced-ocr-source").unwrap();
+-        let replaced = library.load_editor_snapshot(&asset.id).unwrap();
+-        assert_ne!(replaced.revision_sha256, snapshot.revision_sha256);
+-        assert_eq!(replaced.source, b"replaced-ocr-source");
+-    }
+-
+     #[test]
+     fn valid_editor_snapshot_returns_the_matching_document_and_clean_source() {
+         let (_dir, root) = temp_root();
+diff --git a/src-tauri/src/ocr_commands.rs b/src-tauri/src/ocr_commands.rs
+index 1b2a19c..1ffa5aa 100644
+--- a/src-tauri/src/ocr_commands.rs
++++ b/src-tauri/src/ocr_commands.rs
+@@ -1,8 +1,6 @@
+ use std::sync::Arc;
+ 
+-use crate::commands::{asset_dto, AssetDto};
+ use crate::core::asset::CaptureKind;
+-use crate::state::{emit_asset_content_changed, emit_library_changed};
+ use serde::Serialize;
+ use std::io::Read;
+ use tauri::{AppHandle, Manager, WebviewWindow};
+@@ -15,11 +13,11 @@ use crate::ocr_controller::{
+ };
+ use crate::state::AppState;
+ 
+-static HISTORY_OCR_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+-struct HistoryOcrPermit;
+-impl Drop for HistoryOcrPermit {
++static ASSET_OCR_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++struct AssetOcrPermit;
++impl Drop for AssetOcrPermit {
+     fn drop(&mut self) {
+-        HISTORY_OCR_BUSY.store(false, std::sync::atomic::Ordering::Release);
++        ASSET_OCR_BUSY.store(false, std::sync::atomic::Ordering::Release);
+     }
+ }
+ 
+@@ -104,20 +102,19 @@ pub async fn prepare_ocr_request(
+             .session
+             .as_ref()
+             .filter(|session| {
+-                session.capture_id == owner.capture_id
+-                    && session
+-                        .overlay_labels
+-                        .iter()
+-                        .any(|label| label == &owner.label)
++                session.capture_id == owner.capture_id && session.has_overlay(&owner.label)
+             })
+             .ok_or_else(|| "No active capture session.".to_string())?;
++        let display = session
++            .display_for_overlay(&owner.label)
++            .ok_or_else(|| "The capture display is no longer available.".to_string())?;
+         FrozenPngSource {
+-            png: session.display.png_data.clone(),
+-            declared_width: session.display.pixel_width,
+-            declared_height: session.display.pixel_height,
+-            display_width: session.display.screen_frame.width,
+-            display_height: session.display.screen_frame.height,
+-            scale: session.display.backing_scale,
++            png: display.png_data.clone(),
++            declared_width: display.pixel_width,
++            declared_height: display.pixel_height,
++            display_width: display.screen_frame.width,
++            display_height: display.screen_frame.height,
++            scale: display.backing_scale,
+         }
+     };
+     let cropped = tauri::async_runtime::spawn_blocking(move || crop_frozen_png(source, selection))
+@@ -141,11 +138,7 @@ pub async fn prepare_ocr_request(
+     let state = app.state::<AppState>();
+     let capture = state.capture.lock().unwrap();
+     let still_active = capture.session.as_ref().is_some_and(|session| {
+-        session.capture_id == owner.capture_id
+-            && session
+-                .overlay_labels
+-                .iter()
+-                .any(|overlay_label| overlay_label == &owner.label)
++        session.capture_id == owner.capture_id && session.has_overlay(&owner.label)
+     });
+     if !still_active || window.label() != owner.label {
+         return Err("The active capture overlay changed.".into());
+@@ -191,7 +184,7 @@ pub async fn recognize_prepared_ocr_local(
+     }
+     match result {
+         Ok(Ok(text)) => {
+-            let result = save_overlay_result(&app, &owner, &lease, text)?;
++            let result = publish_overlay_result(&app, &owner, &lease, text)?;
+             requests.complete(&lease);
+             Ok(result)
+         }
+@@ -289,7 +282,7 @@ pub async fn recognize_prepared_ocr_remote(
+     };
+     match result {
+         Ok(text) => {
+-            let result = save_overlay_result(&app, &owner, &lease, text)?;
++            let result = publish_overlay_result(&app, &owner, &lease, text)?;
+             requests.complete(&lease);
+             Ok(result)
+         }
+@@ -331,12 +324,7 @@ pub(crate) fn require_active_overlay(
+     capture
+         .session
+         .as_ref()
+-        .filter(|session| {
+-            session
+-                .overlay_labels
+-                .iter()
+-                .any(|overlay_label| overlay_label == &label)
+-        })
++        .filter(|session| session.has_overlay(&label))
+         .map(|session| OcrRequestOwner {
+             label,
+             capture_id: session.capture_id,
+@@ -511,126 +499,28 @@ mod tests {
+ #[serde(rename_all = "camelCase")]
+ pub struct OcrRecognitionDto {
+     text: String,
+-    saved: bool,
+-    asset: Option<AssetDto>,
+-}
+-
+-fn import_result(
+-    app: &AppHandle,
+-    png: &[u8],
+-    text: String,
+-    source: Option<String>,
+-    identity: Option<(uuid::Uuid, uuid::Uuid)>,
+-) -> OcrRecognitionDto {
+-    let asset = if text.trim().is_empty() {
+-        None
+-    } else {
+-        let save = || -> Result<AssetDto, String> {
+-            let decoder = image::codecs::png::PngDecoder::new(std::io::Cursor::new(png))
+-                .map_err(|_| "The OCR image could not be read.".to_string())?;
+-            let (width, height) = image::ImageDecoder::dimensions(&decoder);
+-            let state = app.state::<AppState>();
+-            let mut context = state.library.lock().unwrap();
+-            if identity.is_some_and(|expected| {
+-                expected
+-                    != (
+-                        context.expected_library_id(),
+-                        context.expected_library_generation(),
+-                    )
+-            }) {
+-                return Err("The library changed during text recognition.".into());
+-            }
+-            let library = context.library_mut().map_err(|e| e.to_string())?;
+-            library
+-                .import_ocr(png, width as i64, height as i64, text.clone(), source)
+-                .map(|asset| asset_dto(&asset))
+-                .map_err(|e| e.to_string())
+-        };
+-        match save() {
+-            Ok(asset) => {
+-                emit_library_changed(app);
+-                Some(asset)
+-            }
+-            Err(error) => {
+-                log::warn!("OCR history could not be saved: {error}");
+-                None
+-            }
+-        }
+-    };
+-    OcrRecognitionDto {
+-        saved: asset.is_some(),
+-        text,
+-        asset,
+-    }
+ }
+ 
+-fn save_overlay_result(
++fn publish_overlay_result(
+     app: &AppHandle,
+     owner: &OcrRequestOwner,
+     lease: &crate::ocr_controller::OcrRequestLease,
+     text: String,
+ ) -> Result<OcrRecognitionDto, String> {
+-    // Capture teardown and library moves cannot interleave this final check and save.
++    // Capture teardown must not publish a result after its overlay has closed.
+     let state = app.state::<AppState>();
+     let capture = state.capture.lock().unwrap();
+-    let session = capture
++    capture
+         .session
+         .as_ref()
+         .filter(|session| {
+-            session.capture_id == owner.capture_id && session.overlay_labels.contains(&owner.label)
++            session.capture_id == owner.capture_id && session.has_overlay(&owner.label)
+         })
+         .ok_or("The OCR request was canceled.")?;
+     if lease.cancellation.is_cancelled() {
+         return Err("The OCR request was canceled.".into());
+     }
+-    Ok(import_result(
+-        app,
+-        &lease.png,
+-        text,
+-        session.source_application.clone(),
+-        None,
+-    ))
+-}
+-
+-#[tauri::command]
+-pub fn list_ocr_records(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    query: String,
+-) -> Result<Vec<AssetDto>, String> {
+-    require_library_window(&window)?;
+-    let state = app.state::<AppState>();
+-    let mut context = state.library.lock().unwrap();
+-    let library = context.library().map_err(|e| e.to_string())?;
+-    Ok(library
+-        .search(&query, false)
+-        .iter()
+-        .filter(|a| a.ocr_text.is_some())
+-        .map(asset_dto)
+-        .collect())
+-}
+-
+-#[tauri::command]
+-pub fn update_ocr_history_text(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    id: String,
+-    expected_text: String,
+-    replacement: Option<String>,
+-) -> Result<AssetDto, String> {
+-    require_library_window(&window)?;
+-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid text history record.".to_string())?;
+-    let state = app.state::<AppState>();
+-    let mut context = state.library.lock().unwrap();
+-    let asset = context
+-        .library_mut()
+-        .map_err(|error| error.to_string())?
+-        .update_ocr_text(&id, &expected_text, replacement)
+-        .map_err(|error| error.to_string())?;
+-    drop(context);
+-    emit_library_changed(&app);
+-    emit_asset_content_changed(&app, &id);
+-    Ok(asset_dto(&asset))
++    Ok(OcrRecognitionDto { text })
+ }
+ 
+ #[tauri::command]
+@@ -646,7 +536,7 @@ pub async fn recognize_asset_local(
+     {
+         return Err("Text recognition is unavailable from this window.".into());
+     }
+-    if HISTORY_OCR_BUSY
++    if ASSET_OCR_BUSY
+         .compare_exchange(
+             false,
+             true,
+@@ -657,16 +547,12 @@ pub async fn recognize_asset_local(
+     {
+         return Err("Another image is being recognized. Try again shortly.".into());
+     }
+-    let permit = HistoryOcrPermit;
++    let permit = AssetOcrPermit;
+     tauri::async_runtime::spawn_blocking(move || {
+         let _permit = permit;
+-        let (png, source, identity) = {
++        let png = {
+             let state = app.state::<AppState>();
+             let mut context = state.library.lock().unwrap();
+-            let identity = (
+-                context.expected_library_id(),
+-                context.expected_library_generation(),
+-            );
+             let library = context.library().map_err(|e| e.to_string())?;
+             let asset = library.asset_by_id(&parsed).ok_or("Image not found.")?;
+             if asset.kind != CaptureKind::Image || asset.trashed_at.is_some() {
+@@ -691,22 +577,21 @@ pub async fn recognize_asset_local(
+             if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 64_000_000 {
+                 return Err("The OCR image exceeds the size limit.".into());
+             }
+-            (png, asset.source_application.clone(), identity)
++            png
+         };
+         #[cfg(windows)]
+         let text = run_with_one_retry(|| crate::ocr::recognize_text(&png)).0;
+         #[cfg(not(windows))]
+         let text = crate::ocr::recognize_text(&png);
+         let text = text.map_err(|_| "Local OCR failed.".to_string())?;
+-        // This result owns a snapshot: editing the source does not change its pixels.
+-        Ok(import_result(&app, &png, text, source, Some(identity)))
++        Ok(OcrRecognitionDto { text })
+     })
+     .await
+     .map_err(|_| "Local OCR failed.".to_string())?
+ }
+ 
+ #[tauri::command]
+-pub fn copy_history_text(window: WebviewWindow, text: String) -> Result<(), String> {
++pub fn copy_ocr_text(window: WebviewWindow, text: String) -> Result<(), String> {
+     if window.label() != "library"
+         && !window.label().starts_with("viewer-")
+         && !window.label().starts_with("editor-")
+diff --git a/src-tauri/src/qr.rs b/src-tauri/src/qr.rs
+index 5a62c68..4d85d0e 100644
+--- a/src-tauri/src/qr.rs
++++ b/src-tauri/src/qr.rs
+@@ -422,32 +422,6 @@ fn merge_codes(codes: &mut Vec<QrCode>, candidates: Vec<QrCode>, width: u32, hei
+     }
+ }
+ 
+-pub fn crop_code(png: &[u8], code: &QrCode) -> Result<(Vec<u8>, u32, u32), String> {
+-    let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+-        .map_err(|_| "The QR image could not be read.".to_string())?;
+-    let xs = code.corners.map(|p| p[0] * image.width() as f64);
+-    let ys = code.corners.map(|p| p[1] * image.height() as f64);
+-    let min_x = xs.into_iter().fold(f64::INFINITY, f64::min);
+-    let max_x = xs.into_iter().fold(0.0, f64::max);
+-    let min_y = ys.into_iter().fold(f64::INFINITY, f64::min);
+-    let max_y = ys.into_iter().fold(0.0, f64::max);
+-    // Preserve a quiet zone around the selected code so its crop can be reused.
+-    let margin = ((max_x - min_x).max(max_y - min_y) * 0.2).ceil();
+-    let x = (min_x - margin).floor().max(0.0) as u32;
+-    let y = (min_y - margin).floor().max(0.0) as u32;
+-    let right = (max_x + margin).ceil().min(image.width() as f64) as u32;
+-    let bottom = (max_y + margin).ceil().min(image.height() as f64) as u32;
+-    let (width, height) = (right.saturating_sub(x), bottom.saturating_sub(y));
+-    if width == 0 || height == 0 {
+-        return Err("The QR image could not be read.".into());
+-    }
+-    let mut png = std::io::Cursor::new(Vec::new());
+-    image
+-        .crop_imm(x, y, width, height)
+-        .write_to(&mut png, image::ImageFormat::Png)
+-        .map_err(|_| "Could not save this QR code.".to_string())?;
+-    Ok((png.into_inner(), width, height))
+-}
+ 
+ #[cfg(test)]
+ mod tests {
+@@ -538,11 +512,6 @@ mod tests {
+             .iter()
+             .all(|p| p.iter().all(|v| *v >= 0.0 && *v <= 1.0))));
+         assert!(multi.iter().any(|c| c.corners[0][0] > 0.6));
+-        for code in multi {
+-            let (crop, _, _) =
+-                crop_code(include_bytes!("../tests/fixtures/qr/multi.png"), &code).unwrap();
+-            assert!(decode(&crop).unwrap().2.iter().any(|c| c.text == code.text));
+-        }
+     }
+ 
+     fn public_montage(
+diff --git a/src-tauri/src/qr_commands.rs b/src-tauri/src/qr_commands.rs
+index 53dcd6d..668d290 100644
+--- a/src-tauri/src/qr_commands.rs
++++ b/src-tauri/src/qr_commands.rs
+@@ -1,9 +1,9 @@
+ use crate::qr_controller::Scan;
+ use crate::{
+-    commands::{asset_dto, AssetDto, RectDto},
++    commands::RectDto,
+     core::asset::CaptureKind,
+     qr::{self, QrCode},
+-    state::{emit_library_changed, AppState},
++    state::AppState,
+ };
+ use base64::Engine;
+ use serde::Serialize;
+@@ -83,16 +83,19 @@ pub async fn scan_qr(
+                     .as_ref()
+                     .filter(|s| {
+                         Some(s.capture_id) == owner.as_ref().map(|o| o.capture_id)
+-                            && s.overlay_labels.contains(&label)
++                            && s.has_overlay(&label)
+                     })
+                     .ok_or("The QR request was canceled.")?;
++                let display = session
++                    .display_for_overlay(&label)
++                    .ok_or("The QR request was canceled.")?;
+                 crate::ocr_commands::FrozenPngSource {
+-                    png: session.display.png_data.clone(),
+-                    declared_width: session.display.pixel_width,
+-                    declared_height: session.display.pixel_height,
+-                    display_width: session.display.screen_frame.width,
+-                    display_height: session.display.screen_frame.height,
+-                    scale: session.display.backing_scale,
++                    png: display.png_data.clone(),
++                    declared_width: display.pixel_width,
++                    declared_height: display.pixel_height,
++                    display_width: display.screen_frame.width,
++                    display_height: display.screen_frame.height,
++                    scale: display.backing_scale,
+                 }
+             };
+             crate::ocr_commands::crop_frozen_png(source, selection)?.png
+@@ -138,7 +141,7 @@ pub async fn scan_qr(
+         let capture = state.capture.lock().unwrap();
+         if let Some(owner) = &owner {
+             if !capture.session.as_ref().is_some_and(|s| {
+-                s.capture_id == owner.capture_id && s.overlay_labels.contains(&label)
++                s.capture_id == owner.capture_id && s.has_overlay(&label)
+             }) {
+                 requests.clear(&label);
+                 return Err("The QR request was canceled.".into());
+@@ -226,7 +229,7 @@ fn selected(
+         .ok_or("The QR request was canceled.")?;
+     if let Some(id) = scan.capture_id {
+         if !capture.session.as_ref().is_some_and(|s| {
+-            s.capture_id == id && s.overlay_labels.iter().any(|l| l == window.label())
++            s.capture_id == id && s.has_overlay(window.label())
+         }) {
+             return Err("The QR request was canceled.".into());
+         }
+@@ -260,8 +263,8 @@ pub async fn qr_action(
+     request_id: String,
+     index: usize,
+     action: String,
+-) -> Result<Option<AssetDto>, String> {
+-    let (scan, code) = selected(&window, &app, &request_id, index)?;
++) -> Result<(), String> {
++    let (_scan, code) = selected(&window, &app, &request_id, index)?;
+     let text = code
+         .text
+         .as_deref()
+@@ -269,141 +272,10 @@ pub async fn qr_action(
+     match action.as_str() {
+         "copy" => {
+             crate::platform::write_text_to_clipboard(text).map_err(|e| e.to_string())?;
+-            Ok(None)
++            Ok(())
+         }
+         "open" => {
+             open_link(&app, text, Some((window, request_id, index))).await?;
+-            Ok(None)
+-        }
+-        "favorite" | "unfavorite" => {
+-            let label = window.label().to_string();
+-            tauri::async_runtime::spawn_blocking(move || {
+-                let crop = if action == "favorite" {
+-                    Some(qr::crop_code(&scan.png, &code)?)
+-                } else {
+-                    None
+-                };
+-                let state = app.state::<AppState>();
+-                let capture = state.capture.lock().unwrap();
+-                let scans = state.qr_requests.scans.lock().unwrap();
+-                let request_current = scans.get(&label).is_some_and(|s| s.id == scan.id)
+-                    && scan.capture_id.is_none_or(|id| {
+-                        capture.session.as_ref().is_some_and(|s| {
+-                            s.capture_id == id && s.overlay_labels.contains(&label)
+-                        })
+-                    });
+-                let mut context = state.library.lock().unwrap();
+-                // selected() already accepted Favorite with a frozen PNG and
+-                // payload. Closing its result does not retract that explicit
+-                // save, but it must never write to a replacement library.
+-                validate_qr_favorite_save(
+-                    &action,
+-                    request_current,
+-                    scan.library_identity,
+-                    (
+-                        context.expected_library_id(),
+-                        context.expected_library_generation(),
+-                    ),
+-                )?;
+-                let library = context.library_mut().map_err(|e| e.to_string())?;
+-                let asset = if let Some((png, width, height)) = crop {
+-                    Some(
+-                        library
+-                            .import_qr(&png, width as i64, height as i64, code.text.unwrap())
+-                            .map_err(|e| e.to_string())?,
+-                    )
+-                } else {
+-                    if let Some(asset) = library
+-                        .all_assets(false)
+-                        .iter()
+-                        .find(|a| a.qr_text == code.text)
+-                    {
+-                        library
+-                            .move_to_trash(&asset.id)
+-                            .map_err(|e| e.to_string())?;
+-                    }
+-                    None
+-                };
+-                drop(context);
+-                drop(scans);
+-                drop(capture);
+-                emit_library_changed(&app);
+-                Ok(asset.as_ref().map(asset_dto))
+-            })
+-            .await
+-            .map_err(|_| "Could not save this QR code.".to_string())?
+-        }
+-        _ => Err("Invalid QR action.".into()),
+-    }
+-}
+-
+-fn validate_qr_favorite_save(
+-    action: &str,
+-    request_current: bool,
+-    expected_library: (uuid::Uuid, uuid::Uuid),
+-    current_library: (uuid::Uuid, uuid::Uuid),
+-) -> Result<(), String> {
+-    if action == "unfavorite" && !request_current {
+-        return Err("The QR request was canceled.".into());
+-    }
+-    if expected_library != current_library {
+-        return Err("The library changed during QR recognition.".into());
+-    }
+-    Ok(())
+-}
+-
+-#[tauri::command]
+-pub fn list_qr_favorites(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    query: String,
+-) -> Result<Vec<AssetDto>, String> {
+-    if window.label() != "library" {
+-        return Err("QR favorites are only available from the library.".into());
+-    }
+-    let state = app.state::<AppState>();
+-    let mut context = state.library.lock().unwrap();
+-    Ok(context
+-        .library()
+-        .map_err(|e| e.to_string())?
+-        .search(&query, false)
+-        .iter()
+-        .filter(|a| a.qr_text.is_some() && a.is_favorite)
+-        .map(asset_dto)
+-        .collect())
+-}
+-
+-#[tauri::command]
+-pub async fn qr_favorite_action(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    id: String,
+-    action: String,
+-) -> Result<(), String> {
+-    if window.label() != "library" {
+-        return Err("QR favorites are only available from the library.".into());
+-    }
+-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid QR favorite.")?;
+-    let text = {
+-        let state = app.state::<AppState>();
+-        let mut context = state.library.lock().unwrap();
+-        let library = context.library_mut().map_err(|e| e.to_string())?;
+-        let asset = library
+-            .asset_by_id(&id)
+-            .filter(|a| a.trashed_at.is_none() && a.is_favorite && a.qr_text.is_some())
+-            .ok_or("Invalid QR favorite.")?;
+-        let text = asset.qr_text.clone().unwrap();
+-        if action == "remove" {
+-            library.move_to_trash(&id).map_err(|e| e.to_string())?;
+-        }
+-        text
+-    };
+-    match action.as_str() {
+-        "copy" => crate::platform::write_text_to_clipboard(&text).map_err(|e| e.to_string()),
+-        "copyImage" => crate::commands::copy_asset(app, window, id.to_string()),
+-        "open" => open_link(&app, &text, None).await,
+-        "remove" => {
+-            emit_library_changed(&app);
+             Ok(())
+         }
+         _ => Err("Invalid QR action.".into()),
+@@ -647,8 +519,6 @@ fn open_web_url(url: &str) -> Result<(), String> {
+ 
+ #[cfg(test)]
+ mod tests {
+-    use super::validate_qr_favorite_save;
+-
+     #[test]
+     fn editor_revision_is_accepted_only_from_its_matching_image_editor() {
+         let id = uuid::Uuid::new_v4();
+@@ -711,22 +581,4 @@ mod tests {
+         let command = std::process::Command::new("/kiri-missing-link-launcher");
+         assert!(super::wait_for_link_launcher(command, std::time::Duration::from_secs(1)).is_err());
+     }
+-
+-    #[test]
+-    fn accepted_favorite_survives_result_close_but_unfavorite_requires_its_owner() {
+-        let identity = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+-        assert!(validate_qr_favorite_save("favorite", false, identity, identity).is_ok());
+-        assert!(validate_qr_favorite_save("unfavorite", false, identity, identity).is_err());
+-    }
+-
+-    #[test]
+-    fn accepted_favorite_cannot_write_to_a_replacement_library_or_generation() {
+-        let identity = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+-        for replacement in [
+-            (uuid::Uuid::new_v4(), identity.1),
+-            (identity.0, uuid::Uuid::new_v4()),
+-        ] {
+-            assert!(validate_qr_favorite_save("favorite", false, identity, replacement).is_err());
+-        }
+-    }
+ }

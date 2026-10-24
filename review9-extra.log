@@ -1,0 +1,32 @@
+[PASS] two paste operations create two pins count=2
+[PASS] the cascaded pins overlap r1=764,604 r2=740,580
+[PASS] the newest pin is on top of the overlap hit=25169914
+[PASS] the lower pin has an exposed strip hit=17170910 lower=17170910
+[PASS] clicking a pin raises it above its sibling overlapNow=17170910 clicked=17170910
+[PASS] raising a pin keeps it in the topmost band ex=0x8080088
+[PASS] a fast flick outside the pin still moves it delta=420,260
+[PASS] a runaway wheel stops at the maximum edge size=1957x1468
+[PASS] the pin is still alive after the maximum 
+[PASS] the pin stayed in the topmost band while zooming ex=0x8080088
+[FAIL] zooming past the maximum does not move the window before=342,226 after=244,153
+[PASS] zooming out stops at the usable minimum size=80x60
+[PASS] the pin is still alive after the minimum 
+[FAIL] the test really removed the topmost style ex=0x8080088
+[PASS] the foreground self-heal restores the topmost band ex=0x8080088
+[PASS] the healed pin is above the newly focused app hit=17170910 pin=17170910
+
+--- pin log lines ---
+[2026-10-22T21:04:07.319Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T21:04:07.847Z INFO  kiri_lib::pin::surface_windows] [pin] closed label=pin-3
+[2026-10-22T21:04:08.771Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=4 size=364x104
+[2026-10-22T21:04:08.771Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T21:04:09.139Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=5 size=240x160
+[2026-10-22T21:04:09.139Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T21:04:45.461Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=1 size=320x240
+[2026-10-22T21:04:45.461Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T21:04:45.845Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=2 size=320x240
+[2026-10-22T21:04:45.845Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+
+14/16 checks passed
+  - zooming past the maximum does not move the window (before=342,226 after=244,153)
+  - the test really removed the topmost style (ex=0x8080088)

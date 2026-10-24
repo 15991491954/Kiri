@@ -18,7 +18,8 @@ const ACTIONS: Array<{ action: ShortcutAction; title: string; description: strin
   { action: "capture", title: "Screenshot", description: "Choose a window or region to capture.", icon: "camera.viewfinder", command: "kiri --capture" },
   { action: "record", title: "Record", description: "Choose a region for a new recording.", icon: "record.circle.fill", command: "kiri --record" },
   { action: "ocr", title: "Recognize Text", description: "Choose a region to recognize text.", icon: "text.viewfinder", command: "kiri --ocr" },
-  { action: "library", title: "Show main window", description: "Bring Kiri to the front.", icon: "photo.on.rectangle", command: "kiri --library" },
+  { action: "library", title: "Show main window", description: "Bring Lumen to the front.", icon: "photo.on.rectangle", command: "kiri --library" },
+  { action: "pastePin", title: "Paste as Pin", description: "Pin the copied image or text on top of other windows.", icon: "pin", command: "kiri --paste-pin" },
   { action: "recordingPauseResume", title: "Pause/Resume Recording", description: "Pause/Resume Recording", icon: "pause.circle.fill", command: "kiri --toggle-recording-pause" },
   { action: "recordingStop", title: "Stop and Save Recording", description: "Stop and Save Recording", icon: "stop.fill", command: "kiri --stop-recording" },
 ];
@@ -222,7 +223,7 @@ export function ShortcutsSettings() {
           </div>
           {systemManaged ? <p>{t("Your desktop manages global shortcuts on Wayland.")}</p> :
             <div className="kiri-shortcut-instruction" data-editing={editing !== null || undefined}>
-              <p className="kiri-shortcut-instruction__idle" aria-hidden={editing !== null}>{t("Use these shortcuts while Kiri is running, even in another app.")} {t("Click a shortcut to change it.")}</p>
+              <p className="kiri-shortcut-instruction__idle" aria-hidden={editing !== null}>{t("Use these shortcuts while Lumen is running, even in another app.")} {t("Click a shortcut to change it.")}</p>
               <p className="kiri-shortcut-instruction__recording" id="shortcut-recording-instruction" role="status" aria-hidden={editing === null}>{t("Press a key or combination. Esc cancels.")}</p>
             </div>}
         </div>
@@ -353,7 +354,7 @@ function ShortcutReference() {
   return <section className="kiri-settings-section kiri-shortcut-reference" aria-labelledby="shortcut-reference-title">
     <div className="kiri-settings-section__heading"><div>
       <h2 id="shortcut-reference-title">{t("In-app Shortcuts")}</h2>
-      <p>{t("These shortcuts apply within Kiri and cannot be changed here.")}</p>
+      <p>{t("These shortcuts apply within Lumen and cannot be changed here.")}</p>
     </div></div>
     <div className="kiri-shortcut-reference__groups">
       {groups.map((group, index) => <section key={group.title} className="kiri-shortcut-reference__group" aria-labelledby={`shortcut-reference-group-${index}`}>

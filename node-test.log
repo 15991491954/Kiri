@@ -1,0 +1,15 @@
+✔ the interactive runtime cannot replace the desktop with a capture fixture (7.4571ms)
+✔ the click ripple stays passive so recording hotkeys keep focus (0.8318ms)
+✔ start_capture_with_owner rechecks scrolling capture while holding the shared transition lock (0.7215ms)
+✔ linux_capture_commit rechecks scrolling capture while holding the shared transition lock (0.733ms)
+✔ scrolling capture transfers ownership under the same transition lock (0.3323ms)
+✔ capture confirmation finalizes only after its owner IPC returns (1.9882ms)
+✔ Windows resident WebViews are dispatched outside IPC and event callbacks (1.3377ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 74.3014

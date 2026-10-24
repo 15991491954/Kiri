@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -30,9 +31,9 @@ use crate::state::RecoveryAction;
 use crate::state::{
     emit_asset_content_changed, emit_error, emit_library_changed, emit_notice, emit_notice_local,
     emit_notice_on_monitor, emit_recording_state, show_completion_preview, ActiveRecording,
-    AppState, ApprovedEditorSave, CaptureSession, CompletionPreviewDto, PendingCaptureCompletion,
-    RecordingConfiguration, RecordingFlow, RecordingSaveJobDto, RecordingSaveJobGuard,
-    StagedCaptureAnnotation, StagedEditorAnnotation,
+    AppState, ApprovedEditorSave, CaptureSession, CompletionPreviewDto, OverlayBinding,
+    PendingCaptureCompletion, RecordingConfiguration, RecordingFlow, RecordingSaveJobDto,
+    RecordingSaveJobGuard, StagedCaptureAnnotation, StagedEditorAnnotation,
 };
 
 // ---------------------------------------------------------------------------
@@ -108,8 +109,6 @@ pub struct AssetDto {
     pub filename: String,
     pub title: Option<String>,
     pub ocr_text: Option<String>,
-    pub ocr_original_text: Option<String>,
-    pub qr_text: Option<String>,
     pub tags: Vec<String>,
     pub pixel_width: i64,
     pub pixel_height: i64,
@@ -160,8 +159,6 @@ pub(crate) fn asset_dto(asset: &CaptureAsset) -> AssetDto {
         filename: asset.filename.clone(),
         title: asset.title.clone(),
         ocr_text: asset.ocr_text.clone(),
-        ocr_original_text: asset.ocr_original_text.clone(),
-        qr_text: asset.qr_text.clone(),
         tags: asset.tags.clone(),
         pixel_width: asset.pixel_width,
         pixel_height: asset.pixel_height,
@@ -211,7 +208,11 @@ pub async fn list_assets(
         let assets = library.search(&query, showing_trash);
         Ok(assets
             .iter()
-            .filter(|asset| showing_trash || (asset.ocr_text.is_none() && asset.qr_text.is_none()))
+            // The library is the home of recorded video. Screenshots are a
+            // clipboard-first capture: they are copied automatically and kept
+            // only long enough to pin or edit, so they never appear in the
+            // library list (older ones are purged by the retention pass).
+            .filter(|asset| asset.kind != crate::core::asset::CaptureKind::Image)
             .map(|asset| {
                 let mut dto = asset_dto(asset);
                 dto.file_size = library.asset_file_size(asset);
@@ -221,6 +222,87 @@ pub async fn list_assets(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+/// Days a screenshot spends in the library before the retention pass removes
+/// it. Pins are memory-only and recordings are kept indefinitely.
+const IMAGE_RETENTION_DAYS: f64 = 7.0;
+/// How often the retention pass runs while Kiri stays open.
+const IMAGE_CLEANUP_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+/// Delay before the first pass: capture initialization has priority, and an
+/// empty pass every six hours costs nothing.
+const IMAGE_CLEANUP_START_DELAY: Duration = Duration::from_secs(20);
+
+/// Starts the periodic screenshot-cache cleanup.
+///
+/// The library is the durable home of recorded video; screenshots live only
+/// long enough to be copied, pinned, or edited. A worker thread removes image
+/// assets older than [`IMAGE_RETENTION_DAYS`] and leaves video and GIF assets
+/// (and their edit projects) alone. Runs on a worker so no capture, IPC reply,
+/// or library render waits for it.
+pub(crate) fn start_image_cache_cleanup(app: AppHandle) {
+    let spawned = std::thread::Builder::new()
+        .name("kiri-image-cleanup".into())
+        .spawn(move || {
+            std::thread::sleep(IMAGE_CLEANUP_START_DELAY);
+            loop {
+                purge_expired_screenshots(&app);
+                std::thread::sleep(IMAGE_CLEANUP_INTERVAL);
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("[cleanup] screenshot retention worker could not start: {error}");
+    }
+}
+
+fn purge_expired_screenshots(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let cutoff = {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as f64)
+            .unwrap_or_default();
+        now - IMAGE_RETENTION_DAYS * 86_400_000.0
+    };
+    let removed = {
+        let _transition = state.library_transition.lock().unwrap();
+        let mut context = state.library.lock().unwrap();
+        match context.library_mut() {
+            Ok(library) => library.purge_image_assets_before(cutoff),
+            Err(_) => return,
+        }
+    };
+    match removed {
+        Ok(0) => {}
+        Ok(count) => {
+            log::info!("[cleanup] removed {count} expired screenshot(s)");
+            emit_library_changed(app);
+        }
+        Err(error) => log::warn!("[cleanup] screenshot retention failed: {error}"),
+    }
+}
+
+/// Removes every cached screenshot image now, leaving recordings untouched.
+///
+/// The periodic pass only clears images past the retention window; this is the
+/// user-facing "clear now" action in Settings. It returns how many images were
+/// removed so the caller can confirm the result.
+#[tauri::command]
+pub fn clear_image_cache(app: AppHandle) -> Result<usize, String> {
+    let state = app.state::<AppState>();
+    let removed = {
+        let _transition = state.library_transition.lock().map_err(|error| error.to_string())?;
+        let mut context = state.library.lock().map_err(|error| error.to_string())?;
+        let library = context.library_mut().map_err(|error| error.to_string())?;
+        library
+            .purge_image_assets_before(f64::MAX)
+            .map_err(|error| error.to_string())?
+    };
+    if removed > 0 {
+        log::info!("[cleanup] removed {removed} cached screenshot(s) on request");
+        emit_library_changed(&app);
+    }
+    Ok(removed)
 }
 
 fn with_asset_mutation(
@@ -508,7 +590,7 @@ pub fn open_asset(app: AppHandle, id: String) -> Result<(), String> {
     let win_w = (win_h * aspect).clamp(360.0, 1200.0);
     let asset_id = asset.id;
     let window_title = format!(
-        "{} — Kiri",
+        "{} — Lumen",
         asset.title.as_deref().unwrap_or(&asset.filename)
     );
     std::thread::Builder::new()
@@ -550,23 +632,224 @@ fn restore_editor_window(window: &WebviewWindow) -> Result<(), String> {
         .map_err(|error| format!("The screenshot window could not be restored: {error}"))
 }
 
-fn restore_pinned_window(window: &WebviewWindow) -> Result<(), String> {
+#[cfg(not(windows))]
+fn restore_pinned_window(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
     window.set_always_on_top(true)
         .map_err(|error| format!("The screenshot could not be pinned: {error}"))?;
+    // Tao posts that request to the window thread; assert the band here so the
+    // reused pin is already above other applications when the UI flips.
+    platform::assert_window_topmost(window)
+        .map_err(|error| format!("The screenshot could not be pinned: {error}"))?;
+    platform::ensure_pin_topmost_guard(app);
     // Tell a reused WebView to reflect its restored native pin state.
     let _ = window.emit_to(window.label(), "pin-on-top", ());
     restore_editor_window(window)
 }
 
+/// Keeps a pinned screenshot above other applications.
+///
+/// The pin window is created topmost, but two situations still need this
+/// command: `set_always_on_top(true)` is a no-op once Tao already wants the
+/// band, so clicking a pin could not raise it above a sibling pin, and a pin
+/// that dropped out of the band needs a synchronous, verified re-assert.
+#[tauri::command]
+pub fn set_pin_topmost(window: WebviewWindow, on_top: bool) -> Result<(), String> {
+    if !window.label().starts_with(platform::PIN_WINDOW_LABEL_PREFIX) {
+        return Err("Only pinned screenshots can change their topmost state.".into());
+    }
+    window.set_always_on_top(on_top)
+        .map_err(|error| format!("The screenshot could not change its pinning: {error}"))?;
+    if on_top {
+        platform::assert_window_topmost(&window)
+            .map_err(|error| format!("The screenshot could not be pinned: {error}"))?;
+    } else {
+        // Tao applies the unpin asynchronously and ignores a failed transition.
+        // Make the native band match the UI before this command returns.
+        platform::release_window_topmost(&window)
+            .map_err(|error| format!("The screenshot could not change its pinning: {error}"))?;
+    }
+    platform::ensure_pin_topmost_guard(window.app_handle());
+    Ok(())
+}
+
+/// Raises a pin within the topmost band when the user points at it.
+#[tauri::command]
+pub fn raise_pin(window: WebviewWindow) -> Result<(), String> {
+    if !window.label().starts_with(platform::PIN_WINDOW_LABEL_PREFIX) {
+        return Ok(());
+    }
+    // A pin the user explicitly unpinned must stay behind other windows.
+    if !window.is_always_on_top().unwrap_or(false) {
+        return Ok(());
+    }
+    platform::assert_window_topmost(&window)
+        .map_err(|error| format!("The screenshot could not be raised: {error}"))
+}
+
+/// Physical size a pin reports after one zoom step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PinZoomSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Scales a pinned screenshot around the pointer that scrolled it.
+///
+/// Zoom is a view of the same image, so the native side owns the geometry and
+/// returns the frame it actually applied; the WebView only turns that size into
+/// the percentage it shows while scrolling. `image_width`/`image_height` are the
+/// pin's intrinsic pixels, which keep the resized window on the image aspect
+/// ratio instead of accumulating rounding drift over many steps.
+#[tauri::command]
+pub fn zoom_pin(
+    window: WebviewWindow,
+    factor: f64,
+    anchor_x: f64,
+    anchor_y: f64,
+    image_width: u32,
+    image_height: u32,
+) -> Result<PinZoomSize, String> {
+    if !window.label().starts_with(platform::PIN_WINDOW_LABEL_PREFIX) {
+        return Err("Only pinned screenshots can zoom.".into());
+    }
+    let aspect = (image_width > 0 && image_height > 0)
+        .then(|| f64::from(image_width) / f64::from(image_height));
+    let (width, height) =
+        platform::zoom_pinned_window(&window, factor, (anchor_x, anchor_y), aspect)
+            .map_err(|error| format!("The screenshot could not be zoomed: {error}"))?;
+    Ok(PinZoomSize { width, height })
+}
+
 #[tauri::command]
 pub async fn pin_asset(window: WebviewWindow, app: AppHandle, id: String) -> Result<(), String> {
-    if !matches!(window.label(), "library" | "toast") {
-        return Err("Only the library or completion preview can pin a screenshot.".into());
+    if !matches!(window.label(), "library" | "toast")
+        && !window.label().starts_with("editor-")
+        && !window.label().starts_with("viewer-")
+    {
+        return Err("Only the library, editor, or completion preview can pin a screenshot.".into());
     }
     open_pinned_screenshot(app, id).await
 }
 
 async fn open_pinned_screenshot(app: AppHandle, id: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        // Windows pins are native layered windows: no WebView, no focus change,
+        // and no per-pin renderer process. The WebView pin stays the fallback on
+        // other platforms.
+        open_native_pinned_screenshot(app, id).await
+    }
+    #[cfg(not(windows))]
+    {
+        open_webview_pinned_screenshot(app, id).await
+    }
+}
+
+/// Decodes a library capture into the premultiplied snapshot a pin owns.
+///
+/// Called from a blocking worker: reading a 4K PNG costs tens of milliseconds
+/// and must not run on the message loop or a WebView IPC thread.
+#[cfg(windows)]
+fn decode_pinned_image(path: &Path) -> Result<crate::pin::PinImage, String> {
+    let decoded = image::open(path)
+        .map_err(|error| format!("The pinned screenshot could not be read: {error}"))?;
+    let rgba = decoded.to_rgba8();
+    crate::pin::PinImage::from_rgba(rgba.width(), rgba.height(), rgba.as_raw())
+        .ok_or_else(|| "The pinned screenshot could not be read.".to_string())
+}
+
+/// Display scale and physical work area under the pointer.
+#[cfg(windows)]
+fn native_pin_target(app: &AppHandle) -> Result<(f64, crate::pin::PinRect), String> {
+    let cursor = app
+        .cursor_position()
+        .map_err(|error| format!("The pinned screenshot could not be placed: {error}"))?;
+    let monitor = app
+        .monitor_from_point(cursor.x, cursor.y)
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "The pinned screenshot could not be placed.".to_string())?;
+    let area = monitor.work_area();
+    Ok((
+        monitor.scale_factor().max(1.0),
+        crate::pin::PinRect::new(
+            area.position.x,
+            area.position.y,
+            area.size.width.max(1) as i32,
+            area.size.height.max(1) as i32,
+        ),
+    ))
+}
+
+#[cfg(windows)]
+async fn open_native_pinned_screenshot(app: AppHandle, id: String) -> Result<(), String> {
+    let parsed = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid screenshot.".to_string())?;
+    let (path, asset_id, placement, monitors) = {
+        let state = app.state::<AppState>();
+        let mut context = state.library.lock().unwrap();
+        let library = context.library().map_err(|error| error.to_string())?;
+        let asset = library
+            .asset_by_id(&parsed)
+            .cloned()
+            .ok_or_else(|| "Screenshot not found.".to_string())?;
+        if asset.kind != CaptureKind::Image || asset.trashed_at.is_some() {
+            return Err("Only active screenshots can be pinned.".into());
+        }
+        let path = library.readable_asset_url(&asset).map_err(|error| error.to_string())?;
+        let placements = state.capture_pin_placements.lock().unwrap();
+        let placement = placements.get(asset.id, (asset.pixel_width, asset.pixel_height));
+        drop(placements);
+        let monitors = app.available_monitors().unwrap_or_default();
+        (path, asset.id, placement, monitors)
+    };
+
+    let image = tauri::async_runtime::spawn_blocking(move || decode_pinned_image(&path))
+        .await
+        .map_err(|error| format!("The pinned screenshot could not be read: {error}"))??;
+
+    let (scale, workarea) = native_pin_target(&app)?;
+    let cursor = app.cursor_position().unwrap_or(tauri::PhysicalPosition::new(0.0, 0.0));
+    // Reuse the capture's on-screen origin only while that rectangle still
+    // belongs to a connected display at the same scale.
+    let placement_source = placement.filter(|origin| {
+        monitors.iter().any(|monitor| {
+            origin.fits_monitor(
+                Rect::new(
+                    f64::from(monitor.position().x),
+                    f64::from(monitor.position().y),
+                    f64::from(monitor.size().width),
+                    f64::from(monitor.size().height),
+                ),
+                monitor.scale_factor(),
+            )
+        })
+    });
+    let frame = match placement_source {
+        Some(origin) => crate::pin::PinRect::from_logical(origin.frame, origin.backing_scale),
+        None => crate::pin::initial_frame(
+            (image.width, image.height),
+            (f64::from(cursor.x), f64::from(cursor.y)),
+            workarea,
+            0,
+        ),
+    };
+    crate::pin::surface::open(
+        &app,
+        crate::pin::surface::PinSpec {
+            image,
+            frame,
+            scale,
+            origin: crate::pin::PinOrigin::Asset(asset_id),
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    log::info!("[pin] screenshot opened native asset_id={asset_id}");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+async fn open_webview_pinned_screenshot(app: AppHandle, id: String) -> Result<(), String> {
     let parsed = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid screenshot.".to_string())?;
     let asset = {
         let state = app.state::<AppState>();
@@ -574,15 +857,15 @@ async fn open_pinned_screenshot(app: AppHandle, id: String) -> Result<(), String
         let library = context.library().map_err(|error| error.to_string())?;
         let asset = library.asset_by_id(&parsed).cloned()
             .ok_or_else(|| "Screenshot not found.".to_string())?;
-        if asset.kind != CaptureKind::Image || asset.ocr_text.is_some() || asset.trashed_at.is_some() {
+        if asset.kind != CaptureKind::Image || asset.trashed_at.is_some() {
             return Err("Only active screenshots can be pinned.".into());
         }
         library.readable_asset_url(&asset).map_err(|error| error.to_string())?;
         asset
     };
-    let label = format!("pin-{}", asset.id.to_string().to_lowercase());
+    let label = format!("{}{}", platform::PIN_WINDOW_LABEL_PREFIX, asset.id.to_string().to_lowercase());
     if let Some(window) = app.get_webview_window(&label) {
-        restore_pinned_window(&window)?;
+        restore_pinned_window(&app, &window)?;
         return Ok(());
     }
     let source_width = asset.pixel_width.max(1) as f64;
@@ -604,11 +887,11 @@ async fn open_pinned_screenshot(app: AppHandle, id: String) -> Result<(), String
     let asset_id = asset.id;
     tauri::async_runtime::spawn_blocking(move || {
         if let Some(window) = app.get_webview_window(&label) {
-            restore_pinned_window(&window)?; return Ok(());
+            restore_pinned_window(&app, &window)?; return Ok(());
         }
         let builder = WebviewWindowBuilder::new(&app, label,
             WebviewUrl::App(format!("index.html?window=pin&id={asset_id}").into()))
-            .title("Pinned Screenshot — Kiri")
+            .title("Pinned Screenshot — Lumen")
             .inner_size(width, height)
             .min_inner_size(80.0, 60.0)
             // GTK needs resizable windows for both native and programmatic
@@ -643,9 +926,86 @@ async fn open_pinned_screenshot(app: AppHandle, id: String) -> Result<(), String
             let _ = window.close();
             return Err(format!("Pinned screenshot could not be shown: {error}"));
         }
+        // The builder already asked for the topmost band, but that request is
+        // applied asynchronously. Assert it now so the pin is above other
+        // applications from its first visible frame, and keep the self-heal
+        // running for as long as any pin exists. A pin that is merely not
+        // verifiably on top must not fail the whole action.
+        if let Err(error) = platform::assert_window_topmost(&window) {
+            log::warn!("[pin] topmost band could not be asserted asset_id={asset_id}: {error}");
+        }
+        platform::ensure_pin_topmost_guard(&app);
         log::info!("[pin] screenshot opened asset_id={asset_id}");
         Ok(())
     }).await.map_err(|error| format!("Pinned screenshot window stopped: {error}"))?
+}
+
+/// Pastes the clipboard as pins: an image, copied image files, or text.
+///
+/// This is the F3 action. It creates the same native pins as the screenshot
+/// toolbar, centred on the pointer and cascaded, and never writes the content
+/// to the library or to disk.
+#[tauri::command]
+pub async fn paste_as_pin(app: AppHandle) -> Result<usize, String> {
+    paste_as_pin_impl(app).await
+}
+
+#[cfg(windows)]
+async fn paste_as_pin_impl(app: AppHandle) -> Result<usize, String> {
+    let (scale, workarea) = native_pin_target(&app)?;
+    let cursor = app
+        .cursor_position()
+        .map_err(|error| format!("The pinned image could not be placed: {error}"))?;
+    let (budget, cascade) = {
+        let state = app.state::<AppState>();
+        let pins = state.pins.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        (
+            crate::pin::MAX_PIN_SOURCE_BYTES.saturating_sub(pins.source_bytes()),
+            pins.len(),
+        )
+    };
+    let sources = tauri::async_runtime::spawn_blocking(move || {
+        crate::pin::clipboard::read_sources(scale, budget)
+    })
+    .await
+    .map_err(|error| format!("The clipboard could not be read: {error}"))??;
+
+    // A burst is atomic: refuse it up front instead of opening half of it and
+    // then failing on the pin that no longer fits.
+    let source_total = sources
+        .iter()
+        .fold(0u64, |total, source| total.saturating_add(source.image.bytes()));
+    if sources.len() > crate::pin::MAX_PINS.saturating_sub(cascade) || source_total > budget {
+        return Err("Close a pinned image before pinning another.".into());
+    }
+
+    let mut opened = 0usize;
+    for (index, source) in sources.into_iter().enumerate() {
+        let frame = crate::pin::initial_frame(
+            (source.image.width, source.image.height),
+            (f64::from(cursor.x), f64::from(cursor.y)),
+            workarea,
+            cascade + index,
+        );
+        crate::pin::surface::open(
+            &app,
+            crate::pin::surface::PinSpec {
+                image: source.image,
+                frame,
+                scale,
+                origin: crate::pin::PinOrigin::Clipboard,
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        opened += 1;
+    }
+    log::info!("[pin] clipboard paste opened {opened} pin(s)");
+    Ok(opened)
+}
+
+#[cfg(not(windows))]
+async fn paste_as_pin_impl(_app: AppHandle) -> Result<usize, String> {
+    Err("Pinned images are only available on Windows.".into())
 }
 
 #[tauri::command]
@@ -675,7 +1035,6 @@ pub fn open_editor(app: AppHandle, id: String, recognize_qr: Option<bool>) -> Re
         return Ok(());
     }
     let asset_id = asset.id;
-    let read_only = asset.ocr_text.is_some();
     std::thread::Builder::new()
         .name("kiri-open-editor".into())
         .spawn(move || {
@@ -694,13 +1053,12 @@ pub fn open_editor(app: AppHandle, id: String, recognize_qr: Option<bool>) -> Re
                 return;
             }
             let qr_query = if recognize_qr { "&qr=1" } else { "" };
-            let read_only_query = if read_only { "&readonly=1" } else { "" };
             match WebviewWindowBuilder::new(
                 &app,
                 label,
-                WebviewUrl::App(format!("index.html?window=editor&id={asset_id}{qr_query}{read_only_query}").into()),
+                WebviewUrl::App(format!("index.html?window=editor&id={asset_id}{qr_query}").into()),
             )
-            .title("kiri")
+            .title("Lumen")
             .inner_size(880.0, 620.0)
             .min_inner_size(520.0, 420.0)
             .resizable(true)
@@ -1427,10 +1785,7 @@ pub async fn import_media(
             dialog_app
                 .dialog()
                 .file()
-                .add_filter(
-                    "Images and videos",
-                    &["png", "jpg", "jpeg", "webp", "mp4", "mov"],
-                )
+                .add_filter("Videos", &["mp4", "mov"])
                 .blocking_pick_files()
                 .unwrap_or_default()
                 .into_iter()
@@ -1459,6 +1814,12 @@ pub async fn import_media(
         for path in selected {
             let imported = (|| -> Result<String, String> {
                 let prepared = crate::media_import::prepare(&path).map_err(|e| e.to_string())?;
+                // The library is the home of recorded video: a screenshot or a
+                // still image is clipboard-first and would not be listed, so an
+                // image dropped here is refused instead of disappearing.
+                if prepared.kind == CaptureKind::Image {
+                    return Err("Only video files can be imported into the library.".into());
+                }
                 let state = app.state::<AppState>();
                 let mut context = state.library.lock().unwrap();
                 if context.expected_library_id() != identity
@@ -1900,8 +2261,24 @@ fn export_gif_file(
 // Capture flow commands (Windows startup is dispatched from a worker thread)
 // ---------------------------------------------------------------------------
 
-fn capture_context(session: &CaptureSession) -> CaptureContextDto {
-    let display = &session.display;
+/// Label of the overlay on the display that owned the pointer at capture
+/// start. Secondary overlays use `overlay-2`, `overlay-3`, ...
+const PRIMARY_OVERLAY_LABEL: &str = "overlay";
+
+fn overlay_label_for(display_index: usize) -> String {
+    if display_index == 0 {
+        PRIMARY_OVERLAY_LABEL.to_string()
+    } else {
+        format!("overlay-{}", display_index + 1)
+    }
+}
+
+fn capture_context(session: &CaptureSession, display_index: usize) -> CaptureContextDto {
+    let display = session
+        .displays
+        .get(display_index)
+        .or_else(|| session.displays.first())
+        .expect("a capture session always owns one frozen display");
     CaptureContextDto {
         capture_id: session.capture_id,
         initial_mode: session.initial_mode,
@@ -1915,16 +2292,42 @@ fn capture_context(session: &CaptureSession) -> CaptureContextDto {
     }
 }
 
+fn capture_context_for_owner(
+    session: &CaptureSession,
+    owner: Option<&str>,
+) -> Result<CaptureContextDto, String> {
+    // A caller that names an overlay only ever gets that overlay's display. An
+    // unknown label fails closed instead of borrowing display 0's pixels
+    // (ADR 0117).
+    let display_index = match owner {
+        Some(label) => session
+            .display_index_for_overlay(label)
+            .ok_or_else(|| "This window is not part of the active capture session.".to_string())?,
+        None => 0,
+    };
+    Ok(capture_context(session, display_index))
+}
+
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub fn start_capture(app: AppHandle) -> Result<CaptureContextDto, String> {
-    start_capture_with_mode(app, crate::state::CaptureMode::Screenshot)
+pub fn start_capture(window: WebviewWindow, app: AppHandle) -> Result<CaptureContextDto, String> {
+    let mode = crate::state::load_capture_mode(&app);
+    start_capture_with_owner(app, mode, Some(window.label().to_string()))
 }
 
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn start_capture_with_mode(
     app: AppHandle,
     initial_mode: crate::state::CaptureMode,
+) -> Result<CaptureContextDto, String> {
+    start_capture_with_owner(app, initial_mode, None)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn start_capture_with_owner(
+    app: AppHandle,
+    initial_mode: crate::state::CaptureMode,
+    owner_label: Option<String>,
 ) -> Result<CaptureContextDto, String> {
     crate::scroll_capture::ensure_idle(&app)?;
     log::info!("start_capture: beginning capture flow");
@@ -1940,9 +2343,12 @@ pub(crate) fn start_capture_with_mode(
                 log::info!(
                     "start_capture: returning active session during startup capture_id={} overlays={}",
                     session.capture_id,
-                    session.overlay_labels.len()
+                    session.overlays.len()
                 );
-                return Ok(capture_context(session));
+                let context = capture_context_for_owner(session, owner_label.as_deref())?;
+                drop(capture);
+                maybe_start_secondary_display_capture(&app, owner_label.as_deref());
+                return Ok(context);
             }
             log::warn!("start_capture: ignored concurrent native display freeze request");
             return Err("Screen capture is already starting.".into());
@@ -1960,9 +2366,12 @@ pub(crate) fn start_capture_with_mode(
             log::info!(
                 "start_capture: returning active session capture_id={} overlays={}",
                 session.capture_id,
-                session.overlay_labels.len()
+                session.overlays.len()
             );
-            return Ok(capture_context(session));
+            let context = capture_context_for_owner(session, owner_label.as_deref())?;
+            drop(capture);
+            maybe_start_secondary_display_capture(&app, owner_label.as_deref());
+            return Ok(context);
         }
         let recording = state.recording.lock().unwrap();
         if recording.is_recording
@@ -1989,12 +2398,12 @@ pub(crate) fn start_capture_with_mode(
         match crate::capture::current::check_capture_permission() {
             PermissionState::Authorized => {}
             PermissionState::RestartRequired => {
-                let message = "Screen Recording access was granted. Quit and reopen Kiri once to finish enabling capture.";
+                let message = "Screen Recording access was granted. Quit and reopen Lumen once to finish enabling capture.";
                 emit_error(&app, message.into(), Some(RecoveryAction::QuitKiri));
                 return Err(message.into());
             }
             PermissionState::SettingsRequired => {
-                let message = "Screen Recording is off. Enable Kiri in System Settings, then quit and reopen it once.";
+                let message = "Screen Recording is off. Enable Lumen in System Settings, then quit and reopen it once.";
                 emit_error(&app, message.into(), Some(RecoveryAction::OpenSettings));
                 return Err(message.into());
             }
@@ -2038,12 +2447,30 @@ pub(crate) fn start_capture_with_mode(
 
 #[cfg(target_os = "linux")]
 #[tauri::command]
-pub async fn start_capture(app: AppHandle) -> Result<CaptureContextDto, String> {
+pub async fn start_capture(window: WebviewWindow, app: AppHandle) -> Result<CaptureContextDto, String> {
+    let owner_label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        start_linux_capture_from_shortcut(app, crate::state::CaptureMode::Screenshot)
+        let mode = crate::state::load_capture_mode(&app);
+        start_linux_capture_from_shortcut(app, mode, Some(owner_label))
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+/// Persist the mode the overlay last used. The frontend is the only writer;
+/// the value is read by the generic capture entry points.
+#[tauri::command]
+pub fn set_capture_mode(app: AppHandle, mode: String) -> Result<(), String> {
+    let parsed = crate::state::parse_capture_mode(&mode)
+        .ok_or_else(|| format!("Unknown capture mode: {mode}"))?;
+    if let Err(error) = crate::state::save_capture_mode(&app, parsed) {
+        // The preference is a convenience, never a prerequisite: a failed
+        // write keeps the current capture running and only affects the next
+        // generic entry point.
+        log::warn!("set_capture_mode: could not persist {mode}: {error}");
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -2060,11 +2487,18 @@ struct LinuxCapturePrep {
 pub(crate) fn start_linux_capture_from_shortcut(
     app: AppHandle,
     initial_mode: crate::state::CaptureMode,
+    owner_label: Option<String>,
 ) -> Result<CaptureContextDto, String> {
     log::info!("start_linux_capture_from_shortcut: beginning capture flow");
     let state = app.state::<AppState>();
-    if let Some(session) = state.capture.lock().unwrap().session.as_ref() {
-        return Ok(capture_context(session));
+    {
+        let capture = state.capture.lock().unwrap();
+        if let Some(session) = capture.session.as_ref() {
+            let context = capture_context_for_owner(session, owner_label.as_deref())?;
+            drop(capture);
+            maybe_start_secondary_display_capture(&app, owner_label.as_deref());
+            return Ok(context);
+        }
     }
     let _start_permit = state
         .capture_start
@@ -2273,7 +2707,7 @@ fn finish_frozen_capture(
     };
     log::info!("start_capture: frozen image published capture_id={capture_id}");
 
-    let overlay_label = "overlay".to_string();
+    let overlay_label = overlay_label_for(0);
     log::info!("start_capture: publishing capture session capture_id={capture_id}");
     {
         let state = app.state::<AppState>();
@@ -2281,19 +2715,31 @@ fn finish_frozen_capture(
         capture.session = Some(CaptureSession {
             capture_id,
             initial_mode,
-            display,
+            displays: vec![display],
+            overlays: vec![OverlayBinding {
+                label: overlay_label.clone(),
+                display_index: 0,
+                token: capture_token.clone(),
+            }],
+            secondary_displays_started: false,
             source_application: name,
             return_pid: pid,
             was_kiri_frontmost,
             hidden_windows,
-            overlay_labels: vec![overlay_label.clone()],
             annotation: None,
         });
     }
     log::info!("start_capture: capture session published capture_id={capture_id}");
 
     log::info!("start_capture: creating overlay window capture_id={capture_id}");
-    if let Err(error) = create_overlay_window(app, overlay_frame, overlay_scale, &capture_token) {
+    if let Err(error) = create_overlay_window(
+        app,
+        &overlay_label,
+        overlay_frame,
+        overlay_scale,
+        &capture_token,
+        true,
+    ) {
         let failed_session = {
             let state = app.state::<AppState>();
             let mut capture = state.capture.lock().unwrap();
@@ -2321,8 +2767,222 @@ fn finish_frozen_capture(
     #[cfg(windows)]
     platform::activate_self();
     log::info!("start_capture: overlay window ready ({overlay_label})");
+    // Pins must leave the topmost band before the frozen image can capture a
+    // click meant for the toolbar.
+    sync_pin_capture_gate(app);
 
     Ok(context)
+}
+
+/// Starts the one-time secondary-display freeze. Only the primary overlay may
+/// trigger this, and only after it has received its own context, so other
+/// displays never delay the display the user is already interacting with.
+fn maybe_start_secondary_display_capture(app: &AppHandle, owner: Option<&str>) {
+    if owner != Some(PRIMARY_OVERLAY_LABEL) {
+        return;
+    }
+    let (capture_id, primary_display_id) = {
+        let state = app.state::<AppState>();
+        let mut capture = state.capture.lock().unwrap();
+        let Some(session) = capture.session.as_mut() else {
+            return;
+        };
+        if session.secondary_displays_started {
+            return;
+        }
+        session.secondary_displays_started = true;
+        (
+            session.capture_id,
+            session.displays.first().map(|display| display.display_id),
+        )
+    };
+    log::info!("start_capture: starting secondary display freeze capture_id={capture_id}");
+    let app = app.clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name("kiri-capture-displays".into())
+        .spawn(move || capture_secondary_displays(app, capture_id, primary_display_id))
+    {
+        log::warn!("start_capture: could not start the display coordinator: {error}");
+    }
+}
+
+fn capture_secondary_displays(
+    app: AppHandle,
+    capture_id: uuid::Uuid,
+    primary_display_id: Option<u32>,
+) {
+    let Some(ids) = run_on_main_with_result(&app, capture_backend::display_ids) else {
+        log::warn!("start_capture: could not enumerate displays for secondary overlays");
+        return;
+    };
+    let ids = match ids {
+        Ok(ids) => ids,
+        Err(error) => {
+            log::warn!("start_capture: display enumeration failed: {error}");
+            return;
+        }
+    };
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        if primary_display_id == Some(id) || !seen.insert(id) {
+            continue;
+        }
+        if !capture_session_is_active(&app, capture_id) {
+            log::info!("start_capture: secondary display freeze stopped; session ended");
+            return;
+        }
+        // Freezing the next display never blocks the desktop: ScreenCaptureKit
+        // requires the main thread, while the Windows and X11 backends already
+        // run their own capture worker.
+        let display = match freeze_secondary_display(&app, id) {
+            Ok(display) => display,
+            Err(error) => {
+                // A disconnected or unavailable display is skipped; the
+                // primary session and every already-created overlay continue.
+                log::warn!("start_capture: skipping display {id}: {error}");
+                continue;
+            }
+        };
+        let display_id = display.display_id;
+        let app_for_main = app.clone();
+        match run_on_main_with_result(&app, move || {
+            add_secondary_display_overlay(&app_for_main, capture_id, display)
+        }) {
+            Some(Ok(())) => {
+                log::info!("start_capture: secondary overlay ready display_id={display_id}")
+            }
+            Some(Err(error)) => {
+                log::warn!("start_capture: secondary overlay failed display_id={display_id}: {error}")
+            }
+            None => return,
+        }
+    }
+    log::info!("start_capture: secondary display freeze complete capture_id={capture_id}");
+}
+
+/// Freezes one secondary display without stalling the primary overlay.
+/// ScreenCaptureKit and `NSScreen` enumeration are main-thread-only; the
+/// Windows and X11 backends capture on their own worker and are safe here.
+fn freeze_secondary_display(
+    app: &AppHandle,
+    id: u32,
+) -> Result<crate::capture::CapturedDisplay, String> {
+    #[cfg(target_os = "macos")]
+    {
+        run_on_main_with_result(app, move || {
+            capture_backend::capture_display_by_id(id)
+        })
+        .ok_or_else(|| "The main thread stopped during secondary display freeze.".to_string())?
+        .map_err(|error| format!("{error:#}"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        capture_backend::capture_display_by_id(id).map_err(|error| format!("{error:#}"))
+    }
+}
+
+fn capture_session_is_active(app: &AppHandle, capture_id: uuid::Uuid) -> bool {
+    app.state::<AppState>()
+        .capture
+        .lock()
+        .unwrap()
+        .session
+        .as_ref()
+        .is_some_and(|session| session.capture_id == capture_id)
+}
+
+fn run_on_main_with_result<T: Send + 'static>(
+    app: &AppHandle,
+    task: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (sender, receiver) = mpsc::channel();
+    if app
+        .run_on_main_thread(move || {
+            let _ = sender.send(task());
+        })
+        .is_err()
+    {
+        return None;
+    }
+    // Native freezing has its own bounded timeouts; this outer bound only
+    // prevents a dead event loop from keeping the coordinator alive forever.
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(120))
+        .ok()
+}
+
+fn add_secondary_display_overlay(
+    app: &AppHandle,
+    capture_id: uuid::Uuid,
+    display: crate::capture::CapturedDisplay,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let (label, frame, scale, token) = {
+        let mut capture = state.capture.lock().unwrap();
+        let Some(session) = capture
+            .session
+            .as_mut()
+            .filter(|session| session.capture_id == capture_id)
+        else {
+            return Err("The capture session ended.".into());
+        };
+        let label = overlay_label_for(session.displays.len());
+        if session.overlays.iter().any(|overlay| overlay.label == label) {
+            return Err("The overlay binding already exists.".into());
+        }
+        let token = {
+            let store = app.state::<crate::protocol::ProtocolStore>();
+            crate::protocol::set_frozen_png(&store, capture_id, display.png_data.clone())
+        };
+        let frame = display.screen_frame;
+        let scale = display.backing_scale;
+        let display_index = session.displays.len();
+        session.displays.push(display);
+        session.overlays.push(OverlayBinding {
+            label: label.clone(),
+            display_index,
+            token: token.clone(),
+        });
+        (label, frame, scale, token)
+    };
+
+    if let Err(error) = create_overlay_window(app, &label, frame, scale, &token, false) {
+        // Roll back only this last binding; earlier displays keep their own
+        // indices and continue to work.
+        let mut capture = state.capture.lock().unwrap();
+        if let Some(session) = capture
+            .session
+            .as_mut()
+            .filter(|session| session.capture_id == capture_id)
+        {
+            if session
+                .overlays
+                .last()
+                .is_some_and(|overlay| overlay.label == label)
+            {
+                session.overlays.pop();
+                session.displays.pop();
+            }
+        }
+        return Err(error.to_string());
+    }
+
+    // Cancel or confirmation can consume the session while this WebView is
+    // being created. Never leave that late overlay covering the desktop.
+    let still_bound = {
+        let capture = state.capture.lock().unwrap();
+        capture.session.as_ref().is_some_and(|session| {
+            session.capture_id == capture_id && session.has_overlay(&label)
+        })
+    };
+    if !still_bound {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.close();
+        }
+        return Err("The capture session ended.".into());
+    }
+    Ok(())
 }
 
 fn hide_library_windows(app: &AppHandle) -> Result<Vec<String>, String> {
@@ -2388,11 +3048,13 @@ pub(crate) fn restore_capture_origin(
 
 fn create_overlay_window(
     app: &AppHandle,
+    label: &str,
     screen_frame: Rect,
     backing_scale: f64,
     capture_token: &str,
+    focus: bool,
 ) -> anyhow::Result<String> {
-    let label = "overlay".to_string();
+    let label = label.to_string();
     // Tauri inner_size/position are LOGICAL (points on macOS, DIPs on
     // Windows); the frontend works in display points 1:1.
     let builder = WebviewWindowBuilder::new(
@@ -2400,7 +3062,7 @@ fn create_overlay_window(
         label.clone(),
         WebviewUrl::App(format!("index.html?window=overlay&captureToken={capture_token}").into()),
     )
-    .title("kiri")
+    .title("Lumen")
     .inner_size(screen_frame.width, screen_frame.height)
     .position(screen_frame.x, screen_frame.y)
     .decorations(false)
@@ -2414,6 +3076,13 @@ fn create_overlay_window(
     // configured, so the first map cannot inherit a window-manager frame offset.
     #[cfg(target_os = "linux")]
     let builder = builder.visible(false);
+    // Secondary overlays must never steal keyboard focus from the primary
+    // display. On macOS the primary keeps its existing non-activating
+    // full-screen ordering path.
+    #[cfg(any(windows, target_os = "linux"))]
+    let builder = builder.focused(focus);
+    #[cfg(target_os = "macos")]
+    let builder = if focus { builder } else { builder.focused(false) };
     // Build visible on macOS: showing a newly created hidden WKWebView can race
     // initialization and leave the page blank.
     log::info!("create_overlay_window: building webview label={label}");
@@ -2441,7 +3110,7 @@ fn create_overlay_window(
         return Err(error.into());
     }
     #[cfg(any(windows, target_os = "linux"))]
-    {
+    if focus {
         log::info!("create_overlay_window: focusing window label={label}");
         if let Err(error) = window.set_focus() {
             let _ = window.close();
@@ -2464,22 +3133,20 @@ pub fn cancel_capture(window: WebviewWindow, app: AppHandle) -> Result<(), Strin
     let session = {
         let mut capture = state.capture.lock().unwrap();
         match capture.session.as_ref() {
-            Some(session)
-                if session
-                    .overlay_labels
-                    .iter()
-                    .any(|label| label == window.label()) =>
-            {
-                capture.session.take()
-            }
+            Some(session) if session.has_overlay(window.label()) => capture.session.take(),
             Some(_) => return Err("Capture command is only available to its overlay.".into()),
-            None if window.label() == "overlay" => None,
+            None if window.label() == PRIMARY_OVERLAY_LABEL
+                || window.label().starts_with("overlay-") =>
+            {
+                None
+            }
             None => return Err("Capture command is only available to its overlay.".into()),
         }
     };
     crate::microphone::stop();
     let Some(session) = session else {
         log::info!("cancel_capture: no active session; closing orphan overlay");
+        sync_pin_capture_gate(&app);
         let _ = window.close();
         return Ok(());
     };
@@ -2491,6 +3158,39 @@ pub fn cancel_capture(window: WebviewWindow, app: AppHandle) -> Result<(), Strin
     Ok(())
 }
 
+/// Closes the capture overlay that is calling, from a thread that is not the
+/// event loop.
+///
+/// A confirmed capture leaves the overlay to close itself so the confirmation
+/// reply reaches WebView2 before the window goes away. That close depends on
+/// the `core:window:allow-close` capability, and every display has its own
+/// overlay (`overlay`, `overlay-2`, ...): a label its capability list does not
+/// cover leaves the user stuck in the editing HUD after the capture has
+/// already been saved and pinned. This command is the backend fallback —
+/// running as an async command keeps the close off the IPC thread, so it
+/// cannot deadlock the reply the way a synchronous close inside the handler
+/// would (verified on Windows 10 21H2).
+#[tauri::command]
+pub async fn close_capture_overlay(window: WebviewWindow) {
+    let label = window.label();
+    if label != PRIMARY_OVERLAY_LABEL && !label.starts_with("overlay-") {
+        return;
+    }
+    log::info!("close_capture_overlay: closing label={label}");
+    // Hide before closing: the capture is already saved, so a visible editor
+    // waiting on a native close only looks like an ignored click.
+    let _ = window.hide();
+    let _ = window.close();
+    let owned = window.clone();
+    std::thread::spawn(move || {
+        // A refused close would otherwise keep the hidden window (and its
+        // label) alive. Destroy is addressed by window id, so it cannot reach
+        // a later capture that reuses this label.
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = owned.destroy();
+    });
+}
+
 pub(crate) fn teardown_cancelled_capture(
     app: &AppHandle,
     session: CaptureSession,
@@ -2498,7 +3198,7 @@ pub(crate) fn teardown_cancelled_capture(
 ) {
     invalidate_capture_resources(app, &session);
     if close_overlays {
-        for label in &session.overlay_labels {
+        for label in session.overlay_labels() {
             if let Some(window) = app.get_webview_window(label) {
                 let _ = window.close();
             }
@@ -2510,6 +3210,30 @@ pub(crate) fn teardown_cancelled_capture(
         session.was_kiri_frontmost,
         session.return_pid,
     );
+    sync_pin_capture_gate(app);
+}
+
+/// Keeps native pins out of the capture overlay's way for the whole session.
+///
+/// A pin is topmost, and the frozen screenshot does not contain it (`WDA_
+/// EXCLUDEFROMCAPTURE`), so a pin that floats above the overlay both covers
+/// the image the user is selecting and takes clicks aimed at the toolbar.
+/// A 📌 click that lands on a pin instead of the button leaves the editing HUD
+/// untouched, which is the intermittent "clicked pin, still editing" report.
+/// The gate is derived from the live session, so every path that ends a
+/// capture clears it.
+pub(crate) fn sync_pin_capture_gate(app: &AppHandle) {
+    let active = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .capture
+                .lock()
+                .map(|capture| capture.session.is_some())
+                .ok()
+        })
+        .unwrap_or(false);
+    crate::pin::surface::set_capture_overlay_active(active);
 }
 
 pub(crate) struct CaptureLinkPreparation {
@@ -2529,16 +3253,10 @@ pub(crate) fn prepare_capture_link(
     let session = capture
         .session
         .as_ref()
-        .filter(|session| {
-            session.capture_id == capture_id
-                && session
-                    .overlay_labels
-                    .iter()
-                    .any(|label| label == owner.label())
-        })
+        .filter(|session| session.capture_id == capture_id && session.has_overlay(owner.label()))
         .ok_or("The QR request was canceled.")?;
     let mut hidden_overlays: Vec<WebviewWindow> = Vec::new();
-    for label in &session.overlay_labels {
+    for label in session.overlay_labels() {
         if let Some(window) = app.get_webview_window(label) {
             if window.is_visible().unwrap_or(false) {
                 if window.hide().is_err() {
@@ -2582,8 +3300,7 @@ pub(crate) fn finish_capture_link(
         .session
         .as_ref()
         .filter(|session| {
-            session.capture_id == prepared.capture_id
-                && session.overlay_labels.contains(&prepared.owner_label)
+            session.capture_id == prepared.capture_id && session.has_overlay(&prepared.owner_label)
         })
         .ok_or("The QR request was canceled.")?;
     if !opened {
@@ -2593,7 +3310,7 @@ pub(crate) fn finish_capture_link(
             }
         }
         for label in prepared.hidden_overlays {
-            if session.overlay_labels.contains(&label) {
+            if session.has_overlay(&label) {
                 if let Some(window) = app.get_webview_window(&label) {
                     let _ = window.show();
                 }
@@ -2608,14 +3325,15 @@ pub(crate) fn finish_capture_link(
     drop(capture);
     crate::microphone::stop();
     invalidate_capture_resources(app, &session);
-    for label in session.overlay_labels {
-        state.qr_requests.clear(&label);
+    sync_pin_capture_gate(app);
+    for label in session.overlay_labels() {
+        state.qr_requests.clear(label);
         // Keep the hidden IPC owner alive until WebView2 delivers the open
         // response. Its frontend closes it from onOpened after success.
         if label == prepared.owner_label {
             continue;
         }
-        if let Some(window) = app.get_webview_window(&label) {
+        if let Some(window) = app.get_webview_window(label) {
             let _ = window.close();
         }
     }
@@ -2637,11 +3355,11 @@ pub(crate) fn open_capture_link(
 
 pub(crate) fn invalidate_capture_resources(app: &AppHandle, session: &CaptureSession) {
     let state = app.state::<AppState>();
-    for label in &session.overlay_labels {
+    for label in session.overlay_labels() {
         state
             .ocr_requests
             .clear_owner(&crate::ocr_controller::OcrRequestOwner {
-                label: label.clone(),
+                label: label.to_string(),
                 capture_id: session.capture_id,
             });
     }
@@ -2670,12 +3388,7 @@ pub fn prepare_capture_annotation(
     let session = capture
         .session
         .as_mut()
-        .filter(|session| {
-            session
-                .overlay_labels
-                .iter()
-                .any(|label| label == window.label())
-        })
+        .filter(|session| session.has_overlay(window.label()))
         .ok_or_else(|| {
             "This command is only available from the active capture overlay.".to_string()
         })?;
@@ -2685,14 +3398,225 @@ pub fn prepare_capture_annotation(
         request.selection.width,
         request.selection.height,
     );
-    validate_staged_capture_annotation(&session.display, selection, &document)?;
+    let display = session
+        .display_for_overlay(window.label())
+        .cloned()
+        .ok_or_else(|| "The capture display is no longer available.".to_string())?;
+    validate_staged_capture_annotation(&display, selection, &document)?;
     let token = uuid::Uuid::new_v4();
     session.annotation = Some(StagedCaptureAnnotation {
         token,
+        owner_label: window.label().to_string(),
         selection,
         document,
     });
     Ok(token.to_string())
+}
+
+/// Delay between a queued completion and the backend's own overlay close.
+/// The renderer closes its WebView first, which normally wins; this fallback
+/// hides the HUD shortly after the confirmation reply and then destroys the
+/// window, so a close WebView2 silently ignored can never strand the editing
+/// toolbar on screen.
+const CONFIRMED_OVERLAY_CLOSE_FALLBACK: Duration = Duration::from_millis(320);
+/// The same fallback for a confirmation that consumed the session but then
+/// failed: that overlay can neither confirm nor cancel any more.
+const FAILED_OVERLAY_CLOSE_FALLBACK: Duration = Duration::from_millis(600);
+/// How long a queued completion may wait for its overlays to report
+/// destruction before it is delivered anyway. WebView2 normally delivers that
+/// event within a frame or two; a lost event must never keep the single
+/// completion slot occupied, because every later 📌 click would then be
+/// refused ("the previous capture is still completing") and the restored
+/// editing HUD would look like an ignored click.
+const STALLED_COMPLETION_TIMEOUT: Duration = Duration::from_millis(900);
+
+/// Closes capture overlays that the renderer did not close itself.
+///
+/// Runs on a worker thread after a delay: closing a WebView2 window while its
+/// IPC reply is still in flight is what wedges the Windows UI thread, so the
+/// close always happens after that reply has been delivered.
+///
+/// The windows are addressed by handle rather than by label: Tauri dispatches
+/// close/destroy to the window id, so a leftover handle can never reach a
+/// later capture that reuses the same overlay label. Hiding comes first
+/// because a hidden overlay cannot strand the user in the editing HUD, even
+/// when WebView2 accepts a close and keeps painting the window.
+fn schedule_overlay_close_fallback(
+    app: &AppHandle,
+    capture_id: uuid::Uuid,
+    windows: Vec<WebviewWindow>,
+    delay: Duration,
+) {
+    if windows.is_empty() {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        // A newer capture owns the desktop now. Its overlays must not be
+        // touched, whatever happened to the previous capture's windows — but
+        // the previous completion still has to be delivered below, because a
+        // queued completion is exactly what refuses the new capture's 📌 click.
+        let newer_capture = state
+            .capture
+            .lock()
+            .unwrap()
+            .session
+            .as_ref()
+            .is_some_and(|session| session.capture_id != capture_id);
+        if !newer_capture {
+            for window in &windows {
+                if app.get_webview_window(window.label()).is_none() {
+                    continue;
+                }
+                log::warn!(
+                    "confirm_capture: closing overlay the renderer left open label={}",
+                    window.label()
+                );
+                let _ = window.hide();
+                let _ = window.close();
+            }
+            // A refused or dropped close leaves the window alive and hidden.
+            // Keep the label owned by the destroyed capture from blocking the
+            // next one.
+            std::thread::sleep(Duration::from_millis(300));
+            for window in &windows {
+                let _ = window.destroy();
+            }
+        }
+        // `Destroyed` normally delivers the queued pin. If the event is lost
+        // with the window, deliver the completion explicitly once the manager
+        // has dropped the labels.
+        let labels: Vec<String> = windows.iter().map(|window| window.label().to_string()).collect();
+        for _ in 0..20 {
+            if labels.iter().all(|label| app.get_webview_window(label).is_none()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let waited = {
+            let pending = state.pending_capture_completion.lock().unwrap();
+            match pending.as_ref() {
+                Some(pending) if pending.session.capture_id == capture_id => {
+                    Some(pending.queued_at.elapsed())
+                }
+                _ => None,
+            }
+        };
+        let Some(waited) = waited else { return };
+        // A completion is only ever a saved capture: delivering it is always
+        // better than leaving the slot occupied. Wait out the remaining grace
+        // period, then deliver whatever is still queued, whatever the window
+        // manager did with the overlays.
+        if let Some(remaining) = STALLED_COMPLETION_TIMEOUT.checked_sub(waited) {
+            if !remaining.is_zero() {
+                std::thread::sleep(remaining);
+            }
+        }
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            for label in labels {
+                finalize_confirmed_capture_after_overlay_destroyed(&handle, &label);
+            }
+            finish_stalled_completion(&handle);
+        });
+    });
+}
+
+/// Delivers a queued completion whose overlays are all gone.
+///
+/// The finalizer runs from the overlay's `Destroyed` event. When that event was
+/// missed — the window was already gone when the completion was queued — the
+/// slot stays occupied and every later confirmation fails after consuming its
+/// own session, which leaves the user in the editing HUD.
+fn flush_orphaned_capture_completion(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let (label, stalled) = {
+        let pending = state.pending_capture_completion.lock().unwrap();
+        let Some(pending) = pending.as_ref() else {
+            return;
+        };
+        let stalled = pending.queued_at.elapsed() >= STALLED_COMPLETION_TIMEOUT;
+        let overlays_gone = pending
+            .session
+            .overlay_labels()
+            .all(|label| app.get_webview_window(label).is_none());
+        if !overlays_gone && !stalled {
+            return;
+        }
+        match pending.session.overlays.first() {
+            Some(overlay) => (overlay.label.clone(), stalled),
+            None => return,
+        }
+    };
+    if stalled {
+        // Windows that are still alive belong to a completion whose close was
+        // never reported. Delivering it is what unblocks this confirmation.
+        log::warn!("confirm_capture: delivering a stalled completion label={label}");
+        finish_stalled_completion(app);
+        return;
+    }
+    log::warn!("confirm_capture: finalizing an orphaned completion label={label}");
+    finalize_confirmed_capture_after_overlay_destroyed(app, &label);
+}
+
+/// Delivers a queued completion that has waited longer than a WebView close can
+/// take, so the single pending slot is never left occupied.
+///
+/// Returns `true` when a completion was delivered and the slot is free.
+fn finish_stalled_completion(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    let completed = {
+        let mut slot = state.pending_capture_completion.lock().unwrap();
+        let Some(pending) = slot.as_ref() else {
+            return false;
+        };
+        if pending.queued_at.elapsed() < STALLED_COMPLETION_TIMEOUT {
+            return false;
+        }
+        log::warn!(
+            "confirm_capture: delivering a completion whose overlays never reported destruction labels={}",
+            pending.session.overlays.len()
+        );
+        slot.take()
+    };
+    let Some(completed) = completed else {
+        return false;
+    };
+    // A newer capture owns the desktop right now. Its overlay is waiting for
+    // input, so the finished capture must not take focus back; the pin itself
+    // never activates, so it can still be presented.
+    let (newer_capture, active_labels): (bool, Vec<String>) = {
+        let capture = state.capture.lock().unwrap();
+        match capture.session.as_ref() {
+            Some(session) => (
+                session.capture_id != completed.session.capture_id,
+                session.overlay_labels().map(str::to_string).collect(),
+            ),
+            None => (false, Vec::new()),
+        }
+    };
+    let labels: Vec<String> = completed
+        .session
+        .overlay_labels()
+        .map(str::to_string)
+        .collect();
+    for label in labels {
+        // A label reused by the active capture belongs to that capture: closing
+        // it would end the user's new selection.
+        if active_labels.iter().any(|active| active == &label) {
+            continue;
+        }
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.hide();
+            let _ = window.close();
+        }
+    }
+    deliver_completed_capture(app, completed, !newer_capture);
+    true
 }
 
 #[tauri::command]
@@ -2724,17 +3648,55 @@ pub fn confirm_capture(
     }
 
     let state = app.state::<AppState>();
+    // A completion from an earlier capture keeps the single pending slot busy.
+    // Deliver it if its overlays are already gone; otherwise nudge those
+    // overlays closed and refuse before this capture's session is consumed, so
+    // a repeated Pin click still has something to confirm. Returning only
+    // after the session was taken (the old order) stranded the editing HUD
+    // with no way to confirm or cancel.
+    flush_orphaned_capture_completion(&app);
+    let stalled_completion = {
+        let pending = state.pending_capture_completion.lock().unwrap();
+        pending.as_ref().map(|pending| {
+            (
+                pending.session.capture_id,
+                pending
+                    .session
+                    .overlay_labels()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>(),
+            )
+        })
+    };
+    if let Some((pending_capture, labels)) = stalled_completion {
+        // The queued capture is already saved; delivering it is always right
+        // and frees the slot this confirmation needs. Waiting only while the
+        // close is still fresh keeps a duplicate pin from opening beside a
+        // completion that is about to arrive on its own.
+        if finish_stalled_completion(&app) {
+            log::warn!(
+                "confirm_capture: delivered the stalled completion capture_id={pending_capture} before confirming"
+            );
+        } else {
+            log::warn!(
+                "confirm_capture: previous completion still queued overlays={}",
+                labels.len()
+            );
+            let windows = labels
+                .iter()
+                .filter_map(|label| app.get_webview_window(label))
+                .collect();
+            schedule_overlay_close_fallback(&app, pending_capture, windows, CONFIRMED_OVERLAY_CLOSE_FALLBACK);
+            return Err("The previous capture is still completing.".into());
+        }
+    }
     let (capture_id, max_width, max_height, staged, display) = {
         let capture = state.capture.lock().unwrap();
         let session = capture
             .session
             .as_ref()
             .ok_or_else(|| "No active capture session.".to_string())?;
-        if !session
-            .overlay_labels
-            .iter()
-            .any(|label| label == window.label())
-        {
+        if !session.has_overlay(window.label()) {
             return Err("Capture confirmation is only available to its overlay.".into());
         }
         let staged = session
@@ -2745,12 +3707,22 @@ pub fn confirm_capture(
             .ok_or_else(|| {
                 "The capture annotation snapshot changed before confirmation.".to_string()
             })?;
+        // A snapshot belongs to the display it was prepared on. Confirming
+        // from a peer overlay would pair this image with another screen's
+        // geometry.
+        if staged.owner_label != window.label() {
+            return Err("This selection was prepared on another display.".into());
+        }
+        let display = session
+            .display_for_overlay(&staged.owner_label)
+            .cloned()
+            .ok_or_else(|| "The capture display is no longer available.".to_string())?;
         (
             session.capture_id,
-            session.display.pixel_width,
-            session.display.pixel_height,
+            display.pixel_width,
+            display.pixel_height,
             staged,
-            session.display.clone(),
+            display,
         )
     };
     // Validate the complete PNG before consuming the active session or writing
@@ -2797,9 +3769,24 @@ pub fn confirm_capture(
         session.capture_id
     );
     invalidate_capture_resources(&app, &session);
+    // The session is gone, so the pins that were held below the overlay can
+    // return to the topmost band while the overlay itself is being closed.
+    sync_pin_capture_gate(&app);
+    // The capture is committed from this point on, so its frozen screenshot and
+    // toolbar are stale. Hide every overlay of the session now, before the
+    // clipboard write and library import: those can take a while for a large
+    // annotated capture, and a fully painted toolbar during that time reads as
+    // an ignored 📌 click (the reported intermittent case). The renderer still
+    // closes its own window after this reply; the fallbacks below finish if it
+    // cannot.
+    for label in session.overlay_labels() {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.hide();
+        }
+    }
     // Errors must be visible: show the library window before emitting.
     let session_feedback =
-        match confirm_capture_inner(&app, &state, &session, png, pixel_size, editable_project) {
+        match confirm_capture_inner(&app, &state, &session, &staged.owner_label, png, pixel_size, editable_project) {
             Ok(feedback) => feedback,
             Err(error) => {
                 if let Some(window) = app.get_webview_window("library") {
@@ -2808,17 +3795,36 @@ pub fn confirm_capture(
                 if capture_failure_requires_global_error(error.copied) {
                     emit_error(&app, error.message.clone(), None);
                 }
+                // The session is already consumed, so this overlay can never
+                // confirm or cancel again. Leaving its HUD on screen reads as
+                // an ignored 📌 click, so close it once the error is visible.
+                let failed_windows: Vec<WebviewWindow> = session
+                    .overlay_labels()
+                    .filter_map(|label| app.get_webview_window(label))
+                    .collect();
+                // The capture is gone even though saving failed, so hide the
+                // stale editor now instead of waiting for the delayed close;
+                // the failure itself is reported through the library/notice.
+                for overlay in &failed_windows {
+                    let _ = overlay.hide();
+                }
+                schedule_overlay_close_fallback(
+                    &app,
+                    session.capture_id,
+                    failed_windows,
+                    FAILED_OVERLAY_CLOSE_FALLBACK,
+                );
                 return Err(error.message);
             }
         };
     let mut pending = state.pending_capture_completion.lock().unwrap();
-    if pending.is_some() {
-        return Err("The previous capture is still completing.".into());
-    }
     log::info!(
         "confirm_capture: completion queued until overlay destruction labels={}",
-        session.overlay_labels.len()
+        session.overlays.len()
     );
+    let confirmed_capture = session.capture_id;
+    let confirmed_labels: Vec<String> =
+        session.overlay_labels().map(str::to_string).collect();
     if let Some(id) = session_feedback.preview.asset_id.as_ref().and_then(|id| uuid::Uuid::parse_str(id).ok()) {
         state.capture_pin_placements.lock().unwrap().remember(id,
             crate::core::pin_placement::CapturePinPlacement::new(
@@ -2830,7 +3836,34 @@ pub fn confirm_capture(
         preview: session_feedback.preview,
         monitor: session_feedback.monitor,
         pin_on_top,
+        queued_at: Instant::now(),
     });
+    drop(pending);
+    let confirmed_windows: Vec<WebviewWindow> = confirmed_labels
+        .iter()
+        .filter_map(|label| app.get_webview_window(label))
+        .collect();
+    // Hide the overlays before this command replies. The capture is already
+    // saved, so the frozen screenshot and its toolbar are stale from this
+    // moment on: a renderer that is slow, wedged, or refused permission to
+    // close its own window must not be able to leave the editing HUD on
+    // screen (that read as an ignored 📌 click). The renderer still closes the
+    // window normally; these hidden windows are destroyed by the fallback
+    // below if that close never arrives.
+    for overlay in &confirmed_windows {
+        let _ = overlay.hide();
+    }
+    // The renderer closes its own overlay after this reply arrives. If WebView2
+    // accepts that close but never destroys the window, the queued completion —
+    // and with it the pin — never runs and the editing HUD stays on screen.
+    // This worker-thread close hides the HUD, then destroys the windows and
+    // delivers the queued completion if the destroyed event was lost.
+    schedule_overlay_close_fallback(
+        &app,
+        confirmed_capture,
+        confirmed_windows,
+        CONFIRMED_OVERLAY_CLOSE_FALLBACK,
+    );
     Ok(())
 }
 
@@ -2853,16 +3886,18 @@ fn confirm_capture_inner(
     app: &AppHandle,
     state: &AppState,
     session: &CaptureSession,
+    owner_label: &str,
     png: &[u8],
     pixel_size: (i64, i64),
     editable_project: Option<(Vec<u8>, AnnotationDocument)>,
 ) -> Result<CaptureCompletionFeedback, CaptureConfirmationFailure> {
     log::info!("confirm_capture: bytes={}", png.len());
 
-    let completion_monitor = session.overlay_labels.iter().find_map(|label| {
-        app.get_webview_window(label)
-            .and_then(|window| window.current_monitor().ok().flatten())
-    });
+    // Feedback belongs on the display whose overlay confirmed this capture,
+    // never on whichever peer overlay happened to be created first.
+    let completion_monitor = app
+        .get_webview_window(owner_label)
+        .and_then(|window| window.current_monitor().ok().flatten());
     let copied = match platform::write_image_to_clipboard(png) {
         Ok(()) => {
             log::info!("confirm_capture: clipboard write complete");
@@ -2970,11 +4005,15 @@ fn confirm_capture_inner(
 /// Saves pixels assembled internally by the bounded scrolling document.
 /// Never accepts a renderer-provided image or relaxes normal capture IPC limits.
 pub(crate) fn save_scroll_capture(
-    app: &AppHandle, session: &CaptureSession, png: &[u8], size: (u32, u32),
+    app: &AppHandle,
+    session: &CaptureSession,
+    owner_label: &str,
+    png: &[u8],
+    size: (u32, u32),
 ) -> Result<CompletionPreviewDto, String> {
     let state = app.state::<AppState>();
     let _transition = state.library_transition.lock().unwrap();
-    confirm_capture_inner(app, &state, session, png,
+    confirm_capture_inner(app, &state, session, owner_label, png,
         (i64::from(size.0), i64::from(size.1)), None)
         .map(|feedback| feedback.preview)
         .map_err(|failure| failure.message)
@@ -2987,24 +4026,48 @@ pub(crate) fn save_scroll_capture(
 /// monitors; the last one presents feedback and restores the capture origin.
 pub(crate) fn finalize_confirmed_capture_after_overlay_destroyed(app: &AppHandle, label: &str) {
     let state = app.state::<AppState>();
+    // Overlay labels (`overlay`, `overlay-2`, ...) are reused by every capture,
+    // so the event alone does not prove which capture it belongs to. When the
+    // active session owns this label under a different capture id, this window
+    // belongs to the next capture and must not finalize the old completion.
+    let queued_capture = {
+        let slot = state.pending_capture_completion.lock().unwrap();
+        match slot.as_ref() {
+            Some(pending) if pending.session.has_overlay(label) => Some(pending.session.capture_id),
+            _ => None,
+        }
+    };
+    let Some(queued_capture) = queued_capture else {
+        return;
+    };
+    let owned_by_later_capture = {
+        let capture = state.capture.lock().unwrap();
+        capture
+            .session
+            .as_ref()
+            .is_some_and(|session| session.capture_id != queued_capture && session.has_overlay(label))
+    };
+    if owned_by_later_capture {
+        log::info!("confirm_capture: ignoring a destroy event from a later capture label={label}");
+        return;
+    }
+
     let (remaining_labels, completed) = {
         let mut slot = state.pending_capture_completion.lock().unwrap();
         let Some(pending) = slot.as_mut() else {
             return;
         };
-        if !pending
-            .session
-            .overlay_labels
-            .iter()
-            .any(|owner| owner == label)
-        {
+        if !pending.session.has_overlay(label) {
             return;
         }
-        pending
+        pending.session.overlays.retain(|overlay| {
+            overlay.label != label && app.get_webview_window(&overlay.label).is_some()
+        });
+        let remaining_labels: Vec<String> = pending
             .session
-            .overlay_labels
-            .retain(|owner| owner != label && app.get_webview_window(owner).is_some());
-        let remaining_labels = pending.session.overlay_labels.clone();
+            .overlay_labels()
+            .map(str::to_string)
+            .collect();
         let completed = if remaining_labels.is_empty() {
             slot.take()
         } else {
@@ -3022,32 +4085,48 @@ pub(crate) fn finalize_confirmed_capture_after_overlay_destroyed(app: &AppHandle
     }
 
     if let Some(completed) = completed {
-        restore_focus(app, &completed.session);
-        if completed.pin_on_top {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut preview = completed.preview;
-                let result = match preview.asset_id.clone() {
-                    Some(id) => open_pinned_screenshot(app.clone(), id).await,
-                    None => Err("The saved screenshot is unavailable.".into()),
-                };
-                if let Err(error) = result {
-                    log::error!("confirm_capture: pin failed: {error}");
-                    preview.title = "Could not pin this screenshot.".into();
-                    show_completion_preview(&app, &preview, completed.monitor);
-                } else if !preview.copied {
-                    emit_notice_on_monitor(
-                        &app,
-                        "Saved — Copy Failed".into(),
-                        "exclamationmark.triangle.fill".into(),
-                        completed.monitor,
-                    );
-                }
-            });
-        } else {
-            show_completion_preview(app, &completed.preview, completed.monitor);
-        }
+        deliver_completed_capture(app, completed, true);
         log::info!("confirm_capture: completion flow returned after overlay destruction");
+    }
+}
+
+/// Presents a finished capture.
+///
+/// `restore_origin` returns focus to the application the screenshot was taken
+/// from. It is skipped when a newer capture already owns the desktop: that
+/// overlay is waiting for input, and the pin itself never activates, so the
+/// finished capture can still be presented without stealing that focus.
+fn deliver_completed_capture(
+    app: &AppHandle,
+    completed: PendingCaptureCompletion,
+    restore_origin: bool,
+) {
+    if restore_origin {
+        restore_focus(app, &completed.session);
+    }
+    if completed.pin_on_top {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut preview = completed.preview;
+            let result = match preview.asset_id.clone() {
+                Some(id) => open_pinned_screenshot(app.clone(), id).await,
+                None => Err("The saved screenshot is unavailable.".into()),
+            };
+            if let Err(error) = result {
+                log::error!("confirm_capture: pin failed: {error}");
+                preview.title = "Could not pin this screenshot.".into();
+                show_completion_preview(&app, &preview, completed.monitor);
+            } else if !preview.copied {
+                emit_notice_on_monitor(
+                    &app,
+                    "Saved — Copy Failed".into(),
+                    "exclamationmark.triangle.fill".into(),
+                    completed.monitor,
+                );
+            }
+        });
+    } else {
+        show_completion_preview(app, &completed.preview, completed.monitor);
     }
 }
 
@@ -3404,7 +4483,7 @@ pub fn get_asset_annotation_project(
         uuid::Uuid::parse_str(&id).map_err(|_| "The edited asset id is invalid.".to_string())?;
     require_editor_window(&window, &parsed)?;
     let state = app.state::<AppState>();
-    let (snapshot, expected_size, read_only) = {
+    let (snapshot, expected_size) = {
         let mut context = state.library.lock().unwrap();
         let library = context.library().map_err(|error| error.to_string())?;
         let asset = library
@@ -3414,11 +4493,10 @@ pub fn get_asset_annotation_project(
             return Err("Only image captures can be edited.".into());
         }
         let expected_size = (asset.pixel_width, asset.pixel_height);
-        let read_only = asset.ocr_text.is_some();
         let snapshot = library
             .load_editor_snapshot(&parsed)
             .map_err(|error| error.to_string())?;
-        (snapshot, expected_size, read_only)
+        (snapshot, expected_size)
     };
     let document_json = snapshot
         .document
@@ -3435,7 +4513,7 @@ pub fn get_asset_annotation_project(
         revision_sha256: snapshot.revision_sha256,
         state: snapshot.state,
         document_json,
-        read_only,
+        read_only: false,
     })
 }
 
@@ -3722,7 +4800,7 @@ pub fn copy_capture_color(
     let state = app.state::<AppState>();
     let capture = state.capture.lock().unwrap();
     capture.session.as_ref()
-        .filter(|session| session.overlay_labels.iter().any(|label| label == window.label()))
+        .filter(|session| session.has_overlay(window.label()))
         .ok_or("Capture command is only available to its overlay.")?;
     // Keep the frozen screen and selection available for more samples. OCR's
     // copy_text deliberately completes its session and is a separate action.
@@ -3762,7 +4840,7 @@ pub enum SupportFolder { Settings, Logs, Errors, Temporary }
 pub async fn open_support_folder(app: AppHandle, window: WebviewWindow, folder: SupportFolder) -> Result<(), String> {
     require_library_window(&window)?;
     let path = match folder {
-        SupportFolder::Settings => app.path().app_config_dir().ok(),
+        SupportFolder::Settings => crate::paths::config_dir(&app),
         SupportFolder::Logs => {
             #[cfg(windows)]
             { crate::diagnostics::windows_log_dir() }
@@ -3820,6 +4898,7 @@ pub struct StartRecordingRequest {
 #[tauri::command]
 pub async fn start_recording_flow(
     app: AppHandle,
+    window: WebviewWindow,
     request: StartRecordingRequest,
 ) -> Result<(), String> {
     crate::scroll_capture::ensure_idle(&app)?;
@@ -3827,8 +4906,10 @@ pub async fn start_recording_flow(
     // user-initiated capture session.
     {
         let state = app.state::<AppState>();
-        if state.capture.lock().unwrap().session.is_none() {
-            return Err("No active capture session.".into());
+        let capture = state.capture.lock().unwrap();
+        match capture.session.as_ref() {
+            Some(session) if session.has_overlay(window.label()) => {}
+            _ => return Err("No active capture session.".into()),
         }
     }
     {
@@ -3862,7 +4943,7 @@ pub async fn start_recording_flow(
             }
             Ok(platform::MicrophoneAccess::Denied) | Err(_) => {
                 let message =
-                    "Microphone access is off. Enable Kiri in System Settings to record your microphone.";
+                    "Microphone access is off. Enable Lumen in System Settings to record your microphone.";
                 emit_error(
                     &app,
                     message.into(),
@@ -3894,14 +4975,23 @@ pub async fn start_recording_flow(
             context.library().map_err(|error| error.to_string())?;
         }
         let mut capture = state.capture.lock().unwrap();
+        // Recording always uses the display owned by the overlay that asked
+        // for it; a peer overlay on another screen never supplies geometry.
+        let display = capture
+            .session
+            .as_ref()
+            .and_then(|session| session.display_for_overlay(window.label()))
+            .cloned()
+            .ok_or_else(|| "No active capture session.".to_string())?;
         let Some(session) = capture.session.take() else {
             return Err("No active capture session.".into());
         };
         drop(capture);
-        let completion_monitor = session.overlay_labels.iter().find_map(|label| {
-            app.get_webview_window(label)
-                .and_then(|window| window.current_monitor().ok().flatten())
-        });
+        let completion_monitor = app
+            .get_webview_window(window.label())
+            .and_then(|window| window.current_monitor().ok().flatten());
+        let overlay_labels: Vec<String> =
+            session.overlay_labels().map(str::to_string).collect();
         *state.saved_recording_options.lock().unwrap() = saved_options.clone();
         let mut recording = state.recording.lock().unwrap();
         *recording = RecordingFlow {
@@ -3911,26 +5001,27 @@ pub async fn start_recording_flow(
             is_starting: true,
             completion_monitor,
             configuration: Some(RecordingConfiguration {
-                display_id: session.display.display_id,
-                display_identity: session.display.display_identity.clone(),
+                display_id: display.display_id,
+                display_identity: display.display_identity.clone(),
                 region: Rect::new(
                     request.region.x,
                     request.region.y,
                     request.region.width,
                     request.region.height,
                 ),
-                screen_frame: session.display.screen_frame,
-                backing_scale: session.display.backing_scale,
+                screen_frame: display.screen_frame,
+                backing_scale: display.backing_scale,
                 options: options.clone(),
             }),
             ..Default::default()
         };
         emit_recording_state(&app, &recording);
         invalidate_capture_resources(&app, &session);
+        sync_pin_capture_gate(&app);
         (
-            session.display.screen_frame,
-            session.display.backing_scale,
-            session.overlay_labels,
+            display.screen_frame,
+            display.backing_scale,
+            overlay_labels,
             recording.session_id,
         )
     };
@@ -4021,7 +5112,7 @@ fn create_countdown_window(
         label.clone(),
         WebviewUrl::App(format!("index.html?window=countdown&session={session_id}").into()),
     )
-    .title("kiri")
+    .title("Lumen")
     // Cover the whole display so the countdown badge is centered on the
     // SCREEN, not on the selected region (the user's expectation).
     .inner_size(screen_frame.width, screen_frame.height)
@@ -4270,7 +5361,7 @@ fn create_control_panel(
         "control-panel".to_string(),
         WebviewUrl::App(format!("index.html?window=control-panel&session={session_id}").into()),
     )
-    .title("kiri")
+    .title("Lumen")
     .inner_size(frame.width, frame.height)
     .position(frame.x, frame.y)
     .visible(false)
@@ -4401,7 +5492,7 @@ fn create_recording_region(app: &AppHandle, configuration: &RecordingConfigurati
     let frame = recording_region_frame(configuration);
     let window = WebviewWindowBuilder::new(app, "recording-region",
         WebviewUrl::App("index.html?window=recording-region".into()))
-        .title("kiri").inner_size(frame.width, frame.height).position(frame.x, frame.y)
+        .title("Lumen").inner_size(frame.width, frame.height).position(frame.x, frame.y)
         .visible(false).focused(false).focusable(false).decorations(false)
         .transparent(true).always_on_top(true).skip_taskbar(true).shadow(false).build()
         .map_err(|error| error.to_string())?;
@@ -4431,7 +5522,7 @@ fn create_ripple_window(
         "ripple".to_string(),
         WebviewUrl::App("index.html?window=ripple".into()),
     )
-    .title("kiri")
+    .title("Lumen")
     .inner_size(region.width, region.height)
     .position(frame.x + region.x, frame.y + region.y)
     .decorations(false)
@@ -4883,7 +5974,7 @@ pub async fn begin_recording(app: AppHandle, session_id: Option<uuid::Uuid>) -> 
         // every launch).
         if let Err(error) = crate::ensure_click_monitor(&app) {
             log::error!("recording: global click monitor unavailable: {error}");
-            let message = "Input Monitoring is off. Enable Kiri in System Settings to highlight clicks while recording.";
+            let message = "Input Monitoring is off. Enable Lumen in System Settings to highlight clicks while recording.";
             #[cfg(target_os = "macos")]
             let recovery = Some(RecoveryAction::OpenInputMonitoringSettings);
             #[cfg(any(windows, target_os = "linux"))]
@@ -5076,7 +6167,7 @@ async fn pause_recording_session(app: AppHandle, expected_session: Option<uuid::
             ),
             Ok(false) => ("Could not pause screen recording.".to_string(), None),
             Err(recovery_error) => (
-                "Could not pause screen recording. Kiri kept the completed sections so they are not lost."
+                "Could not pause screen recording. Lumen kept the completed sections so they are not lost."
                     .to_string(),
                 Some(recovery_error),
             ),
@@ -5443,7 +6534,7 @@ fn stop_recording_session(
                 },
                 Err(recovery_error) => {
                     log::error!("recording: partial recording recovery failed: {recovery_error}");
-                    "Could not save the recording. Kiri kept the completed sections so they are not lost."
+                    "Could not save the recording. Lumen kept the completed sections so they are not lost."
                         .to_string()
                 }
             };
@@ -5856,7 +6947,7 @@ fn require_known_frontend_window(window: &WebviewWindow) -> Result<(), String> {
     if matches!(
         label,
         "library" | "overlay" | "countdown" | "control-panel" | "recording-region" | "ripple" | "confirm" | "toast"
-    ) || ["viewer-", "editor-"]
+    ) || ["viewer-", "editor-", "overlay-"]
         .iter()
         .any(|prefix| label.starts_with(prefix))
     {
@@ -6186,7 +7277,7 @@ pub async fn authorize_screenshot(window: WebviewWindow) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if !window.is_focused().unwrap_or(false) {
-            return Err("Focus the Kiri Library before requesting screenshot access.".into());
+            return Err("Focus the Lumen Library before requesting screenshot access.".into());
         }
         let state = window.state::<AppState>();
         let _start_permit = state
@@ -6365,19 +7456,15 @@ mod command_security_tests {
 
     #[test]
     fn shortcut_status_reflects_native_registration() {
+        let expected = crate::shortcut_settings::label(crate::shortcut_settings::default_binding());
+        assert_eq!(expected, "F1");
         let enabled = super::shortcut_status(Some(crate::shortcut_settings::default_binding()), true);
-        assert_eq!(
-            enabled.label,
-            crate::core::shortcut::KIRI_CAPTURE.display_label()
-        );
+        assert_eq!(enabled.label, expected);
         assert_eq!(enabled.status, ShortcutRegistrationStatus::Enabled);
         assert_eq!(serde_json::to_value(&enabled).unwrap()["status"], "enabled");
 
         let occupied = super::shortcut_status(Some(crate::shortcut_settings::default_binding()), false);
-        assert_eq!(
-            occupied.label,
-            crate::core::shortcut::KIRI_CAPTURE.display_label()
-        );
+        assert_eq!(occupied.label, expected);
         assert_eq!(occupied.status, ShortcutRegistrationStatus::Occupied);
         assert_eq!(
             serde_json::to_value(&occupied).unwrap()["status"],

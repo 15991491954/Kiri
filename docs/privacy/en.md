@@ -81,17 +81,18 @@ Local OCR is enabled by default and uses macOS Vision, Windows.Media.Ocr, or
 system Tesseract on Linux. It does not require an API key or network connection,
 and image pixels do not leave the device.
 
-## Text History
+## OCR and QR results
 
-Successful nonempty OCR results are saved in the active local library with a
-copy of the recognized image. Text and source pixels stay together through
-library moves and recoverable Trash. Permanently deleting the record removes
-both. Recognizing a saved screenshot uses its saved flattened pixels, not its
-unannotated editing source or unsaved edits. Its text record owns a separate
-snapshot, so deleting the original screenshot does not delete this history.
-History is not sent to remote providers. Local recognition of saved screenshots
-continues if the result dialog is closed. If history cannot be saved, Kiri keeps
-the result visible for copying and reports the save failure.
+Local OCR returns text to the capture overlay or image dialog for copying; Kiri
+does not write a text-history record or a separate snapshot to the library. QR
+recognition likewise shows its payloads only in the result surface: Copy places
+the text on the clipboard and Open Link hands a validated HTTP/HTTPS URL to the
+default browser, while no crop or payload is saved. Closing the surface discards
+the result.
+
+Records created by earlier versions that stored OCR text or QR favorites remain
+in the existing library and keep their text searchable. They follow the normal
+recoverable Trash and permanent-deletion lifecycle.
 
 ## Optional remote OCR
 

@@ -8,6 +8,7 @@ import * as crop from "../src/annotation/crop.js";
 import * as layout from "../src/annotation/text-layout.js";
 import * as calloutLayout from "../src/annotation/callout-layout.js";
 import * as composition from "../src/annotation/text-composition.js";
+import * as cursors from "../src/annotation/cursors.js";
 import * as watermarkGeometry from "../src/annotation/watermark-geometry.js";
 
 const dataUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
@@ -279,6 +280,7 @@ function annotation(initialDocument, options = {}) {
     modules: {
       "./geom": geom, "./model": model, "./project.js": project, "./crop.js": crop,
       "./text-layout.js": layout, "./text-composition.js": composition,
+      "./cursors.js": cursors,
       "./callout-layout.js": calloutLayout,
       "./watermark-geometry.js": watermarkGeometry,
       "./render": {textFont: size => `600 ${size}px sans-serif`, renderAll(r, marks, options) {

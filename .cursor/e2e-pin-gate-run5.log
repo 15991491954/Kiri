@@ -1,0 +1,12 @@
+[PASS] scenario A: a pin was parked under the toolbar button button=816,553
+[PASS] run 1: the pin does not swallow the toolbar click top=Chrome_RenderWidgetHostHWND at 816,553
+[PASS] run 1: clicking Pin over a pin opens one pin before=1 after=2
+[PASS] run 1: the editing HUD is gone after the click overlays=0
+[PASS] run 2: the pin does not swallow the toolbar click top=Chrome_RenderWidgetHostHWND at 816,553
+[PASS] run 2: clicking Pin over a pin opens one pin before=2 after=3
+[PASS] run 2: the editing HUD is gone after the click overlays=0
+[PASS] scenario B: the text tool opened an editor {"tool":"文字 (T)","canvas":true,"tag":"TEXTAREA","editable":true,"page":"http://localhost:1420/index.html?window=overlay&captureToken=4c9b3ab07ade4abfa750dadc88a2dfed"}
+[PASS] scenario B: clicking Pin while editing text opens one pin before=0 after=1 click={"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=4c9b3ab07ade4abfa750dadc88a2dfed"}
+[PASS] scenario B: the editing HUD is gone after the click overlays=0
+
+10/10 checks passed

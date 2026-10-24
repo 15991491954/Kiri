@@ -7,13 +7,14 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use tauri::Manager;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW,
-    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+    GetWindowDisplayAffinity, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindowVisible,
     PeekMessageW, PostThreadMessageW, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowsHookExW,
     ShowWindow, TranslateMessage, UnhookWindowsHookEx, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE,
     SW_HIDE, SW_RESTORE, SW_SHOWNOACTIVATE, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WH_MOUSE_LL, WM_LBUTTONDOWN,
@@ -105,7 +106,7 @@ pub fn hide_window_for_capture(window: &tauri::WebviewWindow) -> Result<()> {
             let _ = ShowWindow(hwnd, SW_HIDE);
         }
         if unsafe { IsWindowVisible(hwnd).as_bool() } {
-            bail!("Kiri's window could not be hidden before capture.");
+            bail!("Lumen's window could not be hidden before capture.");
         }
     }
     unsafe { DwmFlush()? };
@@ -860,8 +861,34 @@ pub(crate) fn require_window_capture_exclusion(window: &tauri::WebviewWindow) ->
     // A successful call applies the requested policy to our top-level window.
     // The OS/build and DWM checks above prevent its documented blank-window
     // compatibility fallback. WGC is the native consumer of this policy.
-    unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) }
-        .map_err(|error| anyhow!("Could not exclude scrolling capture controls: {error}"))
+    //
+    // A freshly created WebView2 window has no composition surface yet, and
+    // Windows 10 answers ERROR_NOT_ENOUGH_MEMORY until the first frame exists.
+    // The caller shows the window first; retrying bridges the first paint
+    // instead of failing the whole scrolling session.
+    let mut last_error = None;
+    for attempt in 0..12u64 {
+        match unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) } {
+            Ok(()) => {
+                // Verify the policy actually landed: a silent downgrade would
+                // paint the control chrome into every captured frame.
+                let mut applied = 0u32;
+                if unsafe { GetWindowDisplayAffinity(hwnd, &mut applied) }.is_ok()
+                    && applied == WDA_EXCLUDEFROMCAPTURE.0
+                {
+                    return Ok(());
+                }
+                last_error = Some(anyhow!(
+                    "the exclusion policy did not stick (affinity {applied:#x})"
+                ));
+            }
+            Err(error) => last_error = Some(anyhow!("{error}")),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(40 + u64::from(attempt) * 20));
+    }
+    Err(last_error
+        .unwrap_or_else(|| anyhow!("unknown failure"))
+        .context("Could not exclude scrolling capture controls"))
 }
 
 pub fn set_window_capture_excluded(app: &tauri::AppHandle, label: &str, excluded: bool) {
@@ -878,6 +905,423 @@ pub fn set_window_capture_excluded(app: &tauri::AppHandle, label: &str, excluded
             WDA_NONE
         };
         let _ = SetWindowDisplayAffinity(HWND(hwnd.0 as *mut _), affinity);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pinned screenshot topmost band
+// ---------------------------------------------------------------------------
+
+/// Windows keeps `WS_EX_TOPMOST` windows in a band above every normal window.
+/// That band is the only reason a pinned screenshot stays visible when the user
+/// clicks another application, so a pin must never leave it.
+///
+/// Tao requests the band asynchronously (`SWP_ASYNCWINDOWPOS`), which can land
+/// after the pin is already on screen, and the extended style can be rewritten
+/// by other software or by a DPI transition. Both leave a pin behind other
+/// windows without any error, so every pin transition re-asserts the band
+/// synchronously and then reads the native style instead of trusting the
+/// WebView/Tao flag alone. The style is only ever read: forcing
+/// `WS_EX_TOPMOST` with `SetWindowLongPtrW` would make a failed transition
+/// look successful while the window stayed behind other applications.
+pub fn assert_window_topmost(window: &tauri::WebviewWindow) -> Result<()> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOOWNERZORDER, SWP_NOSIZE, WS_EX_TOPMOST,
+    };
+
+    let hwnd = HWND(window.hwnd()?.0 as *mut _);
+    let mut failure = None;
+    for _ in 0..2 {
+        if let Err(error) = unsafe {
+            SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            )
+        } {
+            failure = Some(error.to_string());
+        }
+        let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
+        if style & WS_EX_TOPMOST.0 as isize != 0 {
+            return Ok(());
+        }
+    }
+    failure.get_or_insert_with(|| "the window did not enter the topmost band".into());
+    Err(anyhow!(
+        "The screenshot could not be kept above other windows{}",
+        failure
+            .map(|error| format!(": {error}"))
+            .unwrap_or_default()
+    ))
+}
+
+/// Reads the native band membership, not Tao's requested flag.
+fn window_is_in_topmost_band(window: &tauri::WebviewWindow) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOPMOST};
+
+    let Ok(hwnd) = window.hwnd() else {
+        return false;
+    };
+    let style = unsafe { GetWindowLongPtrW(HWND(hwnd.0 as *mut _), GWL_EXSTYLE) };
+    style & WS_EX_TOPMOST.0 as isize != 0
+}
+
+/// Drops a pin out of the topmost band immediately.
+///
+/// Tao applies `set_always_on_top(false)` asynchronously and ignores a failed
+/// transition, which would leave the pin above other windows while the UI says
+/// it is unpinned. The synchronous call makes the native state match the pin
+/// flag before the command returns, and the verified read makes a failed
+/// transition visible instead of silent.
+pub fn release_window_topmost(window: &tauri::WebviewWindow) -> Result<()> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_NOTOPMOST, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, WS_EX_TOPMOST,
+    };
+
+    let hwnd = HWND(window.hwnd()?.0 as *mut _);
+    let mut failure = None;
+    for _ in 0..2 {
+        if let Err(error) = unsafe {
+            SetWindowPos(
+                hwnd,
+                Some(HWND_NOTOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            )
+        } {
+            failure = Some(error.to_string());
+        }
+        let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
+        if style & WS_EX_TOPMOST.0 as isize == 0 {
+            return Ok(());
+        }
+    }
+    failure.get_or_insert_with(|| "the window stayed in the topmost band".into());
+    Err(anyhow!(
+        "The screenshot could not leave the topmost band{}",
+        failure
+            .map(|error| format!(": {error}"))
+            .unwrap_or_default()
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Pinned screenshot zoom
+// ---------------------------------------------------------------------------
+
+/// Resizes a pinned screenshot around the pointer in a single native call.
+///
+/// Position and size travel together, so a wheel burst can never paint the
+/// window at its new size on the old origin for a frame. `SWP_NOZORDER` leaves
+/// the pin's band and its order among sibling pins untouched: zooming is a view
+/// operation and must not raise or drop a pin. The applied frame is read back so
+/// the percentage the pin displays is the size the desktop really applied rather
+/// than the size that was requested.
+pub fn zoom_pinned_window(
+    window: &tauri::WebviewWindow,
+    factor: f64,
+    anchor: (f64, f64),
+    aspect: Option<f64>,
+) -> Result<(u32, u32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER,
+    };
+
+    let hwnd = HWND(window.hwnd()?.0 as *mut _);
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut rect) }
+        .map_err(|error| anyhow!("The screenshot size could not be read: {error}"))?;
+    let frame = super::zoomed_pin_frame(
+        super::PinFrame {
+            x: rect.left,
+            y: rect.top,
+            width: (rect.right - rect.left).max(1) as u32,
+            height: (rect.bottom - rect.top).max(1) as u32,
+        },
+        factor,
+        anchor,
+        aspect,
+        window.scale_factor().unwrap_or(1.0),
+    );
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            frame.x,
+            frame.y,
+            frame.width as i32,
+            frame.height as i32,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        )
+    }
+    .map_err(|error| anyhow!("The screenshot could not be zoomed: {error}"))?;
+    let mut applied = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut applied) }
+        .map_err(|error| anyhow!("The screenshot size could not be verified: {error}"))?;
+    Ok((
+        (applied.right - applied.left).max(1) as u32,
+        (applied.bottom - applied.top).max(1) as u32,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Pinned screenshot foreground guard (EVENT_SYSTEM_FOREGROUND)
+// ---------------------------------------------------------------------------
+
+type PinGuardCallback = Arc<dyn Fn() + Send + Sync>;
+
+static PIN_GUARD_CALLBACK: Mutex<Option<PinGuardCallback>> = Mutex::new(None);
+static PIN_GUARD_WORKER: Mutex<Option<MessageLoopWorker>> = Mutex::new(None);
+
+/// Starts the foreground self-heal that keeps pins in the topmost band.
+///
+/// It is driven by the desktop's own foreground notifications rather than a
+/// timer: whenever another application becomes active, every pin that still
+/// wants to be on top is checked and repaired. Nothing runs while no pin
+/// exists, and pins the user explicitly unpinned are left alone.
+pub fn ensure_pin_topmost_guard(app: &tauri::AppHandle) {
+    {
+        let worker = PIN_GUARD_WORKER
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if worker.is_some() {
+            return;
+        }
+    }
+
+    let callback_app = app.clone();
+    let callback: PinGuardCallback = Arc::new(move || heal_pin_topmost(&callback_app));
+    let worker = match start_pin_guard(callback) {
+        Ok(worker) => worker,
+        Err(error) => {
+            // The pin itself is still topmost; only the self-heal is missing.
+            log::warn!("[pin] topmost guard unavailable: {error}");
+            return;
+        }
+    };
+    {
+        let mut slot = PIN_GUARD_WORKER
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.is_some() {
+            return;
+        }
+        *slot = Some(worker);
+    }
+    // Pins created before the hook was ready are repaired once here.
+    heal_pin_topmost(app);
+}
+
+/// Stops the guard once the last pin is gone, so no hook outlives the pins.
+///
+/// A pin that is being opened while the previous one closes still needs the
+/// self-heal, and window creation runs off the main thread, so the remaining
+/// pins are checked both before and after the hook is torn down. Stopping and
+/// immediately restarting would also be correct, but keeping the running guard
+/// avoids dropping foreground events in that window.
+pub fn release_pin_topmost_guard(app: &tauri::AppHandle, closed_label: &str) {
+    if pin_windows_remain(app, closed_label) {
+        return;
+    }
+    let worker = PIN_GUARD_WORKER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    drop(worker);
+    if pin_windows_remain(app, closed_label) {
+        ensure_pin_topmost_guard(app);
+    }
+}
+
+fn pin_windows_remain(app: &tauri::AppHandle, closed_label: &str) -> bool {
+    app.webview_windows().keys().any(|label| {
+        label != closed_label && label.starts_with(crate::platform::PIN_WINDOW_LABEL_PREFIX)
+    })
+}
+
+fn heal_pin_topmost(app: &tauri::AppHandle) {
+    let window_app = app.clone();
+    let dispatched = app.clone().run_on_main_thread(move || {
+        for (label, window) in window_app.webview_windows() {
+            let wants_topmost = window.is_always_on_top().unwrap_or(false);
+            if !crate::platform::pin_lost_topmost_band(
+                &label,
+                wants_topmost,
+                window_is_in_topmost_band(&window),
+            ) {
+                continue;
+            }
+            log::warn!("[pin] restoring topmost band label={label}");
+            if let Err(error) = assert_window_topmost(&window) {
+                log::warn!("[pin] topmost restore failed label={label}: {error}");
+            }
+        }
+    });
+    if let Err(error) = dispatched {
+        log::warn!("[pin] topmost guard could not reach the main thread: {error}");
+    }
+}
+
+fn start_pin_guard(callback: PinGuardCallback) -> Result<MessageLoopWorker> {
+    {
+        let mut slot = PIN_GUARD_CALLBACK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.is_some() {
+            bail!("The pinned screenshot topmost guard is already running.");
+        }
+        *slot = Some(callback);
+    }
+
+    let (ready_tx, ready_rx) = mpsc::sync_channel::<std::result::Result<u32, String>>(1);
+    let installing_thread_id = Arc::new(AtomicU32::new(0));
+    let thread_id_slot = Arc::clone(&installing_thread_id);
+    let installation_cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled_slot = Arc::clone(&installation_cancelled);
+    let thread = match thread::Builder::new()
+        .name("kiri-pin-topmost".into())
+        .spawn(move || run_pin_guard_loop(ready_tx, &thread_id_slot, &cancelled_slot))
+    {
+        Ok(thread) => thread,
+        Err(error) => {
+            clear_pin_guard_callback();
+            return Err(error.into());
+        }
+    };
+
+    let thread_id = match ready_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(thread_id)) => thread_id,
+        Ok(Err(error)) => {
+            let _ = thread.join();
+            clear_pin_guard_callback();
+            return Err(anyhow!(error));
+        }
+        Err(error) => {
+            installation_cancelled.store(true, Ordering::Release);
+            let thread_id = installing_thread_id.load(Ordering::Acquire);
+            let mut worker = MessageLoopWorker {
+                thread_id: (thread_id != 0).then_some(thread_id),
+                thread: Some(thread),
+            };
+            worker.shutdown();
+            clear_pin_guard_callback();
+            return Err(anyhow!(
+                "The pinned screenshot topmost guard did not become ready: {error}"
+            ));
+        }
+    };
+
+    Ok(MessageLoopWorker {
+        thread_id: Some(thread_id),
+        thread: Some(thread),
+    })
+}
+
+fn run_pin_guard_loop(
+    ready_tx: mpsc::SyncSender<std::result::Result<u32, String>>,
+    installing_thread_id: &AtomicU32,
+    installation_cancelled: &AtomicBool,
+) {
+    use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+    };
+
+    unsafe {
+        // Out-of-context hook notifications arrive as thread messages, so the
+        // queue must exist before the thread id is published.
+        let mut message = MSG::default();
+        let _ = PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE);
+        let thread_id = GetCurrentThreadId();
+        installing_thread_id.store(thread_id, Ordering::Release);
+
+        // Kiri's own activations are irrelevant: its pins are already topmost,
+        // and its transient capture windows keep their own stacking.
+        let hook = SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            None,
+            Some(pin_foreground_proc),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        );
+        if hook.is_invalid() {
+            let _ = ready_tx.send(Err(
+                "The Windows foreground hook could not be installed.".to_string(),
+            ));
+            clear_pin_guard_callback();
+            return;
+        }
+
+        if installation_cancelled.load(Ordering::Acquire) {
+            let _ = UnhookWinEvent(hook);
+            clear_pin_guard_callback();
+            return;
+        }
+
+        if ready_tx.send(Ok(thread_id)).is_err() {
+            let _ = UnhookWinEvent(hook);
+            clear_pin_guard_callback();
+            return;
+        }
+
+        loop {
+            let status = GetMessageW(&mut message, None, 0, 0).0;
+            if status == 0 {
+                break;
+            }
+            if status == -1 {
+                log::error!("Windows pinned screenshot guard message loop failed");
+                break;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+
+        if !UnhookWinEvent(hook).as_bool() {
+            log::warn!("Windows foreground hook could not be removed");
+        }
+        clear_pin_guard_callback();
+    }
+}
+
+fn clear_pin_guard_callback() {
+    *PIN_GUARD_CALLBACK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+unsafe extern "system" fn pin_foreground_proc(
+    _hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
+    event: u32,
+    _hwnd: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    if event
+        != windows::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_FOREGROUND
+    {
+        return;
+    }
+    let callback = PIN_GUARD_CALLBACK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(callback) = callback {
+        callback();
     }
 }
 

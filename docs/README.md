@@ -230,3 +230,12 @@ development.
 - [ADR 0113: Contextual image editor and zoom](adr/0113-contextual-image-editor-and-zoom.md)
 
 - [`adr/0114-opt-in-login-startup.md`](adr/0114-opt-in-login-startup.md) — opt-in system login startup and resident launch behavior.
+
+- [`adr/0115-transient-ocr-and-qr-results.md`](adr/0115-transient-ocr-and-qr-results.md) — remove the Text History and QR Favorites destinations while keeping OCR and QR recognition transient.
+
+- [`adr/0116-overlay-mode-switching-and-cursor-feedback.md`](adr/0116-overlay-mode-switching-and-cursor-feedback.md) — number-key and wheel mode switching, a remembered capture mode, and directional selection cursors.
+
+- [`adr/0117-per-display-capture-overlays.md`](adr/0117-per-display-capture-overlays.md) — one frozen overlay per connected display, display-local selections, and owner-bound confirmation.
+
+- [`adr/0118-pin-windows-and-clipboard-pins.md`](adr/0118-pin-windows-and-clipboard-pins.md) — Windows-native pinned images that drag by the image and zoom under the wheel, screenshots and clipboard pins, pointer-targeted Escape, and memory-only clipboard pins.
+- [dr/0119-lumen-identity-and-macos-shell.md](adr/0119-lumen-identity-and-macos-shell.md) — the Lumen display identity, a macOS-style undecorated shell with traffic lights and a source-list sidebar, F1/F2/F3 defaults with migration, and a recordings-only library.

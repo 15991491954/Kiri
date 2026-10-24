@@ -153,6 +153,10 @@ export function createLibraryHarness(apiOverrides = {}, componentSource = null, 
     }) },
     "@tauri-apps/plugin-updater": { check: apiOverrides.check ?? (async () => null) },
     "@tauri-apps/plugin-process": { relaunch: apiOverrides.relaunch ?? (async () => {}) },
+    // Window chrome is native behavior; the render harness mounts the content
+    // inside it rather than exercising the titlebar itself.
+    "../components/MacTitlebar": { MacTitlebar: "kiri-titlebar", WindowResizeEdges: "kiri-resize-edges" },
+    "../components/LumenMark": { LumenMark: "lumen-mark" },
     get "../settings/useAppUpdater"() {
       const hook = { exports: {} };
       const source = readFileSync(new URL("../../src/settings/useAppUpdater.ts", import.meta.url), "utf8");
@@ -164,12 +168,11 @@ export function createLibraryHarness(apiOverrides = {}, componentSource = null, 
     },
     "@tauri-apps/api/webview": {getCurrentWebview:()=>({onDragDropEvent:subscribe("mediaDrop")})},
     "lucide-react": {ImagePlus:"icon", QrCode:"icon", Copy:"icon", ExternalLink:"icon", Star:"icon", X:"icon", Trash2:"icon", ChevronRight:"icon"},
-    "./text-history.css": {},
-    "../ocr/text-history.css": {},
+    "./text-result.css": {},
+    "../ocr/text-result.css": {},
     "./qr.css": {},
     "./selection.js": qrSelection,
-    "../qr/QrResults": { QrFavorites: "qr-favorites" },
-    "../ocr/TextHistory": { TextHistory: "text-history", OcrDialog: "ocr-dialog" },
+    "../ocr/OcrDialog": { OcrDialog: "ocr-dialog" },
     "react-dom": { createPortal: (child) => child },
     "../lib/ipc": {
       api: {

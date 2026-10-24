@@ -6,8 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-BUILD_APP="${KIRI_BUILD_APP:-$PROJECT_DIR/src-tauri/target/release/bundle/macos/kiri.app}"
-INSTALL_APP="${KIRI_INSTALL_PATH:-/Applications/Kiri.app}"
+BUILD_APP="${KIRI_BUILD_APP:-$PROJECT_DIR/src-tauri/target/release/bundle/macos/Lumen.app}"
+INSTALL_APP="${KIRI_INSTALL_PATH:-/Applications/Lumen.app}"
 EXPECTED_IDENTIFIER="io.yuxino.kiri"
 
 case "$INSTALL_APP" in
@@ -63,7 +63,7 @@ else
   echo "install-app: using prebuilt package for exact-artifact acceptance"
 fi
 verify_kiri_app "$BUILD_APP" || {
-  echo "install-app: packaged Kiri is unsigned, ad-hoc, or otherwise invalid" >&2
+  echo "install-app: packaged Lumen is unsigned, ad-hoc, or otherwise invalid" >&2
   exit 1
 }
 new_requirement="$(designated_requirement "$BUILD_APP")"
@@ -77,7 +77,7 @@ if [[ -d "$INSTALL_APP" ]]; then
   if ! verify_kiri_app "$INSTALL_APP" || [[ "$existing_requirement" != "$new_requirement" ]]; then
     if [[ "${KIRI_ALLOW_IDENTITY_CHANGE:-0}" != "1" ]]; then
       cat >&2 <<EOF
-install-app: refusing to replace Kiri with a different macOS code identity.
+install-app: refusing to replace Lumen with a different macOS code identity.
 
 Installed: ${existing_requirement:-<invalid or unsigned>}
 New:       $new_requirement
@@ -93,7 +93,7 @@ fi
 
 running_pids="$(/usr/bin/pgrep -U "$(/usr/bin/id -u)" -x kiri || true)"
 if [[ -n "$running_pids" ]]; then
-  echo "install-app: quit every running Kiri copy before installing (PID ${running_pids//$'\n'/, })" >&2
+  echo "install-app: quit every running Lumen copy before installing (PID ${running_pids//$'\n'/, })" >&2
   exit 1
 fi
 
@@ -147,5 +147,5 @@ fi
 
 install_committed=1
 /bin/rm -rf "$previous_app"
-echo "installed stable Kiri app: $INSTALL_APP"
+echo "installed stable Lumen app: $INSTALL_APP"
 echo "designated requirement: $new_requirement"

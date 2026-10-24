@@ -1,0 +1,12 @@
+warning: in the working copy of 'docs/README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/usage.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/usage.zh-CN.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/Cargo.toml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src-tauri/src/core/library_location.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/de.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/en.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/fr.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/ja.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/ko.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/zh-Hans.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/i18n/zh-Hant.json', LF will be replaced by CRLF the next time Git touches it

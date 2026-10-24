@@ -60,8 +60,8 @@ test('overlay capture-phase Escape yields to an open microphone menu',()=>{
   const code=overlay.slice(overlay.indexOf('    const onEscape = (e: KeyboardEvent) => {'),overlay.indexOf('    window.addEventListener("keydown", onEscape, true);'));
   let cancelled=0,open=true;
   const body=code.replace('const onEscape = (e: KeyboardEvent)', 'const onEscape = (e)')+'return onEscape;';
-  const handler=new Function('isTextComposition','document','Element','completionLock','phaseRef','canvasRef','cancel','closeQr',body)(
-    ()=>false,{querySelector:()=>open?{}:null},class {},{locked:false},{current:'record-options'},{current:null},()=>cancelled++,()=>{});
+  const handler=new Function('isTextComposition','document','Element','completionLock','phaseRef','canvasRef','cancel','closeQr','confirmedRef',body)(
+    ()=>false,{querySelector:()=>open?{}:null},class {},{locked:false},{current:'record-options'},{current:null},()=>cancelled++,()=>{},{current:false});
   handler({key:'Escape',target:null,preventDefault(){throw new Error('menu must receive escape');},stopImmediatePropagation(){}});
   assert.equal(cancelled,0);open=false;
   handler({key:'Escape',target:null,preventDefault(){},stopImmediatePropagation(){}});assert.equal(cancelled,1);

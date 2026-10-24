@@ -1,0 +1,208 @@
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `Window` is never constructed
+  --> src\capture\scroll.rs:29:5
+   |
+25 | pub enum ScrollTarget {
+   |          ------------ variant in this enum
+...
+29 |     Window {
+   |     ^^^^^^
+   |
+   = note: `ScrollTarget` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `export_gif` is never used
+   --> src\gif.rs:289:8
+    |
+289 | pub fn export_gif(video: &Path, max_long_edge: u32, fps: u32) -> Result<(PathBuf, f64)> {
+    |        ^^^^^^^^^^
+
+warning: variants `Unsupported` and `Denied` are never constructed
+  --> src\platform\mod.rs:30:5
+   |
+28 | pub enum MicrophoneAccess {
+   |          ---------------- variants in this enum
+29 |     Authorized,
+30 |     Unsupported,
+   |     ^^^^^^^^^^^
+31 |     Denied,
+   |     ^^^^^^
+   |
+   = note: `MicrophoneAccess` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `TransientWindowPolicy` is never constructed
+  --> src\platform\mod.rs:49:19
+   |
+49 | pub(super) struct TransientWindowPolicy {
+   |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `policy` is never used
+  --> src\platform\mod.rs:58:14
+   |
+57 | impl TransientWindowRole {
+   | ------------------------ method in this implementation
+58 |     const fn policy(self) -> TransientWindowPolicy {
+   |              ^^^^^^
+
+warning: function `window_capture_id` is never used
+   --> src\platform\mod.rs:461:8
+    |
+461 | pub fn window_capture_id(_app: &tauri::AppHandle, _label: &str) -> Option<u32> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `publish` is never used
+   --> src\portal_shortcuts.rs:155:4
+    |
+155 | fn publish(
+    |    ^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\portal_shortcuts\model.rs:19:5
+   |
+17 | pub enum Status {
+   |          ------ variants in this enum
+18 |     Unsupported,
+19 |     Checking,
+   |     ^^^^^^^^
+20 |     Unavailable,
+   |     ^^^^^^^^^^^
+21 |     Ready,
+   |     ^^^^^
+22 |     Connecting,
+   |     ^^^^^^^^^^
+23 |     Active,
+   |     ^^^^^^
+24 |     Declined,
+   |     ^^^^^^^^
+25 |     Failed,
+   |     ^^^^^^
+26 |     Closed,
+   |     ^^^^^^
+   |
+   = note: `Status` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: methods `clear`, `apply`, `bound`, and `any_bound` are never used
+   --> src\portal_shortcuts\model.rs:69:12
+    |
+ 49 | impl Snapshot {
+    | ------------- methods in this implementation
+...
+ 69 |     pub fn clear(&mut self, status: Status) {
+    |            ^^^^^
+...
+ 77 |     pub fn apply(&mut self, shortcuts: Vec<(String, Option<String>)>, version: u32) {
+    |            ^^^^^
+...
+ 97 |     pub fn bound(&self, id: &str) -> bool {
+    |            ^^^^^
+...
+105 |     pub fn any_bound(&self) -> bool {
+    |            ^^^^^^^^^
+
+warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never constructed
+   --> src\state.rs:605:5
+    |
+604 | pub enum RecoveryAction {
+    |          -------------- variants in this enum
+605 |     OpenSettings,
+    |     ^^^^^^^^^^^^
+606 |     QuitKiri,
+    |     ^^^^^^^^
+607 |     OpenInputMonitoringSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+608 |     OpenMicrophoneSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `export_video` is never used
+   --> src\video_export.rs:557:8
+    |
+557 | pub fn export_video(
+    |        ^^^^^^^^^^^^
+
+warning: function `export_video_with_annotations` is never used
+   --> src\video_export.rs:567:8
+    |
+567 | pub fn export_video_with_annotations(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `wait_for_link_launcher` is never used
+   --> src\qr_commands.rs:419:4
+    |
+419 | fn wait_for_link_launcher(
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `stop_link_launcher` is never used
+   --> src\qr_commands.rs:451:4
+    |
+451 | fn stop_link_launcher(child: &mut std::process::Child) {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: `kiri` (lib) generated 11 warnings (run `cargo fix --lib -p kiri` to apply 1 suggestion)
+warning: `kiri` (lib test) generated 10 warnings (6 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\kiri_lib-f2b5fa396335776e.exe)
+
+running 45 tests
+test pin::clipboard::tests::budget_is_measured_before_decoding_and_never_exceeds_the_cap ... ok
+test pin::clipboard_source::tests::extensions_are_case_insensitive_and_complete ... ok
+test pin::clipboard::tests::text_budget_grows_with_the_string ... ok
+test pin::clipboard::tests::non_image_paths_are_refused_before_any_io ... ok
+test pin::clipboard_source::tests::image_files_win_over_text_and_keep_their_order ... ok
+test pin::clipboard_source::tests::nothing_usable_is_none ... ok
+test pin::clipboard_source::tests::an_image_wins_over_text_and_files ... ok
+test pin::clipboard_source::tests::only_non_image_files_falls_through_to_text ... ok
+test pin::resample::tests::a_zero_sized_request_is_clamped_instead_of_panicking ... ok
+test pin::resample::tests::shrinking_averages_every_source_pixel_instead_of_dropping_rows ... ok
+test pin::surface_windows::tests::badge_geometry_scales_with_the_display ... ok
+test pin::clipboard_source::tests::a_cascade_is_bounded_and_deduplicated ... ok
+test pin::surface_windows::tests::menu_labels_cover_supported_languages_and_default_to_english ... ok
+test pin::surface_windows::tests::pin_class_is_distinct_from_the_host_and_badge ... ok
+test pin::resample::tests::one_to_one_never_resamples_or_copies ... ok
+test pin::resample::tests::upscaling_preserves_the_corner_pixels_of_an_asymmetric_image ... ok
+test pin::tests::a_shared_display_budget_counts_every_other_pin_exactly_once ... ok
+test pin::tests::cascaded_pins_are_offset_but_stay_inside_the_work_area ... ok
+test pin::tests::a_work_area_smaller_than_the_minimum_pin_does_not_panic ... ok
+test pin::tests::hit_test_prefers_the_raised_pin_and_uses_half_open_edges ... ok
+test pin::tests::initial_frame_opens_at_native_size_and_shrinks_only_to_fit ... ok
+test pin::tests::negative_monitor_coordinates_hit_correctly ... ok
+test pin::tests::minimum_size_doubles_on_a_two_hundred_percent_display ... ok
+test pin::resample::tests::a_uniform_surface_stays_uniform_at_any_size ... ok
+test pin::tests::premultiplied_conversion_never_leaves_a_channel_above_alpha ... ok
+test pin::tests::registry_rejects_the_seventeenth_pin_without_changing_state ... ok
+test pin::tests::registry_reports_the_display_bytes_of_one_pin ... ok
+test pin::tests::removing_a_pin_returns_both_budgets_and_frees_its_label ... ok
+test pin::tests::source_budget_refuses_a_pin_that_would_exceed_it ... ok
+test pin::resample::tests::premultiplied_invariant_survives_both_filters ... ok
+test pin::tests::wide_images_use_the_whole_pixel_budget_instead_of_stopping_early ... ok
+test pin::tests::zoom_keeps_the_pointer_anchor_fixed ... ok
+test pin::tests::zoom_never_exceeds_the_edge_or_pixel_caps ... ok
+test pin::tests::zoom_out_stops_at_the_minimum_size_and_keeps_the_aspect_ratio ... ok
+test pin::tests::zoom_percentage_is_measured_against_the_image_pixels ... ok
+test pin::text_image::tests::empty_text_is_rejected_instead_of_rendering_a_blank_pin ... ok
+test pin::text_image::tests::line_endings_are_normalized_and_trailing_space_removed ... ok
+test pin::text_image::tests::rounded_corners_are_outside_and_edges_are_inside ... ok
+test pin::text_image::tests::soft_breaks_only_split_whitespace_free_runs ... ok
+test pin::text_image::tests::a_short_line_becomes_a_bounded_opaque_card ... ok
+test pin::surface_windows::tests::the_percentage_badge_draws_text_inside_a_rounded_body ... ok
+test pin::surface_windows::tests::the_badge_keeps_the_text_cell_transparent_instead_of_filling_it ... ok
+test pin::text_image::tests::truncation_respects_character_boundaries ... ok
+test pin::resample::tests::parallel_rows_are_bit_identical_to_a_single_thread ... ok
+test pin::text_image::tests::long_wrapping_text_stays_within_the_height_budget ... ok
+
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 457 filtered out; finished in 0.08s
+
+     Running unittests src\main.rs (src-tauri\target\debug\deps\kiri-338481d2c4b1d768.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

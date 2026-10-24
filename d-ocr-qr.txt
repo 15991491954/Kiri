@@ -1,0 +1,538 @@
+﻿diff --git a/src-tauri/src/ocr_commands.rs b/src-tauri/src/ocr_commands.rs
+index 1b2a19c..1ffa5aa 100644
+--- a/src-tauri/src/ocr_commands.rs
++++ b/src-tauri/src/ocr_commands.rs
+@@ -1,8 +1,6 @@
+ use std::sync::Arc;
+ 
+-use crate::commands::{asset_dto, AssetDto};
+ use crate::core::asset::CaptureKind;
+-use crate::state::{emit_asset_content_changed, emit_library_changed};
+ use serde::Serialize;
+ use std::io::Read;
+ use tauri::{AppHandle, Manager, WebviewWindow};
+@@ -15,11 +13,11 @@ use crate::ocr_controller::{
+ };
+ use crate::state::AppState;
+ 
+-static HISTORY_OCR_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+-struct HistoryOcrPermit;
+-impl Drop for HistoryOcrPermit {
++static ASSET_OCR_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++struct AssetOcrPermit;
++impl Drop for AssetOcrPermit {
+     fn drop(&mut self) {
+-        HISTORY_OCR_BUSY.store(false, std::sync::atomic::Ordering::Release);
++        ASSET_OCR_BUSY.store(false, std::sync::atomic::Ordering::Release);
+     }
+ }
+ 
+@@ -104,20 +102,19 @@ pub async fn prepare_ocr_request(
+             .session
+             .as_ref()
+             .filter(|session| {
+-                session.capture_id == owner.capture_id
+-                    && session
+-                        .overlay_labels
+-                        .iter()
+-                        .any(|label| label == &owner.label)
++                session.capture_id == owner.capture_id && session.has_overlay(&owner.label)
+             })
+             .ok_or_else(|| "No active capture session.".to_string())?;
++        let display = session
++            .display_for_overlay(&owner.label)
++            .ok_or_else(|| "The capture display is no longer available.".to_string())?;
+         FrozenPngSource {
+-            png: session.display.png_data.clone(),
+-            declared_width: session.display.pixel_width,
+-            declared_height: session.display.pixel_height,
+-            display_width: session.display.screen_frame.width,
+-            display_height: session.display.screen_frame.height,
+-            scale: session.display.backing_scale,
++            png: display.png_data.clone(),
++            declared_width: display.pixel_width,
++            declared_height: display.pixel_height,
++            display_width: display.screen_frame.width,
++            display_height: display.screen_frame.height,
++            scale: display.backing_scale,
+         }
+     };
+     let cropped = tauri::async_runtime::spawn_blocking(move || crop_frozen_png(source, selection))
+@@ -141,11 +138,7 @@ pub async fn prepare_ocr_request(
+     let state = app.state::<AppState>();
+     let capture = state.capture.lock().unwrap();
+     let still_active = capture.session.as_ref().is_some_and(|session| {
+-        session.capture_id == owner.capture_id
+-            && session
+-                .overlay_labels
+-                .iter()
+-                .any(|overlay_label| overlay_label == &owner.label)
++        session.capture_id == owner.capture_id && session.has_overlay(&owner.label)
+     });
+     if !still_active || window.label() != owner.label {
+         return Err("The active capture overlay changed.".into());
+@@ -191,7 +184,7 @@ pub async fn recognize_prepared_ocr_local(
+     }
+     match result {
+         Ok(Ok(text)) => {
+-            let result = save_overlay_result(&app, &owner, &lease, text)?;
++            let result = publish_overlay_result(&app, &owner, &lease, text)?;
+             requests.complete(&lease);
+             Ok(result)
+         }
+@@ -289,7 +282,7 @@ pub async fn recognize_prepared_ocr_remote(
+     };
+     match result {
+         Ok(text) => {
+-            let result = save_overlay_result(&app, &owner, &lease, text)?;
++            let result = publish_overlay_result(&app, &owner, &lease, text)?;
+             requests.complete(&lease);
+             Ok(result)
+         }
+@@ -331,12 +324,7 @@ pub(crate) fn require_active_overlay(
+     capture
+         .session
+         .as_ref()
+-        .filter(|session| {
+-            session
+-                .overlay_labels
+-                .iter()
+-                .any(|overlay_label| overlay_label == &label)
+-        })
++        .filter(|session| session.has_overlay(&label))
+         .map(|session| OcrRequestOwner {
+             label,
+             capture_id: session.capture_id,
+@@ -511,126 +499,28 @@ mod tests {
+ #[serde(rename_all = "camelCase")]
+ pub struct OcrRecognitionDto {
+     text: String,
+-    saved: bool,
+-    asset: Option<AssetDto>,
+-}
+-
+-fn import_result(
+-    app: &AppHandle,
+-    png: &[u8],
+-    text: String,
+-    source: Option<String>,
+-    identity: Option<(uuid::Uuid, uuid::Uuid)>,
+-) -> OcrRecognitionDto {
+-    let asset = if text.trim().is_empty() {
+-        None
+-    } else {
+-        let save = || -> Result<AssetDto, String> {
+-            let decoder = image::codecs::png::PngDecoder::new(std::io::Cursor::new(png))
+-                .map_err(|_| "The OCR image could not be read.".to_string())?;
+-            let (width, height) = image::ImageDecoder::dimensions(&decoder);
+-            let state = app.state::<AppState>();
+-            let mut context = state.library.lock().unwrap();
+-            if identity.is_some_and(|expected| {
+-                expected
+-                    != (
+-                        context.expected_library_id(),
+-                        context.expected_library_generation(),
+-                    )
+-            }) {
+-                return Err("The library changed during text recognition.".into());
+-            }
+-            let library = context.library_mut().map_err(|e| e.to_string())?;
+-            library
+-                .import_ocr(png, width as i64, height as i64, text.clone(), source)
+-                .map(|asset| asset_dto(&asset))
+-                .map_err(|e| e.to_string())
+-        };
+-        match save() {
+-            Ok(asset) => {
+-                emit_library_changed(app);
+-                Some(asset)
+-            }
+-            Err(error) => {
+-                log::warn!("OCR history could not be saved: {error}");
+-                None
+-            }
+-        }
+-    };
+-    OcrRecognitionDto {
+-        saved: asset.is_some(),
+-        text,
+-        asset,
+-    }
+ }
+ 
+-fn save_overlay_result(
++fn publish_overlay_result(
+     app: &AppHandle,
+     owner: &OcrRequestOwner,
+     lease: &crate::ocr_controller::OcrRequestLease,
+     text: String,
+ ) -> Result<OcrRecognitionDto, String> {
+-    // Capture teardown and library moves cannot interleave this final check and save.
++    // Capture teardown must not publish a result after its overlay has closed.
+     let state = app.state::<AppState>();
+     let capture = state.capture.lock().unwrap();
+-    let session = capture
++    capture
+         .session
+         .as_ref()
+         .filter(|session| {
+-            session.capture_id == owner.capture_id && session.overlay_labels.contains(&owner.label)
++            session.capture_id == owner.capture_id && session.has_overlay(&owner.label)
+         })
+         .ok_or("The OCR request was canceled.")?;
+     if lease.cancellation.is_cancelled() {
+         return Err("The OCR request was canceled.".into());
+     }
+-    Ok(import_result(
+-        app,
+-        &lease.png,
+-        text,
+-        session.source_application.clone(),
+-        None,
+-    ))
+-}
+-
+-#[tauri::command]
+-pub fn list_ocr_records(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    query: String,
+-) -> Result<Vec<AssetDto>, String> {
+-    require_library_window(&window)?;
+-    let state = app.state::<AppState>();
+-    let mut context = state.library.lock().unwrap();
+-    let library = context.library().map_err(|e| e.to_string())?;
+-    Ok(library
+-        .search(&query, false)
+-        .iter()
+-        .filter(|a| a.ocr_text.is_some())
+-        .map(asset_dto)
+-        .collect())
+-}
+-
+-#[tauri::command]
+-pub fn update_ocr_history_text(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    id: String,
+-    expected_text: String,
+-    replacement: Option<String>,
+-) -> Result<AssetDto, String> {
+-    require_library_window(&window)?;
+-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid text history record.".to_string())?;
+-    let state = app.state::<AppState>();
+-    let mut context = state.library.lock().unwrap();
+-    let asset = context
+-        .library_mut()
+-        .map_err(|error| error.to_string())?
+-        .update_ocr_text(&id, &expected_text, replacement)
+-        .map_err(|error| error.to_string())?;
+-    drop(context);
+-    emit_library_changed(&app);
+-    emit_asset_content_changed(&app, &id);
+-    Ok(asset_dto(&asset))
++    Ok(OcrRecognitionDto { text })
+ }
+ 
+ #[tauri::command]
+@@ -646,7 +536,7 @@ pub async fn recognize_asset_local(
+     {
+         return Err("Text recognition is unavailable from this window.".into());
+     }
+-    if HISTORY_OCR_BUSY
++    if ASSET_OCR_BUSY
+         .compare_exchange(
+             false,
+             true,
+@@ -657,16 +547,12 @@ pub async fn recognize_asset_local(
+     {
+         return Err("Another image is being recognized. Try again shortly.".into());
+     }
+-    let permit = HistoryOcrPermit;
++    let permit = AssetOcrPermit;
+     tauri::async_runtime::spawn_blocking(move || {
+         let _permit = permit;
+-        let (png, source, identity) = {
++        let png = {
+             let state = app.state::<AppState>();
+             let mut context = state.library.lock().unwrap();
+-            let identity = (
+-                context.expected_library_id(),
+-                context.expected_library_generation(),
+-            );
+             let library = context.library().map_err(|e| e.to_string())?;
+             let asset = library.asset_by_id(&parsed).ok_or("Image not found.")?;
+             if asset.kind != CaptureKind::Image || asset.trashed_at.is_some() {
+@@ -691,22 +577,21 @@ pub async fn recognize_asset_local(
+             if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 64_000_000 {
+                 return Err("The OCR image exceeds the size limit.".into());
+             }
+-            (png, asset.source_application.clone(), identity)
++            png
+         };
+         #[cfg(windows)]
+         let text = run_with_one_retry(|| crate::ocr::recognize_text(&png)).0;
+         #[cfg(not(windows))]
+         let text = crate::ocr::recognize_text(&png);
+         let text = text.map_err(|_| "Local OCR failed.".to_string())?;
+-        // This result owns a snapshot: editing the source does not change its pixels.
+-        Ok(import_result(&app, &png, text, source, Some(identity)))
++        Ok(OcrRecognitionDto { text })
+     })
+     .await
+     .map_err(|_| "Local OCR failed.".to_string())?
+ }
+ 
+ #[tauri::command]
+-pub fn copy_history_text(window: WebviewWindow, text: String) -> Result<(), String> {
++pub fn copy_ocr_text(window: WebviewWindow, text: String) -> Result<(), String> {
+     if window.label() != "library"
+         && !window.label().starts_with("viewer-")
+         && !window.label().starts_with("editor-")
+diff --git a/src-tauri/src/qr_commands.rs b/src-tauri/src/qr_commands.rs
+index 53dcd6d..668d290 100644
+--- a/src-tauri/src/qr_commands.rs
++++ b/src-tauri/src/qr_commands.rs
+@@ -1,9 +1,9 @@
+ use crate::qr_controller::Scan;
+ use crate::{
+-    commands::{asset_dto, AssetDto, RectDto},
++    commands::RectDto,
+     core::asset::CaptureKind,
+     qr::{self, QrCode},
+-    state::{emit_library_changed, AppState},
++    state::AppState,
+ };
+ use base64::Engine;
+ use serde::Serialize;
+@@ -83,16 +83,19 @@ pub async fn scan_qr(
+                     .as_ref()
+                     .filter(|s| {
+                         Some(s.capture_id) == owner.as_ref().map(|o| o.capture_id)
+-                            && s.overlay_labels.contains(&label)
++                            && s.has_overlay(&label)
+                     })
+                     .ok_or("The QR request was canceled.")?;
++                let display = session
++                    .display_for_overlay(&label)
++                    .ok_or("The QR request was canceled.")?;
+                 crate::ocr_commands::FrozenPngSource {
+-                    png: session.display.png_data.clone(),
+-                    declared_width: session.display.pixel_width,
+-                    declared_height: session.display.pixel_height,
+-                    display_width: session.display.screen_frame.width,
+-                    display_height: session.display.screen_frame.height,
+-                    scale: session.display.backing_scale,
++                    png: display.png_data.clone(),
++                    declared_width: display.pixel_width,
++                    declared_height: display.pixel_height,
++                    display_width: display.screen_frame.width,
++                    display_height: display.screen_frame.height,
++                    scale: display.backing_scale,
+                 }
+             };
+             crate::ocr_commands::crop_frozen_png(source, selection)?.png
+@@ -138,7 +141,7 @@ pub async fn scan_qr(
+         let capture = state.capture.lock().unwrap();
+         if let Some(owner) = &owner {
+             if !capture.session.as_ref().is_some_and(|s| {
+-                s.capture_id == owner.capture_id && s.overlay_labels.contains(&label)
++                s.capture_id == owner.capture_id && s.has_overlay(&label)
+             }) {
+                 requests.clear(&label);
+                 return Err("The QR request was canceled.".into());
+@@ -226,7 +229,7 @@ fn selected(
+         .ok_or("The QR request was canceled.")?;
+     if let Some(id) = scan.capture_id {
+         if !capture.session.as_ref().is_some_and(|s| {
+-            s.capture_id == id && s.overlay_labels.iter().any(|l| l == window.label())
++            s.capture_id == id && s.has_overlay(window.label())
+         }) {
+             return Err("The QR request was canceled.".into());
+         }
+@@ -260,8 +263,8 @@ pub async fn qr_action(
+     request_id: String,
+     index: usize,
+     action: String,
+-) -> Result<Option<AssetDto>, String> {
+-    let (scan, code) = selected(&window, &app, &request_id, index)?;
++) -> Result<(), String> {
++    let (_scan, code) = selected(&window, &app, &request_id, index)?;
+     let text = code
+         .text
+         .as_deref()
+@@ -269,141 +272,10 @@ pub async fn qr_action(
+     match action.as_str() {
+         "copy" => {
+             crate::platform::write_text_to_clipboard(text).map_err(|e| e.to_string())?;
+-            Ok(None)
++            Ok(())
+         }
+         "open" => {
+             open_link(&app, text, Some((window, request_id, index))).await?;
+-            Ok(None)
+-        }
+-        "favorite" | "unfavorite" => {
+-            let label = window.label().to_string();
+-            tauri::async_runtime::spawn_blocking(move || {
+-                let crop = if action == "favorite" {
+-                    Some(qr::crop_code(&scan.png, &code)?)
+-                } else {
+-                    None
+-                };
+-                let state = app.state::<AppState>();
+-                let capture = state.capture.lock().unwrap();
+-                let scans = state.qr_requests.scans.lock().unwrap();
+-                let request_current = scans.get(&label).is_some_and(|s| s.id == scan.id)
+-                    && scan.capture_id.is_none_or(|id| {
+-                        capture.session.as_ref().is_some_and(|s| {
+-                            s.capture_id == id && s.overlay_labels.contains(&label)
+-                        })
+-                    });
+-                let mut context = state.library.lock().unwrap();
+-                // selected() already accepted Favorite with a frozen PNG and
+-                // payload. Closing its result does not retract that explicit
+-                // save, but it must never write to a replacement library.
+-                validate_qr_favorite_save(
+-                    &action,
+-                    request_current,
+-                    scan.library_identity,
+-                    (
+-                        context.expected_library_id(),
+-                        context.expected_library_generation(),
+-                    ),
+-                )?;
+-                let library = context.library_mut().map_err(|e| e.to_string())?;
+-                let asset = if let Some((png, width, height)) = crop {
+-                    Some(
+-                        library
+-                            .import_qr(&png, width as i64, height as i64, code.text.unwrap())
+-                            .map_err(|e| e.to_string())?,
+-                    )
+-                } else {
+-                    if let Some(asset) = library
+-                        .all_assets(false)
+-                        .iter()
+-                        .find(|a| a.qr_text == code.text)
+-                    {
+-                        library
+-                            .move_to_trash(&asset.id)
+-                            .map_err(|e| e.to_string())?;
+-                    }
+-                    None
+-                };
+-                drop(context);
+-                drop(scans);
+-                drop(capture);
+-                emit_library_changed(&app);
+-                Ok(asset.as_ref().map(asset_dto))
+-            })
+-            .await
+-            .map_err(|_| "Could not save this QR code.".to_string())?
+-        }
+-        _ => Err("Invalid QR action.".into()),
+-    }
+-}
+-
+-fn validate_qr_favorite_save(
+-    action: &str,
+-    request_current: bool,
+-    expected_library: (uuid::Uuid, uuid::Uuid),
+-    current_library: (uuid::Uuid, uuid::Uuid),
+-) -> Result<(), String> {
+-    if action == "unfavorite" && !request_current {
+-        return Err("The QR request was canceled.".into());
+-    }
+-    if expected_library != current_library {
+-        return Err("The library changed during QR recognition.".into());
+-    }
+-    Ok(())
+-}
+-
+-#[tauri::command]
+-pub fn list_qr_favorites(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    query: String,
+-) -> Result<Vec<AssetDto>, String> {
+-    if window.label() != "library" {
+-        return Err("QR favorites are only available from the library.".into());
+-    }
+-    let state = app.state::<AppState>();
+-    let mut context = state.library.lock().unwrap();
+-    Ok(context
+-        .library()
+-        .map_err(|e| e.to_string())?
+-        .search(&query, false)
+-        .iter()
+-        .filter(|a| a.qr_text.is_some() && a.is_favorite)
+-        .map(asset_dto)
+-        .collect())
+-}
+-
+-#[tauri::command]
+-pub async fn qr_favorite_action(
+-    window: WebviewWindow,
+-    app: AppHandle,
+-    id: String,
+-    action: String,
+-) -> Result<(), String> {
+-    if window.label() != "library" {
+-        return Err("QR favorites are only available from the library.".into());
+-    }
+-    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid QR favorite.")?;
+-    let text = {
+-        let state = app.state::<AppState>();
+-        let mut context = state.library.lock().unwrap();
+-        let library = context.library_mut().map_err(|e| e.to_string())?;
+-        let asset = library
+-            .asset_by_id(&id)
+-            .filter(|a| a.trashed_at.is_none() && a.is_favorite && a.qr_text.is_some())
+-            .ok_or("Invalid QR favorite.")?;
+-        let text = asset.qr_text.clone().unwrap();
+-        if action == "remove" {
+-            library.move_to_trash(&id).map_err(|e| e.to_string())?;
+-        }
+-        text
+-    };
+-    match action.as_str() {
+-        "copy" => crate::platform::write_text_to_clipboard(&text).map_err(|e| e.to_string()),
+-        "copyImage" => crate::commands::copy_asset(app, window, id.to_string()),
+-        "open" => open_link(&app, &text, None).await,
+-        "remove" => {
+-            emit_library_changed(&app);
+             Ok(())
+         }
+         _ => Err("Invalid QR action.".into()),
+@@ -647,8 +519,6 @@ fn open_web_url(url: &str) -> Result<(), String> {
+ 
+ #[cfg(test)]
+ mod tests {
+-    use super::validate_qr_favorite_save;
+-
+     #[test]
+     fn editor_revision_is_accepted_only_from_its_matching_image_editor() {
+         let id = uuid::Uuid::new_v4();
+@@ -711,22 +581,4 @@ mod tests {
+         let command = std::process::Command::new("/kiri-missing-link-launcher");
+         assert!(super::wait_for_link_launcher(command, std::time::Duration::from_secs(1)).is_err());
+     }
+-
+-    #[test]
+-    fn accepted_favorite_survives_result_close_but_unfavorite_requires_its_owner() {
+-        let identity = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+-        assert!(validate_qr_favorite_save("favorite", false, identity, identity).is_ok());
+-        assert!(validate_qr_favorite_save("unfavorite", false, identity, identity).is_err());
+-    }
+-
+-    #[test]
+-    fn accepted_favorite_cannot_write_to_a_replacement_library_or_generation() {
+-        let identity = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+-        for replacement in [
+-            (uuid::Uuid::new_v4(), identity.1),
+-            (identity.0, uuid::Uuid::new_v4()),
+-        ] {
+-            assert!(validate_qr_favorite_save("favorite", false, identity, replacement).is_err());
+-        }
+-    }
+ }

@@ -1,0 +1,20 @@
+/* Shared layout for transient OCR and QR results. */
+.text-reader { min-width: 0; }
+.text-reader__actions { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; min-height: 36px; padding-bottom: 18px; margin-bottom: 20px; border-bottom: 1px solid var(--kiri-surface-border); }
+.text-reader__caption { font-weight: 600; letter-spacing: 0; font-size: 13px; color: var(--kiri-secondary-label); }
+.text-reader__body { user-select: text; -webkit-user-select: text; cursor: text; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; font-size: 15px; max-width: 72ch; padding: 2px 0 32px; color: var(--kiri-label); }
+.text-reader__source { border-top: 1px solid var(--kiri-surface-border); padding: 16px 0; color: var(--kiri-secondary-label); font-size: 13px; }
+.text-reader__source summary { cursor: pointer; display: flex; align-items: center; gap: 8px; width: fit-content; }
+.text-reader__source summary::before { content: '▸'; font-size: 17px; }
+.text-reader__source[open] summary::before { transform: rotate(90deg); }
+.text-reader__source img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; margin: 18px auto 0; border: 1px solid var(--kiri-surface-border); }
+.text-result__heading { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.text-result__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.text-result__empty { min-height: 240px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; color: var(--kiri-secondary-label); padding: 32px; }
+.text-result__empty p { font-size: 13px; line-height: 1.7; max-width: 340px; margin: 0; }
+.text-result__error { color: var(--kiri-coral); font-size: 13px; line-height: 1.6; }
+.text-dialog { color: var(--kiri-label); background: var(--kiri-card); border: 1px solid var(--kiri-surface-border); border-radius: 14px; width: min(600px, calc(100vw - 72px)); max-height: calc(100vh - 80px); overflow: auto; padding: 24px 28px; }
+.text-dialog::backdrop { background: rgba(0,0,0,.42); }
+.text-dialog__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 24px; }
+.text-dialog__header h2 { margin: 0; font-size: 18px; }
+.text-dialog__header p { margin: 7px 0 0; font-size: 13px; color: var(--kiri-secondary-label); }

@@ -1,0 +1,134 @@
+✔ compacted dictionaries preserve every translation and English alias (21.4548ms)
+✔ build compaction touches only the seven canonical dictionaries (0.2642ms)
+✔ all seven complete dictionaries preserve placeholders and their order (9.6135ms)
+✔ locale resolution and live formatting cover every selectable language (54.2795ms)
+✔ a language change received during startup wins over the stale saved preference (5.5643ms)
+✔ OS locale is used only without a saved choice and cannot overwrite a newer event (4.2967ms)
+✔ native Portal labels match each complete UI dictionary without embedding the dictionaries (2.108ms)
+✖ an open confirmation follows language changes without freezing the library's translated copy (138.9462ms)
+✖ confirmation localizes the batch count while preserving caller-owned raw text (7.791ms)
+✔ playback scrubbing updates without native range events and ends only once (69.9347ms)
+✔ effect slider drags form one undo transaction, including pointer capture loss (6.1029ms)
+✔ state matching rejects negated selectors and no-op declarations (0.473ms)
+✖ every native button uses a class with a stylesheet hover state (61.0148ms)
+✖ buttons that can be disabled keep a visible disabled state (32.4058ms)
+✔ the shared control contract keeps focus, press, and disabled states (6.1446ms)
+✔ hover feedback stays in stylesheets instead of pointer event mutation (2.0937ms)
+✔ the repository has one canonical Tauri and Cargo project (0.8764ms)
+✔ pinned screenshot windows get only their dedicated topmost permission (0.6978ms)
+✔ image close completion adds destroy only to image-editor callers (0.4781ms)
+✔ installed Tauri close listener requires destroy only after the guard allows closure (0.4642ms)
+✔ permission-sensitive macOS entry points never allow ad-hoc signing (1.2062ms)
+✔ macOS releases use one verified Universal DMG (0.2954ms)
+✔ macOS exact-artifact acceptance can install a verified prebuilt app (0.2027ms)
+✔ release CI does not create an intentional red light or ad-hoc macOS package (0.3718ms)
+✔ release Windows job parsing accepts LF and CRLF (0.1798ms)
+✔ release native gates validate the actual installed bundle and keep failure evidence (0.7867ms)
+✔ release gate regression rejects missing, optional and failure-ignoring native checks (1.1702ms)
+✔ completed migration material stays in Git history (0.1652ms)
+✔ Markdown link paths ignore queries and anchors but preserve encoded filename characters (0.2266ms)
+✔ current Markdown and HTML documentation links resolve inside the repository (26.9323ms)
+✔ translation dictionaries stay aligned and contain no orphaned keys (159.4603ms)
+✖ CSS custom properties are defined once they are used and are not orphaned (5.8847ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 27
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 505.7333
+
+✖ failing tests:
+
+test at scripts\i18n.test.mjs:130:1
+✖ an open confirmation follows language changes without freezing the library's translated copy (138.9462ms)
+  Error: Unexpected import: ../components/MacTitlebar
+      at environment.navigator.userAgent (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/helpers/library-render-harness.mjs:241:35)
+      at eval (eval at createLibraryHarness (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/helpers/library-render-harness.mjs:237:3), <anonymous>:53:23)
+      at createLibraryHarness (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/helpers/library-render-harness.mjs:237:188)
+      at TestContext.<anonymous> (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/i18n.test.mjs:143:26)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+
+test at scripts\i18n.test.mjs:165:1
+✖ confirmation localizes the batch count while preserving caller-owned raw text (7.791ms)
+  Error: Unexpected import: ../components/MacTitlebar
+      at environment.navigator.userAgent (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/helpers/library-render-harness.mjs:241:35)
+      at eval (eval at createLibraryHarness (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/helpers/library-render-harness.mjs:237:3), <anonymous>:53:23)
+      at createLibraryHarness (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/helpers/library-render-harness.mjs:237:188)
+      at TestContext.<anonymous> (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/i18n.test.mjs:174:26)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+
+test at scripts\interaction-states.test.mjs:163:1
+✖ every native button uses a class with a stylesheet hover state (61.0148ms)
+  AssertionError [ERR_ASSERTION]: src\components\MacTitlebar.tsx:43 needs a project interaction class
+      at visit (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/interaction-states.test.mjs:106:14)
+      at visitNode2 (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32308:18)
+      at forEachChildInJsxElement (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32675:12)
+      at Object.forEachChild (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32829:35)
+      at visit (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/interaction-states.test.mjs:109:8)
+      at visitNodes (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32316:22)
+      at forEachChildInJsxElement (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32675:55)
+      at Object.forEachChild (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32829:35)
+      at visit (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/interaction-states.test.mjs:109:8)
+      at visitNodes (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32316:22) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\interaction-states.test.mjs:174:1
+✖ buttons that can be disabled keep a visible disabled state (32.4058ms)
+  AssertionError [ERR_ASSERTION]: src\components\MacTitlebar.tsx:43 needs a project interaction class
+      at visit (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/interaction-states.test.mjs:106:14)
+      at visitNode2 (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32308:18)
+      at forEachChildInJsxElement (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32675:12)
+      at Object.forEachChild (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32829:35)
+      at visit (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/interaction-states.test.mjs:109:8)
+      at visitNodes (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32316:22)
+      at forEachChildInJsxElement (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32675:55)
+      at Object.forEachChild (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32829:35)
+      at visit (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/interaction-states.test.mjs:109:8)
+      at visitNodes (E:\项目\Kiri录屏\Kiri\Kiri\node_modules\.pnpm\typescript@5.8.3\node_modules\typescript\lib\typescript.js:32316:22) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\repository-hygiene.test.mjs:293:1
+✖ CSS custom properties are defined once they are used and are not orphaned (5.8847ms)
+  AssertionError [ERR_ASSERTION]: orphaned CSS variables
+  + actual - expected
+  
+  + [
+  +   'kiri-window-shadow',
+  +   'kiri-popover-shadow'
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (file:///E:/%E9%A1%B9%E7%9B%AE/Kiri%E5%BD%95%E5%B1%8F/Kiri/Kiri/scripts/repository-hygiene.test.mjs:301:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1201:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:831:18)
+      at Test.postRun (node:internal/test_runner/test:1330:19)
+      at Test.run (node:internal/test_runner/test:1258:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'kiri-window-shadow', 'kiri-popover-shadow' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

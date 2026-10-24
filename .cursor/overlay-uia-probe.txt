@@ -1,0 +1,30 @@
+OVERLAYS=2
+  overlay=0x530A6C rect=0,0 2560x1440
+  overlay=0x5C120A rect=2560,0 2560x1440
+TARGET=0x530A6C FG=0x5C120A
+UIA_DESCENDANTS=48
+  BUTTON name='截图' class='kiri-mode-btn' enabled=True bounds=1146,49,88,34
+  BUTTON name='录屏' class='kiri-mode-btn' enabled=True bounds=1236,49,88,34
+  BUTTON name='文字' class='kiri-mode-btn' enabled=True bounds=1326,49,88,34
+  BUTTON name='移动标注工具栏' class='kiri-capture-toolbar-move' enabled=True bounds=203,637,19,32
+  BUTTON name='取消截图 · Esc' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=222,637,33,32
+  BUTTON name='选择 (V)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=264,637,33,32
+  BUTTON name='画笔 (P)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=297,637,33,32
+  BUTTON name='矩形 (R)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=330,637,33,32
+  BUTTON name='直线 (L)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=363,637,33,32
+  BUTTON name='箭头 (A)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=396,637,33,32
+  BUTTON name='文字 (T)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=429,637,33,32
+  BUTTON name='序号标注 (N)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=462,637,33,32
+  BUTTON name='标签气泡 (B)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=495,637,33,32
+  BUTTON name='马赛克 (M)' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=528,637,33,32
+  BUTTON name='水印（W）' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=561,637,33,32
+  BUTTON name='撤销' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=False bounds=603,637,33,32
+  BUTTON name='重做' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=False bounds=636,637,33,32
+  BUTTON name='识别文字' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=678,637,33,32
+  BUTTON name='识别二维码' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=711,637,33,32
+  BUTTON name='滚动截图' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=744,637,33,32
+  BUTTON name='调整选区尺寸' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=777,637,33,32
+  BUTTON name='置顶截图' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=810,637,33,32
+  BUTTON name='完成并复制到剪贴板' class='kiri-toolbar-button kiri-annotation-toolbar-button' enabled=True bounds=848,638,49,30
+UIA_BUTTONS=23
+OVERLAYS_AFTER_ESC=0

@@ -1,0 +1,40 @@
+[PASS] run 1: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=733eb9dda3f74d369f85b2a441adeb53"}
+[PASS] run 1: one new native pin before=0 after=1
+[PASS] run 1: no editing overlay left behind overlays=0 elapsedMs=4333
+[PASS] run 1: the pin carries its shadow band pin=432x432 selection=400x400 dpi=96 expectedBand=32
+[PASS] run 1: the pin is visible above the photo rect rect=584,334 432x432
+[PASS] run 1: Escape closes the pin under the pointer left=0
+[PASS] run 2: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=aae2740fe8044bd28e7a78612bcaf338"}
+[PASS] run 2: one new native pin before=0 after=1
+[PASS] run 2: no editing overlay left behind overlays=0 elapsedMs=4081
+[PASS] run 2: the pin carries its shadow band pin=432x432 selection=400x400 dpi=96 expectedBand=32
+[PASS] run 2: the pin is visible above the photo rect rect=584,334 432x432
+[FAIL] run 2: Escape closes the pin under the pointer left=1
+[PASS] run 3: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=b30c13c73a9948f5b335bbe9ea7098ff"}
+[PASS] run 3: one new native pin before=1 after=2
+[PASS] run 3: no editing overlay left behind overlays=0 elapsedMs=4072
+[PASS] run 3: the pin carries its shadow band pin=432x432 selection=400x400 dpi=96 expectedBand=32
+[PASS] run 3: the pin is visible above the photo rect rect=584,334 432x432
+[PASS] run 3: Escape closes the pin under the pointer left=1
+[PASS] run 4: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=ef1e1854af024c2baaa08bc8e26cbe2b"}
+[PASS] run 4: one new native pin before=1 after=2
+[PASS] run 4: no editing overlay left behind overlays=0 elapsedMs=4098
+[PASS] run 4: the pin carries its shadow band pin=432x432 selection=400x400 dpi=96 expectedBand=32
+[PASS] run 4: the pin is visible above the photo rect rect=584,334 432x432
+[PASS] run 4: Escape closes the pin under the pointer left=1
+[PASS] run 5: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=af04ff2574ef4117ba2e842669a743f2"}
+[PASS] run 5: one new native pin before=1 after=2
+[PASS] run 5: no editing overlay left behind overlays=0 elapsedMs=4102
+[PASS] run 5: the pin carries its shadow band pin=432x432 selection=400x400 dpi=96 expectedBand=32
+[PASS] run 5: the pin is visible above the photo rect rect=584,334 432x432
+[PASS] run 5: Escape closes the pin under the pointer left=1
+[PASS] run 6: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=fb99ed75438d4a438836f3e98750860d"}
+[PASS] run 6: one new native pin before=1 after=2
+[PASS] run 6: no editing overlay left behind overlays=0 elapsedMs=4105
+[PASS] run 6: the pin carries its shadow band pin=432x432 selection=400x400 dpi=96 expectedBand=32
+[PASS] run 6: the pin is visible above the photo rect rect=584,334 432x432
+[PASS] run 6: Escape closes the pin under the pointer left=1
+[PASS] the foreground application kept focus 
+
+36/37 checks passed
+  - run 2: Escape closes the pin under the pointer (left=1)

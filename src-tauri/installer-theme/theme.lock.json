@@ -1,10 +1,9 @@
 {
   "format": "yuxino-installer-lock-v2",
-  "source": "yuxino/desktop-installer",
-  "version": "2.2.0",
-  "product": "kiri",
-  "repository": "https://github.com/yuxino/kiri",
-  "size": 922218,
-  "unpackedSize": 3347613,
-  "sha256": "3e34547435200f6b328ecd04754584353f0a69d44773dede0c37fba316d4d558"
+  "source": "Lumen installer theme",
+  "version": "1.0.0",
+  "product": "lumen",
+  "size": 42701,
+  "unpackedSize": 3346762,
+  "sha256": "f99640c7a7b65735315a61da072287da3577329f1192d5fbe62c98e48de88c8e"
 }

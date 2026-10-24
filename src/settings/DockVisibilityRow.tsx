@@ -56,7 +56,7 @@ export function DockVisibilityRow() {
     <div className="kiri-settings-card kiri-dock-row" aria-busy={loading || busy}>
       <div className="kiri-dock-copy">
         <strong>{t("Show in Dock")}</strong>
-        <span>{t("When hidden, open Kiri from the menu bar.")}</span>
+        <span>{t("When hidden, open Lumen from the menu bar.")}</span>
         {error && <span className="kiri-storage-error" role="alert">{t(error)}</span>}
       </div>
       {error && !status ? (

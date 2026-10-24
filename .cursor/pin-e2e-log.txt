@@ -1,0 +1,13 @@
+KIRI_WINDOWS=5
+  class=Tauri Window title=kiri hwnd=0x7E10BC pid=27928 rect=0,0 2560x1440 visible=True ex=0x40118 topmost=True layered=False toolwindow=False noactivate=False
+  class=Tauri Window title=kiri hwnd=0x1C11274 pid=27928 rect=2560,0 2560x1440 visible=True ex=0x40118 topmost=True layered=False toolwindow=False noactivate=False
+  class=KiriPinWindow title=Kiri Pin hwnd=0x3F7104E pid=27928 rect=430,418 380x272 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True
+  class=io.yuxino.kiri-sic title=io.yuxino.kiri-siw hwnd=0x181404 pid=27928 rect=0,0 16x16 visible=True ex=0x80800A0 topmost=False layered=True toolwindow=True noactivate=True
+  class=Tao Thread Event Target title= hwnd=0x1C60FFA pid=27928 rect=0,0 16x16 visible=True ex=0x80800A0 topmost=False layered=True toolwindow=True noactivate=True
+参数类型不匹配
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\e2e-pin-review3.ps1.utf8.ps1:271 字符: 16
++     "OVERLAY=$([Q]::Describe($overlay))"
++                ~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (:) [], ArgumentException
+    + FullyQualifiedErrorId : System.ArgumentException
+ 

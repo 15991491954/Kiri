@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Kiri">
-  <h1>Kiri</h1>
+  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Lumen">
+  <h1>Lumen</h1>
   <p>スクリーンショット、文字認識、画面録画。データはこのコンピューターに保存されます。</p>
   <p>macOS、Windows、Linux に対応。</p>
   <p><a href="https://kiri.yuxino.cn">公式サイト</a> · <a href="https://github.com/yuxino/kiri/releases/latest">最新版をダウンロード</a></p>
@@ -12,7 +12,7 @@
   </p>
 </div>
 
-![Kiri](../assets/readme-preview.png)
+![Lumen](../assets/readme-preview.png)
 
 ## 機能
 
@@ -27,9 +27,9 @@
 
 ## はじめに
 
-1. macOS では `⇧⌘A`、Windows / Linux X11 では `Shift+Ctrl+A` で撮影画面を開きます。
+1. `F1` で撮影画面を開き、`F2` でコピーした画像やテキストを貼り付け、`F3` で録画を開始します。
 2. スクリーンショット、録画、OCR を選び、ウィンドウをクリックするか範囲をドラッグします。
-3. スクリーンショットは `Enter` で完了、`Esc` でキャンセル。完了した画像はクリップボードとライブラリに保存されます。
+3. スクリーンショットは `Enter` で完了、`Esc` でキャンセル。完了した画像はクリップボードにコピーされます。画面に貼り付けるにはツールバーの 📌 を押します。
 
 [インストールと使い方](../usage.ja.md) · [動画編集](../video-editing.ja.md) · [Linux](../linux.md) · [問題を報告](https://github.com/yuxino/kiri/issues)
 

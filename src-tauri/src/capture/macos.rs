@@ -226,12 +226,7 @@ fn active_screen() -> Result<ActiveScreen> {
 
 fn screen_geometry(screen: &NSScreen) -> Result<ActiveScreen> {
     let frame = screen.frame();
-    let display_id = screen
-        .deviceDescription()
-        .objectForKey(&NSString::from_str("NSScreenNumber"))
-        .and_then(|value| value.downcast::<NSNumber>().ok())
-        .map(|number| number.unsignedIntValue() as CGDirectDisplayID)
-        .ok_or_else(|| anyhow!("display unavailable"))?;
+    let display_id = screen_display_id(screen)?;
     let backing_scale = screen.backingScaleFactor().max(1.0);
 
     // `NSScreen.mainScreen` follows the key window and can therefore switch
@@ -246,6 +241,15 @@ fn screen_geometry(screen: &NSScreen) -> Result<ActiveScreen> {
         display_id,
         backing_scale,
     })
+}
+
+fn screen_display_id(screen: &NSScreen) -> Result<CGDirectDisplayID> {
+    screen
+        .deviceDescription()
+        .objectForKey(&NSString::from_str("NSScreenNumber"))
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+        .map(|number| number.unsignedIntValue() as CGDirectDisplayID)
+        .ok_or_else(|| anyhow!("display unavailable"))
 }
 
 #[cfg(test)]
@@ -616,10 +620,10 @@ pub fn capture_active_display() -> Result<CapturedDisplay> {
     match check_capture_permission() {
         PermissionState::Authorized => {}
         PermissionState::RestartRequired => {
-            bail!("Screen Recording access was granted. Quit and reopen Kiri once to finish enabling capture.")
+            bail!("Screen Recording access was granted. Quit and reopen Lumen once to finish enabling capture.")
         }
         PermissionState::SettingsRequired => {
-            bail!("Screen Recording is off. Enable Kiri in System Settings, then quit and reopen it once.")
+            bail!("Screen Recording is off. Enable Lumen in System Settings, then quit and reopen it once.")
         }
     }
 
@@ -627,15 +631,54 @@ pub fn capture_active_display() -> Result<CapturedDisplay> {
         .ok_or_else(|| anyhow!("display capture must start on the main thread"))?;
     let screen = active_screen()?;
     let content = shareable_content(main_thread)?;
+    capture_screen(&screen, &content)
+}
+
+/// Stable Core Graphics display ids in `NSScreen` order. Mirrored screens
+/// share an id, so duplicates are removed before capturing.
+pub fn display_ids() -> Result<Vec<u32>> {
+    let main_thread = MainThreadMarker::new()
+        .ok_or_else(|| anyhow!("display enumeration must run on the main thread"))?;
+    let screens = NSScreen::screens(main_thread);
+    let mut ids: Vec<u32> = Vec::new();
+    for screen in screens.iter() {
+        let id = screen_display_id(&screen)?;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
+/// Freeze one already-known display after the primary overlay is interactive.
+pub fn capture_display_by_id(id: u32) -> Result<CapturedDisplay> {
+    let main_thread = MainThreadMarker::new()
+        .ok_or_else(|| anyhow!("display capture must start on the main thread"))?;
+    let screens = NSScreen::screens(main_thread);
+    let screen = screens
+        .iter()
+        .find_map(|screen| {
+            let geometry = screen_geometry(&screen).ok()?;
+            (geometry.display_id == id).then_some(geometry)
+        })
+        .ok_or_else(|| anyhow!("The display is no longer available."))?;
+    let content = shareable_content(main_thread)?;
+    capture_screen(&screen, &content)
+}
+
+fn capture_screen(
+    screen: &ActiveScreen,
+    content: &SCShareableContent,
+) -> Result<CapturedDisplay> {
     let displays = unsafe { content.displays() };
     let display = displays
         .iter()
         .find(|display| unsafe { display.displayID() } == screen.display_id)
         .ok_or_else(|| anyhow!("the active display could not be captured"))?;
 
-    let window_rects = collect_window_rects(&content, screen.display_id);
+    let window_rects = collect_window_rects(content, screen.display_id);
     let own_process_id = std::process::id() as i32;
-    let filter = make_filter(&content, &display, own_process_id, &[]);
+    let filter = make_filter(content, &display, own_process_id, &[]);
 
     let configuration = unsafe {
         let configuration = SCStreamConfiguration::new();

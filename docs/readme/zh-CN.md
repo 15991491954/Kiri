@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Kiri">
-  <h1>Kiri</h1>
+  <img src="../../src-tauri/icons/128x128.png" width="112" alt="Lumen">
+  <h1>Lumen</h1>
   <p>截图、文字识别和录屏，素材保存在本机。</p>
   <p>支持 macOS、Windows 和 Linux。</p>
   <p><a href="https://kiri.yuxino.cn">官网</a> · <a href="https://github.com/yuxino/kiri/releases/latest">下载最新版本</a></p>
@@ -12,7 +12,7 @@
   </p>
 </div>
 
-![Kiri](../assets/readme-preview.png)
+![Lumen](../assets/readme-preview.png)
 
 ## 功能
 
@@ -27,9 +27,9 @@
 
 ## 开始使用
 
-1. 按 `⇧⌘A`（macOS）或 `Shift+Ctrl+A`（Windows / Linux X11）打开捕获面板。
+1. 按 `F1` 打开捕获面板，`F2` 把剪贴板里的图片或文字贴到桌面，`F3` 开始录屏。
 2. 选择截图、录屏或 OCR，点击窗口或拖出一个区域。
-3. 截图按 `Enter` 完成，`Esc` 取消；完成后会复制到剪贴板并保存在素材库。
+3. 截图按 `Enter` 完成，`Esc` 取消；完成后会自动复制到剪贴板；需要贴到桌面上时点工具栏的 📌。
 
 [使用与常见问题](../usage.zh-CN.md) · [视频剪辑](../video-editing.zh-CN.md) · [Linux](../linux.md) · [反馈问题](https://github.com/yuxino/kiri/issues)
 

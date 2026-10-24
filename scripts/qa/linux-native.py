@@ -993,13 +993,10 @@ try:
     if "SCREEN CAPTURE 123" not in normalized(recognized):
         raise RuntimeError(f"OCR clipboard text did not contain the public fixture: {recognized!r}")
     (output / "ocr-clipboard.txt").write_text(recognized, encoding="utf-8")
-    history = wait_for("recognized text saved to local history", lambda: [
-        item for item in assets() if "SCREEN CAPTURE 123" in normalized(item.get("ocrText", ""))
-    ])
-    if len(history) != 1 or len(assets()) != 2:
-        raise RuntimeError("OCR must save exactly one local text-history source image")
+    if len(assets()) != 1 or any(item.get("ocrText") for item in assets()):
+        raise RuntimeError("OCR must not write a history record or snapshot to the library")
     report["ocr_text"] = normalized(recognized)
-    report["checks"].append("native OCR shortcut opens OCR directly; region selection recognizes public desktop text and Copy writes it to clipboard and Text History")
+    report["checks"].append("native OCR shortcut opens OCR directly; region selection recognizes public desktop text and Copy writes it to the clipboard without saving a library record")
 
     wait_for_feedback_to_close()
     show_fixture()

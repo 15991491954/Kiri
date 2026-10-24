@@ -1,0 +1,625 @@
+﻿diff --git a/src/lib/ipc.ts b/src/lib/ipc.ts
+index 24e37b5..b0d9d03 100644
+--- a/src/lib/ipc.ts
++++ b/src/lib/ipc.ts
+@@ -59,8 +59,6 @@ export interface ScrollCaptureStatusDto {
+ 
+ export interface OcrRecognitionDto {
+   text: string;
+-  saved: boolean;
+-  asset: AssetDto | null;
+ }
+ 
+ export interface AssetDto {
+@@ -70,8 +68,6 @@ export interface AssetDto {
+   filename: string;
+   title: string | null;
+   ocrText: string | null;
+-  ocrOriginalText: string | null;
+-  qrText: string | null;
+   tags: string[];
+   pixelWidth: number;
+   pixelHeight: number;
+@@ -181,7 +177,7 @@ export interface ShortcutStatusDto {
+   status: "enabled" | "occupied" | "disabled" | "systemManaged";
+ }
+ 
+-export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "recordingPauseResume" | "recordingStop";
++export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "pastePin" | "recordingPauseResume" | "recordingStop";
+ 
+ export interface ShortcutSettingDto {
+   action: ShortcutAction;
+@@ -305,14 +301,9 @@ export interface QrScanDto { requestId: string; imageUrl: string; width: number;
+ export const api = {
+   scanQr: (requestId: string, selection: RectDto | null, assetId: string | null, expectedRevisionSha256?: string) => invoke<QrScanDto>("scan_qr", { requestId, selection, assetId, expectedRevisionSha256 }),
+   cancelQr: (requestId: string) => invoke<void>("cancel_qr", { requestId }),
+-  qrAction: (requestId: string, index: number, action: string) => invoke<AssetDto | null>("qr_action", { requestId, index, action }),
+-  listQrFavorites: (query: string) => invoke<AssetDto[]>("list_qr_favorites", { query }),
+-  qrFavoriteAction: (id: string, action: string) => invoke<void>("qr_favorite_action", { id, action }),
+-  listOcrRecords: (query: string) => invoke<AssetDto[]>("list_ocr_records", { query }),
+-  updateOcrHistoryText: (id: string, expectedText: string, replacement: string | null) =>
+-    invoke<AssetDto>("update_ocr_history_text", { id, expectedText, replacement }),
++  qrAction: (requestId: string, index: number, action: string) => invoke<void>("qr_action", { requestId, index, action }),
+   recognizeAssetLocal: (id: string) => invoke<OcrRecognitionDto>("recognize_asset_local", { id }),
+-  copyHistoryText: (text: string) => invoke<void>("copy_history_text", { text }),
++  copyOcrText: (text: string) => invoke<void>("copy_ocr_text", { text }),
+   listAssets: (query: string, showingTrash: boolean) =>
+     invoke<AssetDto[]>("list_assets", { query, showingTrash }),
+   getAsset: (id: string) => invoke<AssetDto>("get_asset", { id }),
+@@ -367,6 +358,12 @@ export const api = {
+   copyAssetFile: (id: string) => invoke<void>("copy_asset_file", { id }),
+   openAsset: (id: string) => invoke<void>("open_asset", { id }),
+   pinAsset: (id: string) => invoke<void>("pin_asset", { id }),
++  setPinTopmost: (onTop: boolean) => invoke<void>("set_pin_topmost", { onTop }),
++  raisePin: () => invoke<void>("raise_pin"),
++  zoomPin: (factor: number, anchorX: number, anchorY: number, imageWidth: number, imageHeight: number) =>
++    invoke<{ width: number; height: number }>("zoom_pin", {
++      factor, anchorX, anchorY, imageWidth, imageHeight,
++    }),
+   openEditor: (id: string, recognizeQr = false) => invoke<void>("open_editor", { id, recognizeQr }),
+   takeEditorQrRequest: () => invoke<boolean>("take_editor_qr_request"),
+   revealAsset: (id: string) => invoke<void>("reveal_asset", { id }),
+@@ -380,6 +377,8 @@ export const api = {
+   convertToGif: (id: string) => invoke<void>("convert_to_gif", { id }),
+ 
+   startCapture: () => invoke<CaptureContextDto>("start_capture"),
++  setCaptureMode: (mode: "screenshot" | "record" | "ocr") =>
++    invoke<void>("set_capture_mode", { mode }),
+   cancelCapture: () => invoke<void>("cancel_capture"),
+   startScrollCapture: (captureId: string, selection: RectDto) =>
+     invoke<void>("start_scroll_capture", { captureId, selection }),
+diff --git a/src/windows/OverlayWindow.tsx b/src/windows/OverlayWindow.tsx
+index 65e72de..b9a427d 100644
+--- a/src/windows/OverlayWindow.tsx
++++ b/src/windows/OverlayWindow.tsx
+@@ -46,6 +46,15 @@ import { useAnnotationAppearance } from "../annotation/useAnnotationAppearance";
+ import {AnnotationStyleControls} from "../annotation/AnnotationStyleControls";
+ import AnnotationCanvas, { type AnnotationCanvasHandle } from "../annotation/AnnotationCanvas";
+ import { AnnotationInteractionLock } from "../annotation/interaction-lock.js";
++import { interactionCursor } from "../annotation/cursors.js";
++import {
++  canSwitchMode,
++  cycleMode,
++  idleWheelState,
++  modeForKey,
++  normalizeWheelDelta,
++  wheelModeStep,
++} from "../annotation/mode-switching.js";
+ import { KiriIcon, type IconName } from "../components/KiriIcons";
+ import { AnnotationToolbarButton } from "../components/AnnotationToolbarButton";
+ import { QrOverlay } from "../qr/QrOverlay";
+@@ -100,6 +109,10 @@ const ACCENT = "#050505";
+ const MODE_SELECTOR_DRAG_THRESHOLD = 4;
+ const FLOATING_CONTROL_MARGIN = 8;
+ const DEFAULT_HINT_TOP = 102;
++// Slightly larger than the 10px visual handle radius so the cursor changes
++// just before the pointer reaches the dot.
++const HANDLE_HIT_RADIUS = 12;
++const CAPTURE_MODE_WRITE_DELAY_MS = 300;
+ 
+ type ModeSelectorDrag = {
+   pointerId: number;
+@@ -178,7 +191,6 @@ export function OverlayWindow() {
+   const qrRequestRef = useRef<string | null>(null);
+   const qrReturnPhaseRef = useRef<"selecting" | "annotating">("selecting");
+   const [ocrText, setOcrText] = useState("");
+-  const [ocrSaved, setOcrSaved] = useState(false);
+   const [ocrFailed, setOcrFailed] = useState(false);
+   const [preparedOcr, setPreparedOcr] = useState<PreparedOcrRequestDto | null>(null);
+   const [remoteOcrFailed, setRemoteOcrFailed] = useState(false);
+@@ -212,6 +224,11 @@ export function OverlayWindow() {
+   const suppressModeSelectorClickRef = useRef(false);
+   const completionLock = useMemo(() => new AnnotationInteractionLock(), []);
+   const [completing, setCompleting] = useState(false);
++  const [hoverHandle, setHoverHandle] = useState<string | null>(null);
++  const [hoverInsideSelection, setHoverInsideSelection] = useState(false);
++  const wheelStateRef = useRef(idleWheelState());
++  const modeWriteTimerRef = useRef<number | null>(null);
++  const modeResolvedRef = useRef(false);
+   const modeRef = useRef<Mode>("screenshot");
+   const preparedOcrRef = useRef<PreparedOcrRequestDto | null>(null);
+   const ocrGenerationRef = useRef(0);
+@@ -242,6 +259,7 @@ export function OverlayWindow() {
+         if (disposed) return;
+         const initialMode = ctx.initialMode ?? "screenshot";
+         modeRef.current = initialMode;
++        modeResolvedRef.current = true;
+         setMode(initialMode);
+         setContext(ctx);
+       })
+@@ -519,7 +537,6 @@ export function OverlayWindow() {
+       setPreparedOcr(null);
+       setOcrFailed(false);
+       setOcrText(text.text);
+-      setOcrSaved(text.saved);
+       setPhase("ocr-result");
+     } catch (error) {
+       if (generation !== ocrGenerationRef.current) return;
+@@ -551,7 +568,6 @@ export function OverlayWindow() {
+       setPreparedOcr(null);
+       setOcrFailed(false);
+       setOcrText(text.text);
+-      setOcrSaved(text.saved);
+       setPhase("ocr-result");
+     } catch {
+       if (generation !== ocrGenerationRef.current) return;
+@@ -798,7 +814,7 @@ export function OverlayWindow() {
+         selectionRef.current
+       ) {
+         // Handle or move the existing selection.
+-        const handle = hitTestHandle(p, selectionRef.current, 10);
++        const handle = hitTestHandle(p, selectionRef.current, HANDLE_HIT_RADIUS);
+         if (handle) {
+           setResizeHandle(handle);
+           setDrag({ start: p, current: p, moved: false });
+@@ -838,6 +854,15 @@ export function OverlayWindow() {
+           hoverWindowRef.current = candidate;
+           setHoverWindow(candidate);
+         }
++        const currentSelection = selectionRef.current;
++        const regionPhase =
++          phaseRef.current === "selecting" || phaseRef.current === "record-options";
++        setHoverHandle(
++          regionPhase && currentSelection
++            ? hitTestHandle(p, currentSelection, HANDLE_HIT_RADIUS)
++            : null,
++        );
++        setHoverInsideSelection(regionPhase && !!currentSelection && contains(currentSelection, p));
+         return;
+       }
+       setHoverWindow(null);
+@@ -930,6 +955,33 @@ export function OverlayWindow() {
+ 
+   // Switching modes clears transient UI while reusing a completed selection.
+   // OCR starts only from this explicit action or a committed pointer release.
++  // Remember the mode the user actually works in, debounced so holding a mode
++  // key or spinning the wheel still writes once. Explicit entry points
++  // (record/OCR shortcuts) force their own mode for that session.
++  const persistCaptureMode = useCallback((value: Mode) => {
++    if (modeWriteTimerRef.current !== null) clearTimeout(modeWriteTimerRef.current);
++    modeWriteTimerRef.current = setTimeout(() => {
++      modeWriteTimerRef.current = null;
++      void api.setCaptureMode(value).catch(() => {});
++    }, CAPTURE_MODE_WRITE_DELAY_MS);
++  }, []);
++
++  useEffect(
++    () => () => {
++      // Only a debounce that never fired needs the closing write. Writing on
++      // every unmount would let a peer display overlay that never changed its
++      // mode overwrite the choice made on the display the user worked in.
++      if (modeWriteTimerRef.current === null) return;
++      clearTimeout(modeWriteTimerRef.current);
++      modeWriteTimerRef.current = null;
++      // A capture that failed before its context arrived never learned the
++      // backend's resolved mode; writing the local default would clobber it.
++      if (!modeResolvedRef.current) return;
++      void api.setCaptureMode(modeRef.current).catch(() => {});
++    },
++    [],
++  );
++
+   const switchMode = useCallback(
+     (next: Mode) => {
+       if (completionLock.locked) return;
+@@ -938,6 +990,7 @@ export function OverlayWindow() {
+       discardQr();
+       modeRef.current = next;
+       setMode(next);
++      persistCaptureMode(next);
+       setSizeControlsOpen(false);
+       setPhase("selecting");
+       setDrag(null);
+@@ -968,9 +1021,64 @@ export function OverlayWindow() {
+       // With a valid region: screenshot re-shows the toolbar (selecting
+       // phase with a selection); record shows the options popover.
+     },
+-    [completionLock, discardPreparedOcr, discardQr, runOcr],
++    [completionLock, discardPreparedOcr, discardQr, runOcr, persistCaptureMode],
+   );
+ 
++  // --- mode switching without moving the pointer ---
++  // Digits pick a mode outright; the wheel cycles them in place. Both only
++  // apply while no annotation or result surface owns the overlay, and both
++  // ignore editable controls so numeric inputs keep their native behavior.
++  useEffect(() => {
++    const onModeKeyDown = (e: KeyboardEvent) => {
++      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
++      if (completionLock.locked) return;
++      if (isTextComposition(e)) return;
++      if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]")) return;
++      if (!canSwitchMode(phaseRef.current)) return;
++      const next = modeForKey(e.key);
++      if (!next) return;
++      e.preventDefault();
++      switchMode(next);
++    };
++    const onModeWheel = (e: WheelEvent) => {
++      if (completionLock.locked) return;
++      if (!canSwitchMode(phaseRef.current)) return;
++      // Panels with their own scrolling range keep the wheel: the mode
++      // selector is draggable chrome, the recording options scroll, and the
++      // size fields need their native stepper behavior.
++      if (
++        e.target instanceof Element &&
++        e.target.closest(
++          ".kiri-mode-select, .kiri-capture-toolbar, .kiri-record-options, " +
++            ".kiri-capture-tool-options, .kiri-capture-dimension, .kiri-color-picker",
++        )
++      ) return;
++      const result = wheelModeStep(
++        wheelStateRef.current,
++        normalizeWheelDelta(e.deltaY, e.deltaMode),
++        performance.now(),
++      );
++      wheelStateRef.current = result.state;
++      if (!result.direction) return;
++      e.preventDefault();
++      switchMode(cycleMode(modeRef.current, result.direction));
++    };
++    window.addEventListener("keydown", onModeKeyDown);
++    window.addEventListener("wheel", onModeWheel, { passive: false });
++    return () => {
++      window.removeEventListener("keydown", onModeKeyDown);
++      window.removeEventListener("wheel", onModeWheel);
++    };
++  }, [completionLock, switchMode]);
++
++  // Leaving a region phase invalidates hover hit-test state gathered on the
++  // frozen screen; a stale handle would otherwise keep a resize cursor.
++  useEffect(() => {
++    if (phase === "mode-select" || phase === "selecting" || phase === "record-options") return;
++    setHoverHandle(null);
++    setHoverInsideSelection(false);
++  }, [phase]);
++
+   // --- render ---
+   const selectingRect = drag && drag.moved && !resizeHandle ? normalized(drag.start, drag.current) : null;
+   const displayRect = selection ?? selectingRect;
+@@ -999,12 +1107,15 @@ export function OverlayWindow() {
+         // frozen image is ready (mirroring the original's freeze behavior).
+         background: frozenSrc ? "#141414" : "transparent",
+         overflow: "hidden",
+-        cursor:
+-          completing
+-            ? "progress"
+-            : phase === "selecting" || phase === "record-options"
+-            ? "crosshair"
+-            : "default",
++        cursor: interactionCursor({
++          completing,
++          phase,
++          resizeHandle,
++          moving: !!moveDrag,
++          dragging: !!drag,
++          hoverHandle,
++          hoverInside: hoverInsideSelection,
++        }),
+       }}
+       onPointerDown={completing || phase === "annotating" ? undefined : onPointerDown}
+       onPointerDownCapture={colorPicker.clear}
+@@ -1019,7 +1130,7 @@ export function OverlayWindow() {
+         const eligible = event.target === event.currentTarget &&
+           modeRef.current === "screenshot" && phaseRef.current === "selecting" &&
+           !selectionClickMovedRef.current && !!region && isValidSelection(region, 3) &&
+-          contains(region, point) && !hitTestHandle(point, region, 10);
++          contains(region, point) && !hitTestHandle(point, region, HANDLE_HIT_RADIUS);
+         doubleClickCanFinishRef.current = event.detail === 1
+           ? eligible : doubleClickCanFinishRef.current && eligible;
+       }}
+@@ -1261,29 +1372,34 @@ export function OverlayWindow() {
+               active={mode === "screenshot"}
+               icon="camera.viewfinder"
+               label={t("Screenshot")}
++              badge="1"
+               onClick={() => switchMode("screenshot")}
+             />
+             <ModeButton
+               active={mode === "record"}
+               icon="record.circle"
+               label={t("Record")}
++              badge="2"
+               onClick={() => switchMode("record")}
+             />
+             <ModeButton
+               active={mode === "ocr"}
+               icon="text.viewfinder"
+               label={t("OCR")}
++              badge="3"
+               onClick={() => switchMode("ocr")}
+             />
+           </div>
+           {!selection && (
+             <HintLabel
+               text={
+-                mode === "screenshot"
++                (mode === "screenshot"
+                   ? t("Drag to choose a capture area   路   Click a window   路   Esc to cancel")
+                   : mode === "record"
+                     ? t("Drag to choose a recording area   路   Click a window   路   Esc to cancel")
+-                    : t("Drag to choose text to recognize   路   Esc to cancel")
++                    : t("Drag to choose text to recognize   路   Esc to cancel")) +
++                "   路   " +
++                t("Press 1 / 2 / 3 to change mode")
+               }
+               top={DEFAULT_HINT_TOP}
+             />
+@@ -1321,7 +1437,6 @@ export function OverlayWindow() {
+       {phase === "ocr-result" && (
+         <OcrPanel
+           text={ocrText}
+-          saved={ocrSaved}
+           failed={ocrFailed}
+           anchor={selection ?? { x: 0, y: 0, width: bounds.width, height: 0 }}
+           bounds={bounds}
+@@ -1445,6 +1560,7 @@ function ModeButton(props: {
+   active: boolean;
+   icon: IconName;
+   label: string;
++  badge?: string;
+   onClick(): void;
+ }) {
+   return (
+@@ -1452,11 +1568,17 @@ function ModeButton(props: {
+       type="button"
+       onClick={props.onClick}
+       className="kiri-mode-btn"
++      aria-keyshortcuts={props.badge}
+       data-active={props.active || undefined}
+     >
+       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+         <KiriIcon name={props.icon} size={14} />
+         {props.label}
++        {props.badge && (
++          <span className="kiri-mode-btn__badge" aria-hidden="true">
++            {props.badge}
++          </span>
++        )}
+       </span>
+     </button>
+   );
+@@ -1577,7 +1699,6 @@ function SizeBadge(props: { rect: Rect; bounds: Rect; pixelScale: number }) {
+ }
+ 
+ function OcrPanel(props: {
+-  saved: boolean;
+   text: string;
+   failed: boolean;
+   anchor: Rect;
+@@ -1635,9 +1756,6 @@ function OcrPanel(props: {
+         boxShadow: "0 16px 42px rgba(0,0,0,0.22)",
+       }}
+     >
+-      {!failed && text.trim() && <div role="status" style={{ flexShrink: 0, fontSize: 11, color: "var(--kiri-secondary-label)" }}>
+-        {t(props.saved ? "Saved to Text History" : "History wasn't saved. Copy the text before closing.")}
+-      </div>}
+       <div style={{ display: "flex", flexShrink: 0, justifyContent: "space-between", alignItems: "center" }}>
+         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+           <span
+@@ -1689,6 +1807,7 @@ function OcrPanel(props: {
+           font: "450 13px/1.48 var(--kiri-font-ui)",
+           userSelect: "text",
+           WebkitUserSelect: "text",
++          cursor: "text",
+           whiteSpace: "pre-wrap",
+           border: "1px solid rgba(255,255,255,0.24)",
+           boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.08)",
+diff --git a/src/windows/PinWindow.tsx b/src/windows/PinWindow.tsx
+index e96d5c7..720af74 100644
+--- a/src/windows/PinWindow.tsx
++++ b/src/windows/PinWindow.tsx
+@@ -1,7 +1,8 @@
+ import { useEffect, useRef, useState } from "react";
++import type { WheelEvent as ReactWheelEvent } from "react";
+ import { getCurrentWindow } from "@tauri-apps/api/window";
+ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+-import { mediaUrl, onAssetContentChanged, onPinOnTop } from "../lib/ipc";
++import { api, mediaUrl, onAssetContentChanged, onPinOnTop } from "../lib/ipc";
+ import { t } from "../i18n";
+ import { KiriIcon } from "../components/KiriIcons";
+ import "./pin-window.css";
+@@ -25,6 +26,31 @@ type MoveGesture = {
+   cancelled: boolean;
+ };
+ 
++type ZoomCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
++
++type ZoomGesture = {
++  applying: boolean;
++  pending: { factor: number; anchorX: number; anchorY: number } | null;
++  image: { width: number; height: number } | null;
++  report: (size: { width: number; height: number }) => void;
++};
++
++async function applyZoom(gesture: ZoomGesture) {
++  if (gesture.applying) return;
++  gesture.applying = true;
++  try {
++    while (gesture.pending) {
++      const step = gesture.pending;
++      gesture.pending = null;
++      const image = gesture.image;
++      const size = await api.zoomPin(step.factor, step.anchorX, step.anchorY,
++        image?.width ?? 0, image?.height ?? 0);
++      gesture.report(size);
++    }
++  } catch { gesture.pending = null; }
++  finally { gesture.applying = false; }
++}
++
+ async function applyMove(gesture: MoveGesture) {
+   if (!gesture.base || gesture.applying || gesture.cancelled) return;
+   gesture.applying = true;
+@@ -70,9 +96,62 @@ export function PinWindow({ id }: { id: string }) {
+   const resizeGesture = useRef<ResizeGesture | null>(null);
+   const moveGesture = useRef<MoveGesture | null>(null);
+   const latestMove = useRef<MoveGesture | null>(null);
+-  useEffect(() => () => {
+-    if (latestMove.current) latestMove.current.cancelled = true;
++  const zoomGesture = useRef<ZoomGesture | null>(null);
++  const imageSize = useRef<{ width: number; height: number } | null>(null);
++  const openedWidth = useRef(0);
++  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const zoomCorner = useRef<ZoomCorner>("top-left");
++  const [zoomHint, setZoomHint] = useState<{ percent: number; corner: ZoomCorner } | null>(null);
++  useEffect(() => {
++    void getCurrentWindow().innerSize()
++      .then(size => { openedWidth.current = size.width; })
++      .catch(() => {});
++    return () => {
++      if (latestMove.current) latestMove.current.cancelled = true;
++      if (zoomTimer.current) clearTimeout(zoomTimer.current);
++    };
+   }, []);
++  useEffect(() => {
++    // React installs wheel handlers passively, so only a native listener can
++    // stop the WebView's own control-wheel page zoom from competing with the
++    // pin's image zoom. The sizing itself stays in the React handler.
++    const stopPageZoom = (event: WheelEvent) => event.preventDefault();
++    window.addEventListener("wheel", stopPageZoom, { passive: false });
++    // Removal only matches on the capture flag, so the passive option is not
++    // repeated here.
++    return () => window.removeEventListener("wheel", stopPageZoom);
++  }, []);
++  const showZoom = (size: { width: number; height: number }) => {
++    // 100% means one image pixel per physical screen pixel, so the reference is
++    // the intrinsic bitmap width. A pin opened on a Retina display starts at
++    // 100%, while a library image fitted to a small reference starts below it.
++    const reference = imageSize.current?.width || openedWidth.current;
++    if (reference <= 0) return;
++    setZoomHint({
++      percent: Math.max(1, Math.round((size.width / reference) * 100)),
++      corner: zoomCorner.current,
++    });
++    if (zoomTimer.current) clearTimeout(zoomTimer.current);
++    zoomTimer.current = setTimeout(() => setZoomHint(null), 900);
++  };
++  const zoomBy = (factor: number, anchorX: number, anchorY: number) => {
++    if (!Number.isFinite(factor) || factor <= 0) return;
++    let gesture = zoomGesture.current;
++    if (!gesture) {
++      gesture = zoomGesture.current = { applying: false, pending: null, image: null,
++        report: showZoom };
++    }
++    gesture.image = imageSize.current;
++    // A fast wheel produces many events per native round trip; the factors add
++    // up, and only the frame in progress is lost to the bound.
++    gesture.pending = { factor: (gesture.pending?.factor ?? 1) * factor, anchorX, anchorY };
++    void applyZoom(gesture);
++  };
++  const takeOverFrame = () => {
++    // A drag or corner resize owns the frame from here on; a queued wheel step
++    // would otherwise move the window out from under the pointer that grabbed it.
++    if (zoomGesture.current) zoomGesture.current.pending = null;
++  };
+   useEffect(() => {
+     const subscription = onAssetContentChanged((assetId) => {
+       if (assetId === id) { setImageFailed(false); setRevision((value) => value + 1); }
+@@ -114,7 +193,9 @@ export function PinWindow({ id }: { id: string }) {
+     const next = !state.onTop;
+     setBusy(true); setError(false);
+     try {
+-      await getCurrentWindow().setAlwaysOnTop(next);
++      // The native side owns the topmost band: a pin that dropped out of it is
++      // repaired synchronously, which a WebView flag alone cannot do.
++      await api.setPinTopmost(next);
+       // A library repin received while this request was pending is newer.
+       if (state.generation === generation) {
+         state.onTop = next;
+@@ -124,8 +205,33 @@ export function PinWindow({ id }: { id: string }) {
+     catch { if (state.generation === generation) setError(true); }
+     finally { state.busy = false; setBusy(false); }
+   };
++  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
++    // A pointer gesture owns the frame while it runs: zooming would move the
++    // window out from under the coordinates the gesture already captured.
++    if (moveGesture.current || resizeGesture.current) return;
++    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
++    const delta = Math.max(-240, Math.min(240, event.deltaY * unit));
++    if (!delta) return;
++    const host = event.currentTarget;
++    const width = host.clientWidth || 1;
++    const height = host.clientHeight || 1;
++    const anchorX = Math.min(1, Math.max(0, event.clientX / width));
++    const anchorY = Math.min(1, Math.max(0, event.clientY / height));
++    // A zoom anchored at the pointer can push the opposite corner of the window
++    // off screen, so the percentage badge stays in the quadrant under the cursor.
++    zoomCorner.current =
++      `${anchorY <= 0.5 ? "top" : "bottom"}-${anchorX <= 0.5 ? "left" : "right"}`;
++    // One wheel notch is 100px and changes the size by 10%; trackpads send many
++    // small deltas, and the exponent makes those continuous instead of steppy.
++    zoomBy(Math.pow(1.1, -delta / 100), anchorX, anchorY);
++  };
+   return <div className="pin-window" aria-label={t("Screenshot Reference")}
+-    onContextMenu={event => event.preventDefault()}>
++    onWheel={handleWheel}
++    onContextMenu={event => event.preventDefault()}
++    onPointerDown={() => {
++      // Pins are all topmost; pointing at one brings it above its siblings.
++      void api.raisePin().catch(() => {});
++    }}>
+     <div className="pin-window__actions" onPointerDown={event => event.stopPropagation()}>
+       <button className="kiri-pin-action" type="button" disabled={busy}
+         title={t(onTop ? "Unpin" : "Pin on Top")} aria-label={t(onTop ? "Unpin" : "Pin on Top")}
+@@ -134,8 +240,11 @@ export function PinWindow({ id }: { id: string }) {
+         onClick={() => void getCurrentWindow().close()}><KiriIcon name="xmark" size={15} /></button>
+     </div>
+     {error && <p className="pin-window__error" role="alert">{t("Could not change window pinning on this desktop.")}</p>}
++    {zoomHint && <div className="pin-window__zoom" role="status"
++      data-corner={zoomHint.corner}>{zoomHint.percent}%</div>}
+     <main className="pin-window__image" onPointerDown={event => {
+       if (event.button !== 0) return;
++      takeOverFrame();
+       if (!/Macintosh|Mac OS X|Windows/i.test(navigator.userAgent)) {
+         void getCurrentWindow().startDragging().catch(() => {});
+         return;
+@@ -173,11 +282,21 @@ export function PinWindow({ id }: { id: string }) {
+       moveGesture.current = null;
+     }}>
+       {imageFailed ? <p role="alert">{t("Can't read this file")}</p> :
+-        <img key={revision} src={`${mediaUrl(id)}?v=${revision}`} alt={t("Pinned screenshot")} draggable={false} onError={() => setImageFailed(true)} />}
++        <img key={revision} src={`${mediaUrl(id)}?v=${revision}`} alt={t("Pinned screenshot")} draggable={false}
++          onLoad={event => {
++            const image = event.currentTarget;
++            // Intrinsic size in image pixels: the reference the zoom
++            // percentage is reported against.
++            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
++              imageSize.current = { width: image.naturalWidth, height: image.naturalHeight };
++            }
++          }}
++          onError={() => { imageSize.current = null; setImageFailed(true); }} />}
+     </main>
+     <div className="pin-window__resize" aria-hidden="true" onPointerDown={event => {
+         event.stopPropagation();
+         if (event.button !== 0) return;
++        takeOverFrame();
+         event.currentTarget.setPointerCapture(event.pointerId);
+         const gesture: ResizeGesture = { pointerId: event.pointerId, x: event.screenX, y: event.screenY,
+           base: null, pending: null, applying: false };
+diff --git a/src/windows/pin-window.css b/src/windows/pin-window.css
+index 20c0c32..1a8abb2 100644
+--- a/src/windows/pin-window.css
++++ b/src/windows/pin-window.css
+@@ -1,5 +1,4 @@
+-.pin-window { position: relative; width: 100vw; height: 100vh; overflow: hidden; border-radius: 8px; color: var(--kiri-label); }
+-.pin-window::after { content: ""; position: absolute; inset: 0; z-index: 4; border: 2px solid #111; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8); pointer-events: none; }
++.pin-window { position: relative; width: 100vw; height: 100vh; overflow: hidden; color: var(--kiri-label); }
+ .pin-window__image { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: move; }
+ .pin-window__image img { display: block; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; }
+ .pin-window__actions { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 4px; opacity: 0; pointer-events: none; transition: opacity .12s ease-out; }
+@@ -10,6 +9,15 @@
+ .kiri-pin-action:disabled { opacity: .5; cursor: default; }
+ .pin-window__image p, .pin-window__error { margin: 0; padding: 8px 12px; background: var(--kiri-card); color: var(--kiri-secondary-label); font-size: 12px; text-align: center; }
+ .pin-window__error { position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 3; border-radius: 6px; }
++.pin-window__zoom { position: absolute; z-index: 3; padding: 3px 8px; border-radius: 6px;
++  background: rgba(17, 17, 17, .82); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums;
++  pointer-events: none; }
++/* The badge follows the corner nearest the pointer, because an anchored zoom
++   can push the opposite corner of the window off the screen. */
++.pin-window__zoom[data-corner="top-left"] { top: 8px; left: 8px; }
++.pin-window__zoom[data-corner="top-right"] { top: 40px; right: 8px; }
++.pin-window__zoom[data-corner="bottom-left"] { bottom: 8px; left: 8px; }
++.pin-window__zoom[data-corner="bottom-right"] { bottom: 8px; right: 8px; }
+ .pin-window__resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; z-index: 2; cursor: nwse-resize; }
+ .pin-window__resize::after { content: ""; position: absolute; bottom: 3px; right: 3px; width: 6px; height: 6px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; filter: drop-shadow(0 0 1px #000); opacity: 0; }
+ .pin-window:hover .pin-window__resize::after { opacity: 1; }

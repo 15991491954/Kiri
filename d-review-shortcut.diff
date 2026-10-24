@@ -1,0 +1,119 @@
+diff --git a/src-tauri/src/shortcut_settings.rs b/src-tauri/src/shortcut_settings.rs
+index 85fb28e..68f4310 100644
+--- a/src-tauri/src/shortcut_settings.rs
++++ b/src-tauri/src/shortcut_settings.rs
+@@ -19,16 +19,18 @@ pub enum ShortcutAction {
+     Record,
+     Ocr,
+     Library,
++    PastePin,
+     RecordingPauseResume,
+     RecordingStop,
+ }
+ 
+ impl ShortcutAction {
+-    pub const ALL: [Self; 6] = [
++    pub const ALL: [Self; 7] = [
+         Self::Capture,
+         Self::Record,
+         Self::Ocr,
+         Self::Library,
++        Self::PastePin,
+         Self::RecordingPauseResume,
+         Self::RecordingStop,
+     ];
+@@ -38,8 +40,9 @@ impl ShortcutAction {
+             Self::Record => 1,
+             Self::Ocr => 2,
+             Self::Library => 3,
+-            Self::RecordingPauseResume => 4,
+-            Self::RecordingStop => 5,
++            Self::PastePin => 4,
++            Self::RecordingPauseResume => 5,
++            Self::RecordingStop => 6,
+         }
+     }
+     pub fn scope(self) -> ShortcutScope {
+@@ -59,9 +62,16 @@ impl ShortcutAction {
+             Self::Record => Code::KeyR,
+             Self::Ocr => Code::KeyO,
+             Self::Library => Code::KeyL,
++            // Snipaste's F3: paste the clipboard as a floating pin. A function
++            // key is not used for typing or navigation, so it saves directly
++            // without the single-key confirmation (ADR 0111).
++            Self::PastePin => Code::F3,
+             Self::RecordingPauseResume => Code::KeyP,
+             Self::RecordingStop => Code::KeyS,
+         };
++        if self == Self::PastePin {
++            return Shortcut::new(None, key);
++        }
+         let modifiers = if self == Self::Capture {
+             primary | Modifiers::SHIFT
+         } else {
+@@ -75,6 +85,7 @@ impl ShortcutAction {
+             Self::Record => "kiri --record",
+             Self::Ocr => "kiri --ocr",
+             Self::Library => "kiri --library",
++            Self::PastePin => "kiri --paste-pin",
+             Self::RecordingPauseResume => "kiri --toggle-recording-pause",
+             Self::RecordingStop => "kiri --stop-recording",
+         }
+@@ -89,7 +100,7 @@ pub enum ShortcutScope {
+ }
+ 
+ #[derive(Clone)]
+-pub struct Bindings([Option<Shortcut>; 6]);
++pub struct Bindings([Option<Shortcut>; 7]);
+ impl Default for Bindings {
+     fn default() -> Self {
+         Self(ShortcutAction::ALL.map(|action| Some(action.default_binding())))
+@@ -116,8 +127,8 @@ impl Bindings {
+ pub struct ShortcutBindings {
+     current: Mutex<Bindings>,
+     // Zero means unassigned; widen/offset u32 IDs so native ID zero is valid.
+-    ids: [AtomicU64; 6],
+-    pressed_ids: [AtomicU64; 6],
++    ids: [AtomicU64; 7],
++    pressed_ids: [AtomicU64; 7],
+     editing: AtomicBool,
+     library_focused: AtomicBool,
+     recording_active: AtomicBool,
+@@ -236,7 +247,7 @@ fn decode(bytes: &[u8]) -> Result<Bindings, String> {
+     if preferences.version != 1 {
+         return Err("Unsupported shortcut settings version.".into());
+     }
+-    let mut bindings = Bindings([None; 6]);
++    let mut bindings = Bindings([None; 7]);
+     // Saved custom choices take priority over newly introduced default actions.
+     for action in ShortcutAction::ALL {
+         if let Some(value) = preferences.bindings.get(&action) {
+@@ -265,7 +276,7 @@ fn load_from_dir(dir: &Path) -> Bindings {
+         .ok()
+         .and_then(|value| parse(value.trim()).ok())
+         .unwrap_or_else(default_binding);
+-    let mut bindings = Bindings([None; 6]);
++    let mut bindings = Bindings([None; 7]);
+     bindings.0[ShortcutAction::Capture.index()] = Some(capture);
+     for action in ShortcutAction::ALL.into_iter().skip(1) {
+         if let Ok(updated) = bindings.with(action, Some(action.default_binding())) {
+@@ -920,6 +931,7 @@ mod tests {
+                 "record",
+                 "ocr",
+                 "library",
++                "pastePin",
+                 "recordingPauseResume",
+                 "recordingStop"
+             ])
+diff --git a/src/settings/ShortcutsSettings.tsx b/src/settings/ShortcutsSettings.tsx
+index 7d447c9..4800686 100644
+--- a/src/settings/ShortcutsSettings.tsx
++++ b/src/settings/ShortcutsSettings.tsx
+@@ -19,6 +19,7 @@ const ACTIONS: Array<{ action: ShortcutAction; title: string; description: strin
+   { action: "record", title: "Record", description: "Choose a region for a new recording.", icon: "record.circle.fill", command: "kiri --record" },
+   { action: "ocr", title: "Recognize Text", description: "Choose a region to recognize text.", icon: "text.viewfinder", command: "kiri --ocr" },
+   { action: "library", title: "Show main window", description: "Bring Kiri to the front.", icon: "photo.on.rectangle", command: "kiri --library" },
++  { action: "pastePin", title: "Paste as Pin", description: "Pin the copied image or text on top of other windows.", icon: "pin", command: "kiri --paste-pin" },
+   { action: "recordingPauseResume", title: "Pause/Resume Recording", description: "Pause/Resume Recording", icon: "pause.circle.fill", command: "kiri --toggle-recording-pause" },
+   { action: "recordingStop", title: "Stop and Save Recording", description: "Stop and Save Recording", icon: "stop.fill", command: "kiri --stop-recording" },
+ ];

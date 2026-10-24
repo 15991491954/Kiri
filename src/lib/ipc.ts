@@ -59,8 +59,6 @@ export interface ScrollCaptureStatusDto {
 
 export interface OcrRecognitionDto {
   text: string;
-  saved: boolean;
-  asset: AssetDto | null;
 }
 
 export interface AssetDto {
@@ -70,8 +68,6 @@ export interface AssetDto {
   filename: string;
   title: string | null;
   ocrText: string | null;
-  ocrOriginalText: string | null;
-  qrText: string | null;
   tags: string[];
   pixelWidth: number;
   pixelHeight: number;
@@ -181,7 +177,7 @@ export interface ShortcutStatusDto {
   status: "enabled" | "occupied" | "disabled" | "systemManaged";
 }
 
-export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "recordingPauseResume" | "recordingStop";
+export type ShortcutAction = "capture" | "record" | "ocr" | "library" | "pastePin" | "recordingPauseResume" | "recordingStop";
 
 export interface ShortcutSettingDto {
   action: ShortcutAction;
@@ -305,14 +301,9 @@ export interface QrScanDto { requestId: string; imageUrl: string; width: number;
 export const api = {
   scanQr: (requestId: string, selection: RectDto | null, assetId: string | null, expectedRevisionSha256?: string) => invoke<QrScanDto>("scan_qr", { requestId, selection, assetId, expectedRevisionSha256 }),
   cancelQr: (requestId: string) => invoke<void>("cancel_qr", { requestId }),
-  qrAction: (requestId: string, index: number, action: string) => invoke<AssetDto | null>("qr_action", { requestId, index, action }),
-  listQrFavorites: (query: string) => invoke<AssetDto[]>("list_qr_favorites", { query }),
-  qrFavoriteAction: (id: string, action: string) => invoke<void>("qr_favorite_action", { id, action }),
-  listOcrRecords: (query: string) => invoke<AssetDto[]>("list_ocr_records", { query }),
-  updateOcrHistoryText: (id: string, expectedText: string, replacement: string | null) =>
-    invoke<AssetDto>("update_ocr_history_text", { id, expectedText, replacement }),
+  qrAction: (requestId: string, index: number, action: string) => invoke<void>("qr_action", { requestId, index, action }),
   recognizeAssetLocal: (id: string) => invoke<OcrRecognitionDto>("recognize_asset_local", { id }),
-  copyHistoryText: (text: string) => invoke<void>("copy_history_text", { text }),
+  copyOcrText: (text: string) => invoke<void>("copy_ocr_text", { text }),
   listAssets: (query: string, showingTrash: boolean) =>
     invoke<AssetDto[]>("list_assets", { query, showingTrash }),
   getAsset: (id: string) => invoke<AssetDto>("get_asset", { id }),
@@ -367,6 +358,12 @@ export const api = {
   copyAssetFile: (id: string) => invoke<void>("copy_asset_file", { id }),
   openAsset: (id: string) => invoke<void>("open_asset", { id }),
   pinAsset: (id: string) => invoke<void>("pin_asset", { id }),
+  setPinTopmost: (onTop: boolean) => invoke<void>("set_pin_topmost", { onTop }),
+  raisePin: () => invoke<void>("raise_pin"),
+  zoomPin: (factor: number, anchorX: number, anchorY: number, imageWidth: number, imageHeight: number) =>
+    invoke<{ width: number; height: number }>("zoom_pin", {
+      factor, anchorX, anchorY, imageWidth, imageHeight,
+    }),
   openEditor: (id: string, recognizeQr = false) => invoke<void>("open_editor", { id, recognizeQr }),
   takeEditorQrRequest: () => invoke<boolean>("take_editor_qr_request"),
   revealAsset: (id: string) => invoke<void>("reveal_asset", { id }),
@@ -380,7 +377,15 @@ export const api = {
   convertToGif: (id: string) => invoke<void>("convert_to_gif", { id }),
 
   startCapture: () => invoke<CaptureContextDto>("start_capture"),
+  setCaptureMode: (mode: "screenshot" | "record" | "ocr") =>
+    invoke<void>("set_capture_mode", { mode }),
   cancelCapture: () => invoke<void>("cancel_capture"),
+  /**
+   * Closes the calling capture overlay when the WebView may not do it itself.
+   * The backend runs the close off the IPC thread, so it stays safe on the
+   * overlays of secondary displays.
+   */
+  closeCaptureOverlay: () => invoke<void>("close_capture_overlay"),
   startScrollCapture: (captureId: string, selection: RectDto) =>
     invoke<void>("start_scroll_capture", { captureId, selection }),
   moveScrollCapturePanel: (sessionId: string, x: number, y: number) =>
@@ -415,6 +420,7 @@ export const api = {
   openLibrary: () => invoke<void>("open_library"),
   copySupportInfo: () => invoke<void>("copy_support_info"),
   openSupportFolder: (folder: "settings" | "logs" | "errors" | "temporary") => invoke<void>("open_support_folder", { folder }),
+  clearImageCache: () => invoke<number>("clear_image_cache"),
   openProjectPage: () => invoke<void>("open_project_page"),
   copyText: (text: string) => invoke<void>("copy_text", { text }),
   copyCaptureColor: (hex: string) => invoke<void>("copy_capture_color", { hex }),

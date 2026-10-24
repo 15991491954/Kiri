@@ -25,10 +25,10 @@ import {
 } from "../lib/ipc";
 import { t, fmt } from "../i18n";
 import { useAppUpdater } from "../settings/useAppUpdater";
-import { QrFavorites } from "../qr/QrResults";
-import { TextHistory, OcrDialog } from "../ocr/TextHistory";
-import brandIcon from "../../src-tauri/icons/128x128.png";
+import { OcrDialog } from "../ocr/OcrDialog";
 import { EmptyTrashDialog } from "../components/EmptyTrashDialog";
+import { MacTitlebar, WindowResizeEdges } from "../components/MacTitlebar";
+import { LumenMark } from "../components/LumenMark";
 import { KiriIcon, type IconName } from "../components/KiriIcons";
 import { kiriResourceUrl } from "../lib/kiri-resource-url.js";
 import {
@@ -49,7 +49,7 @@ const SettingsView = React.lazy(() =>
 );
 
 type Section = "library" | "trash";
-type Destination = "captures" | "text" | "qr" | "settings";
+type Destination = "captures" | "settings";
 
 function thumbnailUrl(id: string, revision: number): string {
   return kiriResourceUrl("thumbnail", [id], { v: revision });
@@ -119,7 +119,7 @@ export function LibraryWindow() {
   const [menuStyle, setMenuStyle] = useState<{ left: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [shortcutStatus, setShortcutStatus] = useState<ShortcutStatusDto | null>(null);
-  const [kindFilter, setKindFilter] = useState<"all" | "image" | "video" | "gif">("all");
+  const [kindFilter, setKindFilter] = useState<"all" | "video" | "gif">("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   // Ordinary card clicks open directly; explicit Select or a rubber-band
@@ -921,34 +921,9 @@ export function LibraryWindow() {
     }
     catch{showLocalNotice(t("Could not import these files. Choose supported local images or videos."),"exclamationmark.triangle");}
     finally{mediaImporting.current=false;setMediaImportBusy(false);}
-  },[libraryStatus?.availability,refresh,showLocalNotice]);
-  const pasteImage=useCallback(async()=>{
-    if(mediaImporting.current||libraryStatus?.availability!=="ready")return;
-    mediaImporting.current=true;setMediaImportBusy(true);
-    try{
-      await api.pasteClipboardImage();
-      queryRef.current="";showingTrashRef.current=false;
-      setQuery("");setSection("library");setDestination("captures");
-      setKindFilter("all");setFavoritesOnly(false);setTagFilter(null);setSelection(new Set());
-      gridScrollRef.current?.scrollTo({top:0});
-      showLocalNotice(t("Clipboard image added to Library."));
-      await refresh();
-    }catch{showLocalNotice(t("Could not paste an image from the clipboard."),"exclamationmark.triangle");}
-    finally{mediaImporting.current=false;setMediaImportBusy(false);}
-  },[libraryStatus?.availability,refresh,showLocalNotice]);
+  }, [libraryStatus?.availability, refresh, showLocalNotice]);
   useEffect(()=>{
     if(destination!=="captures"||showingTrash)return;
-    const onKeyDown=(event:KeyboardEvent)=>{
-      if(event.key.toLowerCase()!=="v"||!(event.metaKey||event.ctrlKey)||event.altKey||event.shiftKey)return;
-      const target=event.target;
-      if(target instanceof Element && target.closest("input, textarea, [contenteditable], [role='textbox']"))return;
-      event.preventDefault();
-      void pasteImage();
-    };
-    window.addEventListener("keydown",onKeyDown);
-    return()=>window.removeEventListener("keydown",onKeyDown);
-  },[destination,showingTrash,pasteImage]);
-  useEffect(()=>{
     let disposed=false;let stop:(()=>void)|undefined;
     void getCurrentWebview().onDragDropEvent(event=>{
       if(disposed)return;
@@ -957,36 +932,39 @@ export function LibraryWindow() {
       if(type==="drop")void importMedia(event.payload.paths);
     }).then(unlisten=>{if(disposed)unlisten();else stop=unlisten;}).catch(()=>{});
     return()=>{disposed=true;stop?.();};
-  },[importMedia]);
+  },[importMedia, destination, showingTrash]);
 
   return (
     <div
       className="library-root kiri-canvas-surface"
     >
-      {mediaDrop&&<div className="library-media-drop">{t("Drop images or videos to import")}</div>}
+      <MacTitlebar
+        title={destination === "settings" ? t("Settings") : showingTrash ? t("Trash") : t("Library")}
+        detail={destination === "settings"
+          ? undefined
+          : libraryUnavailable
+            ? t("Unavailable")
+            : libraryMigrating
+              ? t("Moving…")
+              : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
+      />
+      <WindowResizeEdges />
+      {mediaDrop&&<div className="library-media-drop">{t("Drop a video to import")}</div>}
       <aside className="library-sidebar">
-        <div className="library-sidebar__brand">
-          <img src={brandIcon} alt="" />
-          <strong>kiri</strong>
-        </div>
       <SegmentedPicker
         options={[
           { label: t("Library"), icon: "square.grid.3x3.fill" },
-          { label: t("Text History"), icon: "text.viewfinder" },
-          { label: t("QR Favorites"), icon: "qrcode" },
           { label: t("Trash"), icon: "trash" },
           { label: t("Settings"), icon: "slider.horizontal.3", notification: updater.hasUpdate ? t("Update available") : undefined },
         ]}
-        value={destination === "settings" ? 4 : destination === "qr" ? 2 : destination === "text" ? 1 : section === "library" ? 0 : 3}
+        value={destination === "settings" ? 2 : section === "library" ? 0 : 1}
         onChange={(index) => {
           clearSelection();
           setMenuFor(null);
-          if (index === 4) {
+          if (index === 2) {
             setDestination("settings");
             return;
           }
-          if (index === 1) { setDestination("text"); return; }
-          if (index === 2) { setDestination("qr"); return; }
           setDestination("captures");
           setSection(index === 0 ? "library" : "trash");
           setKindFilter("all");
@@ -996,29 +974,43 @@ export function LibraryWindow() {
       />
       </aside>
       <div className="library-workspace">
-      <header className={`library-control-panel${destination === "settings" ? " library-control-panel--settings" : ""}`}>
+      {destination === "captures" && (
+      <header className="library-control-panel">
         <div className="library-control-panel__primary">
-            <div className="library-control-panel__titles">
-              <h1 id="library-page-title" className="library-control-panel__title">
-                {destination === "settings"
-                  ? t("Settings")
-                  : destination === "qr" ? t("QR Favorites")
-                  : destination === "text" ? t("Text History")
-                  : showingTrash
-                    ? t("Trash")
-                    : t("Library")}
-              </h1>
-              {destination !== "settings" && <span className="library-control-panel__subtitle">
-                {destination === "qr" ? t("Find and reuse saved QR codes")
-                  : destination === "text" ? t("Read, copy, and revisit recognized text")
-                  : libraryUnavailable
-                    ? t("Unavailable")
-                    : libraryMigrating
-                      ? t("Moving…")
-                      : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
-              </span>}
+          <div className="library-control-panel__search">
+            <div className="kiri-library-search">
+              <KiriIcon name="magnifyingglass" size={14} />
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={query}
+                aria-label={t("Search captures")}
+                placeholder={t("Search captures")}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && query) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setQuery("");
+                  }
+                }}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="kiri-search-clear"
+                  aria-label={t("Clear Search")}
+                  title={t("Clear Search")}
+                  onClick={() => {
+                    setQuery("");
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  <KiriIcon name="xmark" size={10} />
+                </button>
+              )}
             </div>
-
+          </div>
           <div className="library-control-panel__actions">
             {destination === "captures" && libraryStatus?.availability === "ready" && <>
               <button type="button" className="kiri-button kiri-button--secondary"
@@ -1036,8 +1028,7 @@ export function LibraryWindow() {
                 className="kiri-button kiri-button--secondary" disabled={batchBusy || exportBusy || filteredAssets.length === 0}
                 onClick={() => setSelection(new Set(visibleAssetIds))}>{t("Select All")}</button>}
             </>}
-            {destination==="captures"&&!showingTrash&&<button type="button" className="kiri-button kiri-button--secondary" disabled={mediaImportBusy||libraryStatus?.availability!=="ready"} title={t("Import local images or videos")} onClick={()=>void importMedia()}><ImagePlus size={15}/>{t(mediaImportBusy?"Importing…":"Import media")}</button>}
-            {destination==="captures"&&!showingTrash&&<button type="button" className="kiri-button kiri-button--secondary" disabled={mediaImportBusy||libraryStatus?.availability!=="ready"} title={t("Paste Image (Cmd/Ctrl+V)")} onClick={()=>void pasteImage()}><KiriIcon name="doc.on.doc" size={15}/>{t("Paste Image")}</button>}
+            {destination==="captures"&&!showingTrash&&<button type="button" className="kiri-button kiri-button--secondary" disabled={mediaImportBusy||libraryStatus?.availability!=="ready"} title={t("Import a local video")} onClick={()=>void importMedia()}><ImagePlus size={15}/>{t(mediaImportBusy?"Importing…":"Import video")}</button>}
             {destination === "captures" && showingTrash && assets.length > 0 && (
               <button
                 type="button"
@@ -1057,38 +1048,6 @@ export function LibraryWindow() {
           !libraryStatusError &&
           libraryStatus?.availability === "ready" && (
           <div className="library-control-panel__filter-rail">
-            <div className="kiri-library-search">
-                <KiriIcon name="magnifyingglass" size={14} />
-                <input
-                  ref={searchInputRef}
-                  type="search"
-                  value={query}
-                  aria-label={t("Search captures")}
-                  placeholder={t("Search captures")}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape" && query) {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setQuery("");
-                    }
-                  }}
-                />
-                {query && (
-                  <button
-                    type="button"
-                    className="kiri-search-clear"
-                    aria-label={t("Clear Search")}
-                    title={t("Clear Search")}
-                    onClick={() => {
-                      setQuery("");
-                      searchInputRef.current?.focus();
-                    }}
-                  >
-                    <KiriIcon name="xmark" size={10} />
-                  </button>
-                )}
-            </div>
             <FilterBar
               kind={kindFilter}
               favoritesOnly={favoritesOnly}
@@ -1102,6 +1061,7 @@ export function LibraryWindow() {
           </div>
         )}
       </header>
+      )}
 
       {destination === "captures" ? (
         <>
@@ -1339,10 +1299,6 @@ export function LibraryWindow() {
         </>
       )}
         </>
-      ) : destination === "qr" ? (
-        <QrFavorites />
-      ) : destination === "text" ? (
-        <TextHistory />
       ) : (
         <React.Suspense
           fallback={
@@ -1491,7 +1447,7 @@ export function LibraryWindow() {
                     .finally(() => setScreenshotAuthorizationBusy(false));
                   return;
                 }
-                if (error.recovery === "quitKiri") void api.quitApp().catch(() => {});
+                if (error.recovery === "quitLumen") void api.quitApp().catch(() => {});
                 else void api.openSettings(error.recovery!).catch(() => {});
                 setError(null);
               }}
@@ -1566,8 +1522,8 @@ function recoveryLabel(recovery: string): string {
   switch (recovery) {
     case "openSettings":
       return t("Open Settings");
-    case "quitKiri":
-      return t("Quit Kiri");
+    case "quitLumen":
+      return t("Quit Lumen");
     case "openInputMonitoringSettings":
       return t("Open Input Monitoring Settings");
     case "openMicrophoneSettings":
@@ -2325,11 +2281,11 @@ function MenuRow(props: {
 }
 
 function FilterBar(props: {
-  kind: "all" | "image" | "video" | "gif";
+  kind: "all" | "video" | "gif";
   favoritesOnly: boolean;
   tagFilter: string | null;
   allTags: string[];
-  onChangeKind(kind: "all" | "image" | "video" | "gif"): void;
+  onChangeKind(kind: "all" | "video" | "gif"): void;
   onToggleFavorites(): void;
   onToggleTag(tag: string): void;
 }) {
@@ -2342,9 +2298,10 @@ function FilterBar(props: {
     onToggleFavorites,
     onToggleTag,
   } = props;
-  const kinds: { value: "all" | "image" | "video" | "gif"; label: string; icon: IconName }[] = [
+  // Screenshots live only long enough to be copied or pinned, so the library
+  // list has no image filter: recordings are what this window stores.
+  const kinds: { value: "all" | "video" | "gif"; label: string; icon: IconName }[] = [
     { value: "all", label: t("All"), icon: "square.grid.3x3.fill" },
-    { value: "image", label: t("Images"), icon: "photo.on.rectangle" },
     { value: "video", label: t("Videos"), icon: "play.rectangle" },
     { value: "gif", label: t("GIFs"), icon: "sparkles.rectangle.stack" },
   ];
@@ -2498,7 +2455,7 @@ function SegmentedPicker(props: {
           </span>
         </button>
   ));
-  return <nav className="library-section-picker" aria-label="Kiri">
+  return <nav className="library-section-picker" aria-label="Lumen">
     {buttons.slice(0, -1)}
     <div className="library-section-picker__footer">{buttons[buttons.length - 1]}</div>
   </nav>;
@@ -2539,16 +2496,14 @@ function EmptyState(props: {
         style={{
           width: 64,
           height: 64,
-          borderRadius: 20,
-          overflow: "hidden",
-          // Spec (KiriBrandMark): the chibi artwork fills the container.
+          borderRadius: 16,
+          display: "grid",
+          placeItems: "center",
+          background: "var(--kiri-group-fill)",
+          color: "var(--kiri-accent)",
         }}
       >
-        <img
-          src={brandIcon}
-          alt=""
-          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-        />
+        <LumenMark size={34} />
       </div>
       <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
       {message && (

@@ -12,12 +12,12 @@ function pinWindow(options = {}) {
   const requests = [];
   const sizes = [];
   const positions = [];
-  let drags = 0, closes = 0;
+  const zooms = [];
+  let drags = 0, closes = 0, raises = 0;
   let pinned, changed, reads = 0;
   const window = {
     // The Linux window manager can still be applying the builder's true state.
     isAlwaysOnTop: async () => { reads += 1; return false; },
-    setAlwaysOnTop(value) { const result = deferred(); requests.push({value, ...result}); return result.promise; },
     startDragging: async () => { drags += 1; },
     close: async () => { closes += 1; },
     innerSize: async () => ({ width: 400, height: 200 }),
@@ -31,13 +31,22 @@ function pinWindow(options = {}) {
     "@tauri-apps/api/dpi": {PhysicalSize: class { constructor(width, height) { this.width = width; this.height = height; } },
       PhysicalPosition: class { constructor(x, y) { this.x = x; this.y = y; } }},
     "../lib/ipc": {mediaUrl: () => "image:test", onAssetContentChanged: async callback => { changed = callback; return () => { changed = null; }; },
-      onPinOnTop: async callback => { pinned = callback; return () => { pinned = null; }; }},
+      onPinOnTop: async callback => { pinned = callback; return () => { pinned = null; }; },
+      api: {
+        setPinTopmost(value) { const result = deferred(); requests.push({value, ...result}); return result.promise; },
+        raisePin: async () => { raises += 1; },
+        zoomPin(factor, anchorX, anchorY, imageWidth, imageHeight) {
+          const result = deferred();
+          zooms.push({factor, anchorX, anchorY, imageWidth, imageHeight, ...result});
+          return result.promise;
+        },
+      }},
     "./pin-window.css": {},
   }});
   h.window.devicePixelRatio = options.contentScale ?? 2.5;
   const component = h.mount("PinWindow", {id: "test-image"});
   component.render();
-  return {component, requests, sizes, positions, drags: () => drags, closes: () => closes,
+  return {component, requests, sizes, positions, zooms, drags: () => drags, closes: () => closes, raises: () => raises,
     keyboard: event => h.window.dispatchEvent({ type: "keydown", ...event }),
     reads: () => reads, pinned: () => pinned(), changed: id => changed(id)};
 }
@@ -94,6 +103,15 @@ test("failed native changes keep the pin state and rapid repeated clicks make on
   assert.ok(nodes(h.component.render()).some(node => node?.props?.role === "alert"));
 });
 
+
+test("pointing at a topmost pin raises it above its sibling pins", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  h.component.render().props.onPointerDown();
+  assert.equal(h.raises(), 1, "pointer down re-asserts the native topmost band");
+  // Raising must not change the pin's own state; only the explicit toggle does.
+  assert.equal(pinLabel(h.component), "Unpin");
+});
 
 test("a stale rejected toggle does not show an error after a successful library repin", async () => {
   const h = pinWindow();
@@ -254,6 +272,145 @@ test("right clicks never drag or expose the browser image menu; Linux retains na
   }
 });
 
+const pinImage = h => nodes(h.component.render()).find(node => node?.type === "img");
+const wheelEvent = (deltaY, { x = 200, y = 100, width = 400, height = 200, mode = 0 } = {}) =>
+  ({ deltaY, deltaMode: mode, clientX: x, clientY: y,
+    currentTarget: { clientWidth: width, clientHeight: height } });
+const zoomHud = h => nodes(h.component.render()).find(node => node?.props?.className === "pin-window__zoom");
+
+test("the wheel scales the pin around the pointer and shows the resulting percentage", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  pinImage(h).props.onLoad({ currentTarget: { naturalWidth: 400, naturalHeight: 200 } });
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 1, "one native geometry change per wheel step");
+  assert.equal(h.zooms[0].factor.toFixed(4), "1.1000", "one notch grows the pin by 10%");
+  assert.equal(h.zooms[0].anchorX, 0.5, "the anchor is the pointer, not the window origin");
+  assert.equal(h.zooms[0].anchorY, 0.5);
+  assert.equal(h.zooms[0].imageWidth, 400, "the intrinsic size keeps the window on the image aspect");
+  h.zooms[0].resolve({ width: 440, height: 220 });
+  await settleRequests();
+  assert.deepEqual(zoomHud(h).props.children, [110, "%"]);
+  assert.equal(zoomHud(h).props.role, "status");
+  assert.equal(zoomHud(h).props["data-corner"], "top-left");
+  h.component.unmount();
+});
+
+test("the percentage badge stays in the quadrant under the pointer", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  pinImage(h).props.onLoad({ currentTarget: { naturalWidth: 400, naturalHeight: 200 } });
+  h.component.render().props.onWheel(wheelEvent(-100, { x: 399, y: 199 }));
+  h.zooms[0].resolve({ width: 440, height: 220 });
+  await settleRequests();
+  assert.equal(zoomHud(h).props["data-corner"], "bottom-right");
+  h.component.unmount();
+});
+
+test("scrolling down zooms out around the pointer instead of the window centre", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  pinImage(h).props.onLoad({ currentTarget: { naturalWidth: 400, naturalHeight: 200 } });
+  h.component.render().props.onWheel(wheelEvent(100, { x: 0, y: 0 }));
+  assert.equal(h.zooms[0].factor.toFixed(4), "0.9091");
+  assert.equal(h.zooms[0].anchorX, 0);
+  assert.equal(h.zooms[0].anchorY, 0);
+  h.zooms[0].resolve({ width: 364, height: 182 });
+  await settleRequests();
+  assert.deepEqual(zoomHud(h).props.children, [91, "%"]);
+  h.component.unmount();
+});
+
+test("a wheel burst keeps one native resize in flight and adds the rest up", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  pinImage(h).props.onLoad({ currentTarget: { naturalWidth: 400, naturalHeight: 200 } });
+  h.component.render().props.onWheel(wheelEvent(-100));
+  h.component.render().props.onWheel(wheelEvent(-100));
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 1, "window resizes stay serial");
+  h.zooms[0].resolve({ width: 440, height: 220 });
+  await settleRequests();
+  assert.equal(h.zooms.length, 2);
+  assert.equal(h.zooms[1].factor.toFixed(4), "1.2100", "queued notches apply as one step");
+  h.zooms[1].resolve({ width: 532, height: 266 });
+  await settleRequests();
+  assert.deepEqual(zoomHud(h).props.children, [133, "%"]);
+  h.component.unmount();
+});
+
+test("zooming waits until a drag gesture releases the window frame", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  const image = imageSurface(h);
+  image.props.onPointerDown(moveEvent(100, 100));
+  image.props.onPointerMove(moveEvent(120, 110));
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 0, "a drag owns the coordinates it captured");
+  image.props.onPointerUp(moveEvent(140, 120));
+  await settleRequests();
+  h.positions.forEach(position => position.resolve());
+  await settleRequests();
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 1);
+  h.component.unmount();
+});
+
+test("a drag started during a wheel burst drops the queued zoom step", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  const image = imageSurface(h);
+  h.component.render().props.onWheel(wheelEvent(-100));
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 1);
+  image.props.onPointerDown(moveEvent(100, 100));
+  h.zooms[0].resolve({ width: 440, height: 220 });
+  await settleRequests();
+  assert.equal(h.zooms.length, 1, "a queued step cannot move the grabbed window");
+  h.component.unmount();
+});
+
+test("zooming waits until a corner resize releases the window frame", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  const grip = nodes(h.component.render()).find(node => node?.props?.className === "pin-window__resize");
+  grip.props.onPointerDown({ button: 0, pointerId: 1, screenX: 100, screenY: 100,
+    stopPropagation() {}, currentTarget: { setPointerCapture() {} } });
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 0);
+  grip.props.onPointerUp({ pointerId: 1, screenX: 120, screenY: 110 });
+  await settleRequests();
+  h.sizes.forEach(size => size.resolve());
+  await settleRequests();
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 1);
+  h.component.unmount();
+});
+
+test("the opening size is the zoom reference until the image reports its pixels", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  h.component.render().props.onWheel(wheelEvent(-100));
+  h.zooms[0].resolve({ width: 500, height: 250 });
+  await settleRequests();
+  assert.deepEqual(zoomHud(h).props.children, [125, "%"]);
+  h.component.unmount();
+});
+
+test("a failed zoom hides the percentage and leaves the next wheel usable", async () => {
+  const h = pinWindow();
+  await settleRequests();
+  h.component.render().props.onWheel(wheelEvent(-100));
+  h.zooms[0].reject(new Error("unavailable"));
+  await settleRequests();
+  assert.equal(zoomHud(h), undefined);
+  h.component.render().props.onWheel(wheelEvent(-100));
+  assert.equal(h.zooms.length, 2, "the queue does not wedge on a failure");
+  h.zooms[1].resolve({ width: 484, height: 242 });
+  await settleRequests();
+  h.component.unmount();
+});
+
 test("saved image revisions refresh only their pin and recover an image load failure", async () => {
   const h = pinWindow();
   await settleRequests();
@@ -281,35 +438,60 @@ function captureCompletion() {
   walk(tree);
   assert.ok(callback);
   const output = ts.transpileModule(`const complete = ${callback};`, {}).outputText;
-  const exported = deferred(), confirmed = deferred(), calls = [];
+  const exported = deferred(), confirmed = deferred(), calls = [], handoffs = [], errors = [];
   const result = { png: new Uint8Array([1, 2, 3]), document: { marks: [{ kind: "text" }] } };
   const selection = { x: 10, y: 20, width: 100, height: 80 };
+  // These mirror the module-level constants and helper the extracted callback
+  // closes over; `new Function` has no module scope to read them from.
+  const settleWithin = (work, ms) => Promise.race([
+    work,
+    new Promise(resolve => { setTimeout(() => resolve(undefined), ms); }),
+  ]);
+  const busyMessage = "The previous capture is still completing.";
   const context = {
     completionLock: new AnnotationInteractionLock(), modeSelectorDragRef: { current: null },
-    setModeSelectorDragging: () => {}, setCompleting: () => {}, selection,
-    canvasRef: { current: { exportResult: () => { calls.push("export"); return exported.promise; } } },
+    setModeSelectorDragging: () => {}, setCompleting: () => {}, setCommitting: () => {},
+    setPinning: value => handoffs.push(value),
+    setAnnotationError: message => { if (message) errors.push(message); },
+    confirmedRef: { current: false }, setConfirmed: () => {},
+    closeConfirmedOverlay: async () => { calls.push("close"); return true; },
+    selection,
+    settleWithin, CONFIRM_BUSY_MESSAGE: busyMessage,
+    CONFIRM_BUSY_RETRY_DELAY_MS: 0, CONFIRM_BUSY_MAX_ATTEMPTS: 3,
+    EXPORT_RESULT_TIMEOUT_MS: 400, CONFIRM_CAPTURE_TIMEOUT_MS: 400,
+    lostCaptureSession: message => message.includes("This command is only available from the active capture overlay.")
+      || message.includes("only available to its overlay")
+      || message.includes("No active capture session"),
+    canvasRef: { current: { exportResult: () => { calls.push("export"); return exported.promise; },
+      commitTextEditing: () => true, cancelTextEditing: () => {} } },
     api: { confirmCapture: (...args) => { calls.push(args); return confirmed.promise; } },
-    getCurrentWindow: () => ({ close: async () => { calls.push("close"); } }),
+    getCurrentWindow: () => ({ close: async () => { calls.push("close"); },
+      setIgnoreCursorEvents: async () => {} }),
+    afterPaint: async () => { calls.push("paint"); },
     reportFrontend: message => calls.push(message),
   };
   const complete = new Function(...Object.keys(context), `${output}; return complete;`)(...Object.values(context));
-  return { complete, exported, confirmed, calls, result, selection, lock: context.completionLock };
+  return { complete, exported, confirmed, calls, handoffs, errors, result, selection, lock: context.completionLock };
 }
 
 test("direct pin exports annotations once and waits for confirmation before closing", async () => {
   const h = captureCompletion();
+  const steps = () => h.calls.filter(call => call === "export" || call === "close" || Array.isArray(call));
   const pending = h.complete(true);
   await h.complete();
-  assert.deepEqual(h.calls, ["export"], "Done cannot race a pending pin export");
+  assert.ok(h.calls.includes("complete: a previous completion is still in flight"),
+    "a click the lock ignores is reported instead of silently dropped");
+  await settleRequests();
+  assert.deepEqual(steps(), ["export"], "Done cannot race a pending pin export");
   h.exported.resolve(h.result);
   await settleRequests();
-  assert.deepEqual(h.calls[1], [h.result.png, { selection: h.selection, document: h.result.document }, true]);
+  assert.deepEqual(steps()[1], [h.result.png, { selection: h.selection, document: h.result.document }, true]);
   await h.complete(true);
-  assert.equal(h.calls.length, 2, "a second pin cannot race native confirmation");
+  assert.equal(steps().length, 2, "a second pin cannot race native confirmation");
   assert.equal(h.lock.locked, true);
   h.confirmed.resolve();
   await pending;
-  assert.equal(h.calls[2], "close");
+  assert.equal(steps()[2], "close");
   assert.equal(h.lock.locked, false);
 });
 
@@ -333,6 +515,32 @@ test("normal completion retains its non-pinning action", async () => {
   await pending;
   assert.equal(h.calls[1][2], false);
   assert.equal(h.calls[2], "close");
+  assert.deepEqual(h.handoffs, [], "Done does not hide the editor before exporting");
+});
+
+test("a pin click takes the editing HUD off screen before the pixels are exported", async () => {
+  const h = captureCompletion();
+  const pending = h.complete(true);
+  assert.deepEqual(h.handoffs, [true], "the click itself must hide the toolbar");
+  assert.deepEqual(h.calls, ["paint"], "the export waits for the hidden HUD to paint");
+  await settleRequests();
+  assert.deepEqual(h.calls, ["paint", "export"], "hiding happens before the export starts");
+  h.exported.resolve(h.result);
+  await settleRequests();
+  h.confirmed.resolve();
+  await pending;
+  assert.deepEqual(h.handoffs, [true], "a pinned capture never brings the editor back");
+  assert.equal(h.calls[3], "close");
+});
+
+test("a pin click that cannot export returns the editor with an error", async () => {
+  const h = captureCompletion();
+  const pending = h.complete(true);
+  h.exported.resolve(null);
+  await pending;
+  assert.deepEqual(h.handoffs, [true, false], "the handoff is released for a retry");
+  assert.ok(!h.calls.includes("close"));
+  assert.match(h.errors.at(-1), /Could not finish this screenshot/);
 });
 
 test("the toolbar exposes direct pin, disables it while completing, and isolates keyboard activation", () => {

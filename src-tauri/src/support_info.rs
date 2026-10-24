@@ -8,7 +8,7 @@ pub struct DisplayInfo {
 
 pub fn report(version: &str, language: &str, displays: Option<&[DisplayInfo]>) -> String {
     let mut text = format!(
-        "Kiri: {}\nOS: {}\nArchitecture: {}\nBuild: {}\nPackage: {}\nLanguage: {}\n",
+        "Lumen: {}\nOS: {}\nArchitecture: {}\nBuild: {}\nPackage: {}\nLanguage: {}\n",
         line(version),
         line(&os_version()),
         std::env::consts::ARCH,
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn report_contains_only_support_fields_and_handles_unavailable_displays() {
         let text = report("1.2.3", "zh-Hans", None);
-        assert!(text.contains("Kiri: 1.2.3\n"));
+        assert!(text.contains("Lumen: 1.2.3\n"));
         assert!(text.contains("Language: zh-Hans\n"));
         assert!(text.ends_with("Displays: unavailable\n"));
         assert!(!text.contains("/Users/"));

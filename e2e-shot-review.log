@@ -1,0 +1,40 @@
+  pin button probe: {"found":false,"href":"http://localhost:1420/index.html?window=overlay&captureToken=13cbfd67b77f42faa79c4bf3010da8f6","readyState":"complete","labels":["截图1","录屏2","文字3"],"overlays":["http://localhost:1420/index.html?window=overlay&captureToken=e5b7bb1a3a374247b9b5e6a80d6c5aad","http://localhost:1420/index.html?window=overlay&captureToken=13cbfd67b77f42faa79c4bf3010da8f6"]}
+[PASS] Ctrl+Shift+A opens the capture overlay overlays=2
+  pin button probe: {"found":true,"href":"http://localhost:1420/index.html?window=overlay&captureToken=13cbfd67b77f42faa79c4bf3010da8f6","label":"置顶截图","rect":{"x":1060.5,"y":767,"width":32,"height":32},"dpr":1,"screenX":0,"screenY":0,"innerWidth":2560,"innerHeight":1440,"webSocketDebuggerUrl":"ws://127.0.0.1:9333/devtools/page/279F82C8629F55FBC185955620FD4F0F"}
+[PASS] the annotation toolbar exposes the Pin button label=置顶截图
+[PASS] a real click on the Pin button creates the pin pins=1 click=1076,783
+[PASS] the pin matches the captured rectangle pin=600,350 400x400
+[PASS] the pin is visible 
+[PASS] the pin is borderless style=0x94000000
+[PASS] the pin is layered (per-pixel alpha) ex=0x8080088
+[PASS] the pin is topmost ex=0x8080088
+[PASS] the pin never activates (no focus steal) ex=0x8080088
+[PASS] the pin is excluded from Kiri's own screenshots affinity=0x11
+[PASS] a pin adds no WebView process before=39 after=39
+[PASS] the capture returns focus to the original app fg=33752268 expected=33752268
+[PASS] the pin is above everything under the pointer hit=8851482 pin=8851482
+[PASS] wheel up enlarges the hovered pin width 400 -> 440
+[PASS] zoom keeps the image aspect ratio ratio 1 vs 1
+[PASS] the zoom percentage badge is shown visible=1
+[PASS] the badge sits inside the pin frame badge=588,338 pin=580,330
+[PASS] the badge hides after the scroll stops 
+[PASS] wheel down restores the previous size width=400 expected=400
+[PASS] dragging moves the pinned image delta=120,90
+[PASS] Escape closes the pin under the pointer remaining=0
+[PASS] Escape leaves the foreground app alone 
+
+--- pin log lines ---
+[2026-10-22T20:45:51.351Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=2 size=260x180
+[2026-10-22T20:45:51.351Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:53.293Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=3 size=200x200
+[2026-10-22T20:45:53.293Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:53.810Z INFO  kiri_lib::pin::surface_windows] [pin] closed label=pin-3
+[2026-10-22T20:45:54.741Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=4 size=364x104
+[2026-10-22T20:45:54.741Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:45:55.112Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=5 size=240x160
+[2026-10-22T20:45:55.112Z INFO  kiri_lib::commands] [pin] clipboard paste opened 1 pin(s)
+[2026-10-22T20:46:30.175Z INFO  kiri_lib::pin::surface_windows] [pin] opened id=1 size=400x400
+[2026-10-22T20:46:30.175Z INFO  kiri_lib::commands] [pin] screenshot opened native asset_id=58cd9af0-ce5c-48ec-b49a-e11c2f692d5b
+[2026-10-22T20:46:34.213Z INFO  kiri_lib::pin::surface_windows] [pin] closed label=pin-1
+
+22/22 checks passed

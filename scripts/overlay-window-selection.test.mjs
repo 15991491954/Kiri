@@ -5,6 +5,8 @@ import ts from "typescript";
 import { createLibraryHarness, nodes, settleRequests } from "./helpers/library-render-harness.mjs";
 import { AnnotationInteractionLock } from "../src/annotation/interaction-lock.js";
 import { isTextComposition } from "../src/annotation/text-composition.js";
+import * as cursors from "../src/annotation/cursors.js";
+import * as modeSwitching from "../src/annotation/mode-switching.js";
 import * as toolbarLayout from "../src/windows/toolbar-layout.js";
 import * as captureSize from "../src/windows/capture-size.js";
 
@@ -17,6 +19,10 @@ new Function("exports", ts.transpileModule(
 
 const recordingOptions = { outputFormat: "mp4", usesCountdown: true, capturesSystemAudio: false,
   capturesMicrophone: false, microphoneDeviceId: null, showsCursor: true, highlightsClicks: false };
+// The keydown/wheel guards use `instanceof Element` to recognise controls.
+// Node has no DOM, so the harness gets a stand-in class and tests pass plain
+// instances (or null for the frozen screen).
+class Element {}
 const colorPicker = { sample: null, feedback: null, clear() {}, onPointerMove() {}, onCopyKeyDown() { return false; } };
 const background = { x: 60, y: 80, width: 1320, height: 830 };
 const normal = { x: 200, y: 100, width: 800, height: 680 };
@@ -29,6 +35,7 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
   devicePixelRatio = scale, width = 1512, height = 982, scrollingCapture = true } = {}) {
   const errors = [];
   const scrollStarts = [];
+  const captureModes = [];
   let cancelled = 0;
   const context = { captureId: "capture-1", displayWidth: width, displayHeight: height, scale,
     pixelWidth: Math.round(width * scale), pixelHeight: Math.round(height * scale),
@@ -36,6 +43,7 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
   const harness = createLibraryHarness({}, source, {
     search: "?window=overlay&captureToken=0123456789abcdef0123456789abcdef",
     globals: {
+      Element,
       fetch: async () => ({ ok: true, blob: async () => new Blob(["test frozen capture"]) }),
       Image: class { src = ""; },
       ResizeObserver: class { observe() {} disconnect() {} },
@@ -50,6 +58,7 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
         platformCapabilities: async () => ({ scrollingCapture, recording: true, microphone: true, systemAudio: true, clickHighlights: true }),
         startScrollCapture: async (captureId, selection) => { scrollStarts.push({ captureId, selection }); },
         cancelCapture: async () => { cancelled++; },
+        setCaptureMode: async (mode) => { captureModes.push(mode); },
       } },
       "../annotation/geom": geometry.exports,
       "../annotation/model": { nextCalloutNumber: () => 1 },
@@ -58,6 +67,8 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
       "../annotation/AnnotationCanvas": { __esModule: true, default: "annotation-canvas" },
       "../annotation/interaction-lock.js": { AnnotationInteractionLock },
       "../annotation/text-composition.js": { isTextComposition },
+      "../annotation/cursors.js": cursors,
+      "../annotation/mode-switching.js": modeSwitching,
       "./RecordingMicrophoneSelect": { __esModule: true, default: "microphone-select" },
       "../qr/QrOverlay": { QrOverlay: "qr-overlay" },
       "../ocr/RemoteOcrConsent": { RemoteOcrConsent: "ocr-consent" },
@@ -87,12 +98,13 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
     const style = outlines[0]?.props.style;
     return style ? { x: style.left, y: style.top, width: style.width, height: style.height } : null;
   };
-  const pointer = (handler, x, y) => {
-    tree.props[handler]({ button: 0, pointerId: 1, clientX: x, clientY: y,
+  const pointer = (handler, x, y, target = null) => {
+    tree.props[handler]({ button: 0, pointerId: 1, clientX: x, clientY: y, target,
       preventDefault() {}, stopPropagation() {} });
     render();
   };
   return { region, hoverRect, scrollStarts,
+    unmount: () => component.unmount(),
     toolbar: () => nodes(render()).find(node => node?.type?.name === "Toolbar"),
     annotationContent(hasContent, canUndo = hasContent) {
       nodes(render()).find(node => node?.type === "annotation-canvas").props.onHistoryChange(canUndo, false, hasContent);
@@ -100,6 +112,12 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
     },
     hover: (x, y) => pointer("onPointerMove", x, y),
     click(x, y) { pointer("onPointerDown", x, y); pointer("onPointerUp", x, y); },
+    /** A click whose target is floating chrome (toolbar, options, mode selector). */
+    chromeClick(x, y) {
+      const chrome = { closest: () => ({}) };
+      pointer("onPointerDown", x, y, chrome);
+      pointer("onPointerUp", x, y, chrome);
+    },
     drag(from, move, release) {
       pointer("onPointerDown", ...from);
       pointer("onPointerMove", ...move);
@@ -110,6 +128,27 @@ async function overlay(t, { windowRects = [floating, normal, background], scale 
       assert.ok(button, `mode ${label} exists`);
       button.props.onClick(); render();
     },
+    key(key, options = {}) {
+      const event = { type: "keydown", key, target: null, defaultPrevented: false,
+        metaKey: false, ctrlKey: false, altKey: false, shiftKey: false,
+        preventDefault() { this.defaultPrevented = true; }, ...options };
+      harness.window.dispatchEvent(event);
+      render();
+      return event;
+    },
+    wheel(deltaY, options = {}) {
+      const event = { type: "wheel", deltaY, deltaMode: 0, target: null,
+        defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...options };
+      harness.window.dispatchEvent(event);
+      render();
+      return event;
+    },
+    activeMode: () =>
+      nodes(render()).find(node => node?.props?.badge && node.props.active)?.props.label ?? null,
+    modeBadges: () => nodes(render()).filter(node => node?.props?.badge).map(node => node.props.badge),
+    hint: () => nodes(render()).find(node => typeof node?.props?.text === "string")?.props.text ?? "",
+    cursor: () => render().props.style.cursor,
+    captureModes,
   };
 }
 
@@ -137,6 +176,21 @@ test("overlapping windows follow native front-to-back order rather than area", a
     h.click(400, 350);
     assert.deepEqual(h.region(), windowRects[0]);
   }
+});
+
+test("a floating-chrome click keeps the committed region instead of reselecting", async t => {
+  const h = await overlay(t);
+  h.click(250, 200);
+  assert.deepEqual(h.region(), normal);
+  // The Pin button sits outside the region, over the desktop background. Its
+  // pointer-down used to start a region gesture; the release then committed
+  // the window behind the toolbar, moved the toolbar, and swallowed the Pin
+  // click ("clicked 📌, still editing"). Chrome must not reach the selection.
+  h.chromeClick(1400, 900);
+  assert.deepEqual(h.region(), normal, "chrome never replaces the selected region");
+  // The real screen still selects normally after the chrome click.
+  h.click(1200, 850);
+  assert.deepEqual(h.region(), background);
 });
 
 test("dragging across a hovered window commits the manual release endpoint in either direction", async t => {
@@ -204,4 +258,99 @@ test("an unsupported desktop keeps scrolling unavailable without starting a capt
   h.toolbar().props.onScrollCapture();
   await settleRequests();
   assert.equal(h.scrollStarts.length, 0);
+});
+
+test("the mode selector advertises and honours the 1/2/3 keys", async t => {
+  const h = await overlay(t);
+  assert.deepEqual(h.modeBadges(), ["1", "2", "3"]);
+  assert.match(h.hint(), /Press 1 \/ 2 \/ 3 to change mode$/);
+  assert.equal(h.activeMode(), "Screenshot");
+
+  assert.equal(h.key("2").defaultPrevented, true);
+  assert.equal(h.activeMode(), "Record");
+  assert.equal(h.key("3").defaultPrevented, true);
+  assert.equal(h.activeMode(), "OCR");
+  assert.equal(h.key("1").defaultPrevented, true);
+  assert.equal(h.activeMode(), "Screenshot");
+
+  // Modified digits belong to the OS/browser, and other keys pass through.
+  h.key("2", { metaKey: true });
+  h.key("3", { ctrlKey: true });
+  h.key("2", { altKey: true });
+  h.key("4");
+  assert.equal(h.activeMode(), "Screenshot");
+});
+
+test("the wheel cycles capture modes in place and ignores panel scrolling", async t => {
+  const h = await overlay(t);
+
+  // The recording options and other HUD panels keep their own wheel behavior.
+  const panelTarget = new Element();
+  panelTarget.closest = () => ({ className: "kiri-record-options" });
+  const panelWheel = h.wheel(200, { target: panelTarget });
+  assert.equal(panelWheel.defaultPrevented, false);
+  assert.equal(h.activeMode(), "Screenshot");
+
+  const switchWheel = h.wheel(90);
+  assert.equal(switchWheel.defaultPrevented, true);
+  assert.equal(h.activeMode(), "Record", "downward wheel advances screenshot -> record");
+
+  // Momentum inside the cooldown must not skip a second mode.
+  const momentum = h.wheel(400);
+  assert.equal(momentum.defaultPrevented, false);
+  assert.equal(h.activeMode(), "Record");
+});
+
+test("selection handles and the region interior preview their drag cursor", async t => {
+  const h = await overlay(t);
+  h.hover(250, 200);
+  assert.equal(h.cursor(), "crosshair", "blank frozen screen offers a new region");
+
+  h.click(250, 200);
+  assert.equal(h.cursor(), "crosshair");
+
+  h.hover(201, 101);
+  assert.equal(h.cursor(), "nwse-resize", "top-left corner resizes diagonally");
+  h.hover(999, 101);
+  assert.equal(h.cursor(), "nesw-resize", "top-right corner resizes the other diagonal");
+  h.hover(500, 101);
+  assert.equal(h.cursor(), "move", "the top edge midpoint is only a handle at its centre");
+  h.hover(600, 101);
+  assert.equal(h.cursor(), "ns-resize", "top edge resizes vertically");
+  h.hover(201, 440);
+  assert.equal(h.cursor(), "ew-resize", "left edge resizes horizontally");
+
+  h.hover(400, 300);
+  assert.equal(h.cursor(), "move", "the inside of the region drags it");
+
+  h.hover(1450, 930);
+  assert.equal(h.cursor(), "crosshair", "outside the region starts a new selection");
+});
+
+test("the overlay remembers the last mode with one debounced write", async t => {
+  const h = await overlay(t);
+  h.key("2");
+  h.key("3");
+  await new Promise(resolve => setTimeout(resolve, 360));
+  assert.deepEqual(h.captureModes, ["ocr"], "a rapid sequence writes once, with the settled mode");
+});
+
+test("a peer overlay that never changed modes leaves the remembered mode alone", async t => {
+  const h = await overlay(t);
+  h.key("2");
+  await new Promise(resolve => setTimeout(resolve, 360));
+  assert.deepEqual(h.captureModes, ["record"]);
+  h.unmount();
+  assert.deepEqual(
+    h.captureModes,
+    ["record"],
+    "closing an unchanged overlay must not rewrite or revert the saved mode",
+  );
+});
+
+test("confirming before the debounce still saves the mode the user picked", async t => {
+  const h = await overlay(t);
+  h.key("3");
+  h.unmount();
+  assert.deepEqual(h.captureModes, ["ocr"], "the pending write is flushed when the overlay closes");
 });

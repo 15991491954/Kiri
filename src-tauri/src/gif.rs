@@ -370,7 +370,7 @@ pub fn export_gif_controlled(video: &Path, max_long_edge: u32, fps: u32,
     })();
     if let Err(error) = result {
         let _ = std::fs::remove_file(&out_path);
-        return Err(error).context("Kiri could not create the GIF file.");
+        return Err(error).context("Lumen could not create the GIF file.");
     }
     Ok((out_path, clock.duration_seconds()))
 }

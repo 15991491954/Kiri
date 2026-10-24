@@ -1,0 +1,89 @@
+﻿diff --git a/src-tauri/src/shortcut_settings.rs b/src-tauri/src/shortcut_settings.rs
+index 85fb28e..68f4310 100644
+--- a/src-tauri/src/shortcut_settings.rs
++++ b/src-tauri/src/shortcut_settings.rs
+@@ -20,4 +20,5 @@ pub enum ShortcutAction {
+     Ocr,
+     Library,
++    PastePin,
+     RecordingPauseResume,
+     RecordingStop,
+@@ -25,9 +26,10 @@ pub enum ShortcutAction {
+ 
+ impl ShortcutAction {
+-    pub const ALL: [Self; 6] = [
++    pub const ALL: [Self; 7] = [
+         Self::Capture,
+         Self::Record,
+         Self::Ocr,
+         Self::Library,
++        Self::PastePin,
+         Self::RecordingPauseResume,
+         Self::RecordingStop,
+@@ -39,6 +41,7 @@ impl ShortcutAction {
+             Self::Ocr => 2,
+             Self::Library => 3,
+-            Self::RecordingPauseResume => 4,
+-            Self::RecordingStop => 5,
++            Self::PastePin => 4,
++            Self::RecordingPauseResume => 5,
++            Self::RecordingStop => 6,
+         }
+     }
+@@ -60,7 +63,14 @@ impl ShortcutAction {
+             Self::Ocr => Code::KeyO,
+             Self::Library => Code::KeyL,
++            // Snipaste's F3: paste the clipboard as a floating pin. A function
++            // key is not used for typing or navigation, so it saves directly
++            // without the single-key confirmation (ADR 0111).
++            Self::PastePin => Code::F3,
+             Self::RecordingPauseResume => Code::KeyP,
+             Self::RecordingStop => Code::KeyS,
+         };
++        if self == Self::PastePin {
++            return Shortcut::new(None, key);
++        }
+         let modifiers = if self == Self::Capture {
+             primary | Modifiers::SHIFT
+@@ -76,4 +86,5 @@ impl ShortcutAction {
+             Self::Ocr => "kiri --ocr",
+             Self::Library => "kiri --library",
++            Self::PastePin => "kiri --paste-pin",
+             Self::RecordingPauseResume => "kiri --toggle-recording-pause",
+             Self::RecordingStop => "kiri --stop-recording",
+@@ -90,5 +101,5 @@ pub enum ShortcutScope {
+ 
+ #[derive(Clone)]
+-pub struct Bindings([Option<Shortcut>; 6]);
++pub struct Bindings([Option<Shortcut>; 7]);
+ impl Default for Bindings {
+     fn default() -> Self {
+@@ -117,6 +128,6 @@ pub struct ShortcutBindings {
+     current: Mutex<Bindings>,
+     // Zero means unassigned; widen/offset u32 IDs so native ID zero is valid.
+-    ids: [AtomicU64; 6],
+-    pressed_ids: [AtomicU64; 6],
++    ids: [AtomicU64; 7],
++    pressed_ids: [AtomicU64; 7],
+     editing: AtomicBool,
+     library_focused: AtomicBool,
+@@ -237,5 +248,5 @@ fn decode(bytes: &[u8]) -> Result<Bindings, String> {
+         return Err("Unsupported shortcut settings version.".into());
+     }
+-    let mut bindings = Bindings([None; 6]);
++    let mut bindings = Bindings([None; 7]);
+     // Saved custom choices take priority over newly introduced default actions.
+     for action in ShortcutAction::ALL {
+@@ -266,5 +277,5 @@ fn load_from_dir(dir: &Path) -> Bindings {
+         .and_then(|value| parse(value.trim()).ok())
+         .unwrap_or_else(default_binding);
+-    let mut bindings = Bindings([None; 6]);
++    let mut bindings = Bindings([None; 7]);
+     bindings.0[ShortcutAction::Capture.index()] = Some(capture);
+     for action in ShortcutAction::ALL.into_iter().skip(1) {
+@@ -921,4 +932,5 @@ mod tests {
+                 "ocr",
+                 "library",
++                "pastePin",
+                 "recordingPauseResume",
+                 "recordingStop"

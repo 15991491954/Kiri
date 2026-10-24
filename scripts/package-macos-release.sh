@@ -67,8 +67,8 @@ config_value() {
 version="$(config_value version)"
 expected_identifier="$(config_value identifier)"
 expected_macos="$(config_value bundle.macOS.minimumSystemVersion)"
-dmg="$PROJECT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/dmg/kiri_${version}_universal.dmg"
-updater_archive="$PROJECT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/macos/kiri.app.tar.gz"
+dmg="$PROJECT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Lumen_${version}_universal.dmg"
+updater_archive="$PROJECT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/macos/Lumen.app.tar.gz"
 updater_signature="$updater_archive.sig"
 
 [[ -f "$dmg" ]] || {
@@ -102,10 +102,10 @@ mounted_device="$(
   exit 1
 }
 
-app="$mount_dir/kiri.app"
+app="$mount_dir/Lumen.app"
 executable="$app/Contents/MacOS/kiri"
 [[ -d "$app" && -x "$executable" ]] || {
-  echo "package-macos-release: DMG does not contain kiri.app" >&2
+  echo "package-macos-release: DMG does not contain Lumen.app" >&2
   exit 1
 }
 [[ -L "$mount_dir/Applications" && "$(readlink "$mount_dir/Applications")" == "/Applications" ]] || {
@@ -150,7 +150,7 @@ requirement="$(
 
 # A valid certificate alone does not preserve macOS privacy grants. Keep the
 # public release on the same designated requirement as the installed app.
-installed_app="/Applications/Kiri.app"
+installed_app="/Applications/Lumen.app"
 if [[ -d "$installed_app" ]]; then
   installed_requirement="$(
     codesign --display --requirements - "$installed_app" 2>&1 |
@@ -158,7 +158,7 @@ if [[ -d "$installed_app" ]]; then
   )"
   if [[ -z "$installed_requirement" || "$installed_requirement" != "$requirement" ]]; then
     if [[ "${KIRI_ALLOW_IDENTITY_CHANGE:-0}" != "1" ]]; then
-      echo "package-macos-release: packaged app does not match the installed Kiri signing identity" >&2
+      echo "package-macos-release: packaged app does not match the installed Lumen signing identity" >&2
       echo "package-macos-release: set KIRI_SIGNING_IDENTITY to the installed certificate fingerprint" >&2
       exit 1
     fi

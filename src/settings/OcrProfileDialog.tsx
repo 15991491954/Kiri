@@ -115,7 +115,7 @@ export function OcrProfileDialog({
           <div className="kiri-settings-dialog__header">
             <div>
               <h2 id={titleId}>{profile ? t("Edit OCR Profile") : t("Add OCR Profile")}</h2>
-              <p>{t("Kiri stores the API key in your operating system's secure credential store.")}</p>
+              <p>{t("Lumen stores the API key in your operating system's secure credential store.")}</p>
             </div>
           </div>
 
@@ -156,7 +156,7 @@ export function OcrProfileDialog({
                 spellCheck={false}
                 disabled={busy}
               />
-              <small>{t("Kiri automatically appends /chat/completions.")}</small>
+              <small>{t("Lumen automatically appends /chat/completions.")}</small>
             </label>
 
             <label className="kiri-settings-field">

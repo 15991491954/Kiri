@@ -1,0 +1,35 @@
+    Checking kiri v1.6.26 (E:\项目\Kiri录屏\Kiri\Kiri\src-tauri)
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0277]: the trait bound `u64: From<i32>` is not satisfied
+   --> src\platform\windows.rs:887:66
+    |
+887 |         std::thread::sleep(std::time::Duration::from_millis(40 + u64::from(attempt) * 20));
+    |                                                                  ^^^ the trait `From<i32>` is not implemented for `u64`
+    |
+    = help: `u64` implements trait `From<T>`:
+              From<bool>
+              From<char>
+              From<deranged::RangedU64<MIN, MAX>>
+              From<std::ascii::Char>
+              From<u16>
+              From<u32>
+              From<u8>
+              From<zerocopy::byteorder::U16<O>>
+            and 2 others
+
+warning: unused import: `Context`
+  --> src\platform\windows.rs:10:28
+   |
+10 | use anyhow::{anyhow, bail, Context, Result};
+   |                            ^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+warning: `kiri` (lib) generated 2 warnings
+error: could not compile `kiri` (lib) due to 1 previous error; 2 warnings emitted

@@ -35,7 +35,7 @@ test("the click ripple stays passive so recording hotkeys keep focus", () => {
   assert.match(rippleBuilder, /set_window_click_through\(app, "ripple"\)/);
 });
 
-for (const name of ["start_capture_with_mode", "linux_capture_commit"]) {
+for (const name of ["start_capture_with_owner", "linux_capture_commit"]) {
   test(`${name} rechecks scrolling capture while holding the shared transition lock`, () => {
     const commands = readFileSync(join(rustRoot, "commands.rs"), "utf8");
     const body = commands.match(new RegExp(`fn ${name}\\([\\s\\S]*?\\n\\}`))?.[0];
@@ -94,9 +94,9 @@ test("capture confirmation finalizes only after its owner IPC returns", () => {
     /fn finalize_confirmed_capture_after_overlay_destroyed[\s\S]*show_completion_preview/,
     "completion preview creation must run from the overlay destruction path",
   );
-  const confirmationAwait = overlay.indexOf("await api.confirmCapture");
+  const confirmationAwait = overlay.indexOf("const outcome = await settleWithin(");
   const ownerCloseAwait = overlay.indexOf(
-    "await getCurrentWindow().close()",
+    "await closeConfirmedOverlay()",
     confirmationAwait,
   );
   assert.ok(confirmationAwait >= 0, "the overlay must await capture confirmation");
@@ -104,10 +104,10 @@ test("capture confirmation finalizes only after its owner IPC returns", () => {
     ownerCloseAwait > confirmationAwait,
     "the overlay must wait for the confirmation response before closing itself",
   );
-  assert.doesNotMatch(
+  assert.match(
     overlay.slice(confirmationAwait, ownerCloseAwait),
-    /\bcatch\b|\bfinally\b/,
-    "the successful confirmation path must close before leaving its try block",
+    /if \(failure && !lostCaptureSession\(failure\)\)/,
+    "a rejected confirmation must return the editor instead of closing the overlay",
   );
 });
 

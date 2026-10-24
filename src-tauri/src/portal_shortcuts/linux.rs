@@ -38,15 +38,15 @@ pub struct Command {
 }
 
 fn restore_enabled(app: &tauri::AppHandle) -> bool {
-    app.path()
-        .app_config_dir()
+    crate::paths::config_dir(app)
         .ok()
         .and_then(|dir| std::fs::read_to_string(dir.join("portal-shortcuts.txt")).ok())
         .is_some_and(|value| value == "enabled\n")
 }
 
 fn save_enabled(app: &tauri::AppHandle, enabled: bool) -> std::io::Result<()> {
-    let dir = app.path().app_config_dir().map_err(std::io::Error::other)?;
+    let dir = crate::paths::config_dir(app)
+        .ok_or_else(|| std::io::Error::other("the Lumen settings folder is unavailable"))?;
     std::fs::create_dir_all(&dir)?;
     let mut file = tempfile::NamedTempFile::new_in(&dir)?;
     file.write_all(if enabled { b"enabled\n" } else { b"disabled\n" })?;

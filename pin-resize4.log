@@ -1,0 +1,16 @@
+[PASS] the clipboard pin opens count=1
+[PASS] the pin photo keeps the source aspect ratio window=424x324 photo=400x300
+[PASS] the right edge shows the horizontal resize cursor cursor=65553 expected=65553
+[FAIL] dragging the right edge widens the pin start=424 end=424
+[PASS] the photo aspect ratio is preserved while widening photo=400x300
+[PASS] the photo grows proportionally photoH=300 expected=300
+[FAIL] dragging the bottom edge grows the pin start=324 end=324
+[PASS] the bottom-edge resize keeps the aspect ratio photo=400x300
+[FAIL] a corner drag grows both axes from=424 x 324 to=424 x 324
+[PASS] the corner drag keeps the aspect ratio photo=400x300
+[PASS] Escape closes the resized pin left=0
+
+8/11 checks passed
+  - dragging the right edge widens the pin (start=424 end=424)
+  - dragging the bottom edge grows the pin (start=324 end=324)
+  - a corner drag grows both axes (from=424 x 324 to=424 x 324)

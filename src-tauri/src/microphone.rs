@@ -43,7 +43,7 @@ fn capture_is_current(app: &AppHandle, label: &str, id: uuid::Uuid) -> bool {
         .session
         .as_ref()
         .is_some_and(|session| {
-            session.capture_id == id && session.overlay_labels.iter().any(|item| item == label)
+            session.capture_id == id && session.has_overlay(label)
         })
 }
 
@@ -62,7 +62,7 @@ pub async fn microphone_check(
             .session
             .as_ref()
             .ok_or("No active capture session.")?;
-        if !session.overlay_labels.contains(&label) {
+        if !session.has_overlay(&label) {
             return Err("Microphone checks are only available in capture.".into());
         }
         session.capture_id

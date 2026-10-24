@@ -1,0 +1,272 @@
+diff --git a/src/annotation/AnnotationCanvas.tsx b/src/annotation/AnnotationCanvas.tsx
+index 88b37de..fdd33cf 100644
+--- a/src/annotation/AnnotationCanvas.tsx
++++ b/src/annotation/AnnotationCanvas.tsx
+@@ -17,6 +17,7 @@ import type { Point, Rect } from "./geom";
+ import { handleTextEditorKey, isTextComposition, setTextComposition } from "./text-composition.js";
+ import type { ColorPreset } from "./model";
+ import { clampPoint, hitTestHandle } from "./geom";
++import { handleCursor } from "./cursors.js";
+ import {
+   AnnotationHistory,
+   COLOR_HEX,
+@@ -1295,15 +1296,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
+               if (calloutHandleAt(selectedMark, p, 9 * hitTestScale.radial)) cursor = "crosshair";
+             } else if ((toolRef.current === "select" || (textTool && selectedMark?.kind === "text")) &&
+               selected !== null && current[selected] && !["line","arrow"].includes(current[selected].kind)) {
+-              if (
+-                hitTestHandle(
+-                  p,
+-                  selectionBounds(current[selected]),
+-                  9 * hitTestScale.radial,
+-                )
+-              ) {
+-                cursor = "crosshair";
+-              }
++              const resizeHandle = hitTestHandle(
++                p,
++                selectionBounds(current[selected]),
++                9 * hitTestScale.radial,
++              );
++              if (resizeHandle) cursor = handleCursor(resizeHandle) ?? "crosshair";
+             }
+             if (
+               cursor === "default" &&
+diff --git a/src/i18n/en.json b/src/i18n/en.json
+index 2c1e70e..8768f18 100644
+--- a/src/i18n/en.json
++++ b/src/i18n/en.json
+@@ -116,6 +116,7 @@
+   "Release for recording settings": "Release for recording settings",
+   "Release to show tools": "Release to show tools",
+   "Drag to choose a capture area   ·   Click a window   ·   Esc to cancel": "Drag to choose a capture area   ·   Click a window   ·   Esc to cancel",
++  "Press 1 / 2 / 3 to change mode": "Press 1 / 2 / 3 to change mode",
+   "Drag to choose a recording area   ·   Click a window   ·   Esc to cancel": "Drag to choose a recording area   ·   Click a window   ·   Esc to cancel",
+   "Line": "Line",
+   "Brush": "Brush",
+@@ -332,8 +333,6 @@
+   "Recording starts in %d": "Recording starts in %d",
+   "Could not start recording. Cancel and try again.": "Could not start recording. Cancel and try again.",
+   "Could not cancel recording. Try again.": "Could not cancel recording. Try again.",
+-  "Text History": "Text History",
+-  "Read, copy, and revisit recognized text": "Read, copy, and revisit recognized text",
+   "Recognize Text": "Recognize Text",
+   "Recognize Text Locally": "Recognize Text Locally",
+   "Read Text": "Read Text",
+@@ -341,17 +340,7 @@
+   "View Source Image": "View Source Image",
+   "Open Source Image": "Open Source Image",
+   "OCR Source Image": "OCR Source Image",
+-  "Saved to Text History": "Saved to Text History",
+-  "History wasn't saved. Copy the text before closing.": "History wasn't saved. Copy the text before closing.",
+   "Couldn't copy text.": "Couldn't copy text.",
+-  "You can close this window. Successful results are saved to Text History.": "You can close this window. Successful results are saved to Text History.",
+-  "Search recognized text": "Search recognized text",
+-  "Couldn't load Text History.": "Couldn't load Text History.",
+-  "Couldn't move this text to Trash.": "Couldn't move this text to Trash.",
+-  "No matching text": "No matching text",
+-  "Your text, ready to revisit": "Your text, ready to revisit",
+-  "Try another word or clear the search.": "Try another word or clear the search.",
+-  "Recognize text from your screen or a saved screenshot. It will appear here.": "Recognize text from your screen or a saved screenshot. It will appear here.",
+   "Local OCR failed.": "Local OCR failed.",
+   "Another image is being recognized. Try again shortly.": "Another image is being recognized. Try again shortly.",
+   "The OCR image exceeds the size limit.": "The OCR image exceeds the size limit.",
+@@ -563,10 +552,6 @@
+   "The text could not be copied to the clipboard.": "The text could not be copied to the clipboard.",
+   "The file could not be copied to the clipboard.": "The file could not be copied to the clipboard.",
+   "Experimental Wayland capture currently requires one display. Use an X11 session for multiple displays.": "Experimental Wayland capture currently requires one display. Use an X11 session for multiple displays.",
+-  "Edit Text": "Edit Text",
+-  "Restore Original Text": "Restore Original Text",
+-  "Edit recognized text": "Edit recognized text",
+-  "Couldn't save the text. Reload Text History and try again.": "Couldn't save the text. Reload Text History and try again.",
+   "Export Selected": "Export Selected",
+   "Exported {n} files": "Exported {n} files",
+   "Some selected files could not be exported.": "Some selected files could not be exported.",
+@@ -587,16 +572,11 @@
+   "Your image has unsaved changes. Save them, discard them, or keep editing.": "Your image has unsaved changes. Save them, discard them, or keep editing.",
+   "Save & close": "Save & close",
+   "QR Codes": "QR Codes",
+-  "QR Favorites": "QR Favorites",
+-  "Find and reuse saved QR codes": "Find and reuse saved QR codes",
+   "Recognize QR Codes": "Recognize QR Codes",
+   "QR Content": "QR Content",
+   "Link": "Link",
+   "WeChat": "WeChat",
+   "Open Link": "Open Link",
+-  "Save QR Code": "Save QR Code",
+-  "Copy QR Image": "Copy QR Image",
+-  "Saved to QR Favorites": "Saved to QR Favorites",
+   "Link opened": "Link opened",
+   "Review this content carefully. This link may be unsafe.": "Review this content carefully. This link may be unsafe.",
+   "Review this content carefully.": "Review this content carefully.",
+@@ -609,19 +589,13 @@
+   "No QR codes found. Try a clearer image or a larger selection.": "No QR codes found. Try a clearer image or a larger selection.",
+   "QR recognition failed.": "QR recognition failed.",
+   "Recognizing QR Codes…": "Recognizing QR Codes…",
+-  "Search QR Favorites": "Search QR Favorites",
+-  "Could not load QR Favorites.": "Could not load QR Favorites.",
+-  "No QR favorites match this search.": "No QR favorites match this search.",
+-  "Save a QR code to find and reuse it here.": "Save a QR code to find and reuse it here.",
+   "The QR image exceeds the size limit.": "The QR image exceeds the size limit.",
+   "The QR image could not be read.": "The QR image could not be read.",
+   "Another QR image is being recognized. Try again shortly.": "Another QR image is being recognized. Try again shortly.",
+   "The QR request was canceled.": "The QR request was canceled.",
+   "This QR code could not be decoded.": "This QR code could not be decoded.",
+   "The library changed during QR recognition.": "The library changed during QR recognition.",
+-  "Could not save this QR code.": "Could not save this QR code.",
+   "Could not open this link.": "Could not open this link.",
+-  "Invalid QR favorite.": "Invalid QR favorite.",
+   "Wayland Desktop Shortcuts": "Wayland Desktop Shortcuts",
+   "Desktop shortcuts are unavailable in this session.": "Desktop shortcuts are unavailable in this session.",
+   "Checking desktop shortcut support…": "Checking desktop shortcut support…",
+@@ -857,5 +831,12 @@
+   "Couldn't load startup settings.": "Couldn't load startup settings.",
+   "Couldn't change startup settings.": "Couldn't change startup settings.",
+   "Couldn't open system startup settings.": "Couldn't open system startup settings.",
+-  "Open System Settings": "Open System Settings"
++  "Open System Settings": "Open System Settings",
++  "Paste as Pin": "Paste as Pin",
++  "Pin the copied image or text on top of other windows.": "Pin the copied image or text on top of other windows.",
++  "The clipboard has no image or text to pin.": "The clipboard has no image or text to pin.",
++  "Could not read the clipboard right now.": "Could not read the clipboard right now.",
++  "The copied image could not be opened.": "The copied image could not be opened.",
++  "The clipboard image could not be pinned.": "The clipboard image could not be pinned.",
++  "Close a pinned image before pinning another.": "Close a pinned image before pinning another."
+ }
+diff --git a/src/i18n/zh-Hans.json b/src/i18n/zh-Hans.json
+index 399af6e..ad79e4b 100644
+--- a/src/i18n/zh-Hans.json
++++ b/src/i18n/zh-Hans.json
+@@ -116,6 +116,7 @@
+   "Release for recording settings": "松开以设置录屏",
+   "Release to show tools": "松开以显示工具",
+   "Drag to choose a capture area   ·   Click a window   ·   Esc to cancel": "拖动选择截图区域   ·   单击选择窗体   ·   Esc 取消",
++  "Press 1 / 2 / 3 to change mode": "按 1 / 2 / 3 切换模式",
+   "Drag to choose a recording area   ·   Click a window   ·   Esc to cancel": "拖动选择录屏区域   ·   单击选择窗体   ·   Esc 取消",
+   "Line": "线条",
+   "Brush": "笔刷",
+@@ -332,8 +333,6 @@
+   "Recording starts in %d": "%d 秒后开始录制",
+   "Could not start recording. Cancel and try again.": "无法开始录制，请取消后重试。",
+   "Could not cancel recording. Try again.": "未能取消录制，请重试。",
+-  "Text History": "文字",
+-  "Read, copy, and revisit recognized text": "回看、搜索和复制识别过的文字",
+   "Recognize Text": "识别文字",
+   "Recognize Text Locally": "本地识别文字",
+   "Read Text": "查看文字",
+@@ -341,17 +340,7 @@
+   "View Source Image": "查看原图",
+   "Open Source Image": "打开原图",
+   "OCR Source Image": "文字识别原图",
+-  "Saved to Text History": "已保存到「文字」",
+-  "History wasn't saved. Copy the text before closing.": "未能保存到历史，请在关闭前复制文字。",
+   "Couldn't copy text.": "无法复制文字，请重试。",
+-  "You can close this window. Successful results are saved to Text History.": "可以关闭此窗口，识别成功后会自动保存到「文字」。",
+-  "Search recognized text": "搜索识别文字",
+-  "Couldn't load Text History.": "无法加载文字历史，请确认资料库可用后重试。",
+-  "Couldn't move this text to Trash.": "未能移入回收站，请重试。",
+-  "No matching text": "没有找到相关文字",
+-  "Your text, ready to revisit": "识别过的文字，随时回看",
+-  "Try another word or clear the search.": "换个关键词，或清空搜索。",
+-  "Recognize text from your screen or a saved screenshot. It will appear here.": "从屏幕或历史截图识别的文字，会保存在这里。",
+   "Local OCR failed.": "本地文字识别失败，请重试。",
+   "Another image is being recognized. Try again shortly.": "另一张图片正在识别，请稍后重试。",
+   "The OCR image exceeds the size limit.": "图片过大，请截取较小区域后识别。",
+@@ -563,10 +552,6 @@
+   "The text could not be copied to the clipboard.": "无法将文字复制到剪贴板。",
+   "The file could not be copied to the clipboard.": "无法将文件复制到剪贴板。",
+   "Experimental Wayland capture currently requires one display. Use an X11 session for multiple displays.": "实验性 Wayland 截图目前只支持单屏。多屏请使用 X11 会话。",
+-  "Edit Text": "编辑文字",
+-  "Restore Original Text": "恢复原始识别结果",
+-  "Edit recognized text": "编辑识别文字",
+-  "Couldn't save the text. Reload Text History and try again.": "保存文字失败。请重新打开文字历史后再试。",
+   "Export Selected": "导出所选文件",
+   "Exported {n} files": "已导出 {n} 个文件",
+   "Some selected files could not be exported.": "部分所选文件导出失败。",
+@@ -587,16 +572,11 @@
+   "Your image has unsaved changes. Save them, discard them, or keep editing.": "图片有未保存的修改。可以保存、放弃，或继续编辑。",
+   "Save & close": "保存并关闭",
+   "QR Codes": "二维码",
+-  "QR Favorites": "二维码收藏",
+-  "Find and reuse saved QR codes": "查找并复用收藏的二维码",
+   "Recognize QR Codes": "识别二维码",
+   "QR Content": "二维码内容",
+   "Link": "链接",
+   "WeChat": "微信",
+   "Open Link": "打开链接",
+-  "Save QR Code": "收藏二维码",
+-  "Copy QR Image": "复制二维码图片",
+-  "Saved to QR Favorites": "已加入二维码收藏",
+   "Link opened": "已打开链接",
+   "Review this content carefully. This link may be unsafe.": "请仔细核对内容，此链接可能不安全。",
+   "Review this content carefully.": "请仔细核对内容。",
+@@ -609,19 +589,13 @@
+   "No QR codes found. Try a clearer image or a larger selection.": "未找到二维码，请换一张清晰图片或扩大选区。",
+   "QR recognition failed.": "二维码识别失败，请重试。",
+   "Recognizing QR Codes…": "正在识别二维码…",
+-  "Search QR Favorites": "搜索二维码收藏",
+-  "Could not load QR Favorites.": "无法读取二维码收藏。",
+-  "No QR favorites match this search.": "没有符合搜索条件的二维码收藏。",
+-  "Save a QR code to find and reuse it here.": "收藏二维码后，可在这里查找和复用。",
+   "The QR image exceeds the size limit.": "二维码图片超出大小限制。",
+   "The QR image could not be read.": "无法读取二维码图片。",
+   "Another QR image is being recognized. Try again shortly.": "已有二维码图片正在识别，请稍后重试。",
+   "The QR request was canceled.": "二维码识别已取消。",
+   "This QR code could not be decoded.": "无法读取此二维码。",
+   "The library changed during QR recognition.": "识别过程中图库位置发生变化，请重新识别。",
+-  "Could not save this QR code.": "无法收藏此二维码。",
+   "Could not open this link.": "无法打开此链接。",
+-  "Invalid QR favorite.": "此二维码收藏不可用。",
+   "Wayland Desktop Shortcuts": "Wayland 桌面快捷键",
+   "Desktop shortcuts are unavailable in this session.": "当前会话无法使用桌面快捷键。",
+   "Checking desktop shortcut support…": "正在检查桌面快捷键支持…",
+@@ -857,5 +831,12 @@
+   "Couldn't load startup settings.": "无法读取启动设置。",
+   "Couldn't change startup settings.": "无法更改启动设置。",
+   "Couldn't open system startup settings.": "无法打开系统启动设置。",
+-  "Open System Settings": "打开系统设置"
++  "Open System Settings": "打开系统设置",
++  "Paste as Pin": "粘贴为贴图",
++  "Pin the copied image or text on top of other windows.": "将复制的图片或文字置顶贴图显示。",
++  "The clipboard has no image or text to pin.": "剪贴板没有可贴图的图片或文字。",
++  "Could not read the clipboard right now.": "暂时无法读取剪贴板。",
++  "The copied image could not be opened.": "无法打开复制的图片。",
++  "The clipboard image could not be pinned.": "无法将剪贴板中的图片贴图。",
++  "Close a pinned image before pinning another.": "请先关闭一张贴图，再贴新图。"
+ }
+diff --git a/src/styles/design-system.css b/src/styles/design-system.css
+index a2853f7..2c92ef9 100644
+--- a/src/styles/design-system.css
++++ b/src/styles/design-system.css
+@@ -748,6 +748,31 @@ button:active:not(:disabled) {
+   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+ }
+ 
++/* Number badges advertise the 1/2/3 mode keys without changing button height. */
++.kiri-mode-btn__badge {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  min-width: 13px;
++  height: 13px;
++  padding: 0 3px;
++  border-radius: 4px;
++  background: rgba(255, 255, 255, 0.12);
++  color: rgba(255, 255, 255, 0.5);
++  font: 600 9.5px ui-monospace, SFMono-Regular, Menlo, monospace;
++  line-height: 1;
++}
++
++.kiri-mode-btn[data-active] .kiri-mode-btn__badge {
++  background: rgba(0, 0, 0, 0.08);
++  color: rgba(0, 0, 0, 0.5);
++}
++
++/* The frozen screen can offer resize or move cursors; overlay chrome keeps a
++   neutral pointer so dragging a panel never looks like moving the region. */
++.kiri-capture-toolbar,
++.kiri-record-options { cursor: default; }
++
+ .kiri-mode-btn:focus { outline:none; box-shadow:none; }
+ .kiri-mode-btn:focus-visible { box-shadow:inset 0 0 0 1px #777; }
+ 

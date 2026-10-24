@@ -1,0 +1,138 @@
+﻿cargo.exe :    Compiling kiri v1.6.26 (E:\椤圭洰\Kiri褰曞睆\Kiri\Kiri\src-tauri)
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\scripts\cargo.ps1:21 字符: 1
++ & cargo @args
++ ~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling ki...Kiri\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `Window` is never constructed
+  --> src\capture\scroll.rs:29:5
+   |
+25 | pub enum ScrollTarget {
+   |          ------------ variant in this enum
+...
+29 |     Window {
+   |     ^^^^^^
+   |
+   = note: `ScrollTarget` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored dur
+ing dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `export_gif` is never used
+   --> src\gif.rs:289:8
+    |
+289 | pub fn export_gif(video: &Path, max_long_edge: u32, fps: u32) -> Result<(PathBuf, f64)> {
+    |        ^^^^^^^^^^
+
+warning: variants `Unsupported` and `Denied` are never constructed
+  --> src\platform\mod.rs:30:5
+   |
+28 | pub enum MicrophoneAccess {
+   |          ---------------- variants in this enum
+29 |     Authorized,
+30 |     Unsupported,
+   |     ^^^^^^^^^^^
+31 |     Denied,
+   |     ^^^^^^
+   |
+   = note: `MicrophoneAccess` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored
+ during dead code analysis
+
+warning: struct `TransientWindowPolicy` is never constructed
+  --> src\platform\mod.rs:49:19
+   |
+49 | pub(super) struct TransientWindowPolicy {
+   |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `policy` is never used
+  --> src\platform\mod.rs:58:14
+   |
+57 | impl TransientWindowRole {
+   | ------------------------ method in this implementation
+58 |     const fn policy(self) -> TransientWindowPolicy {
+   |              ^^^^^^
+
+warning: function `window_capture_id` is never used
+   --> src\platform\mod.rs:461:8
+    |
+461 | pub fn window_capture_id(_app: &tauri::AppHandle, _label: &str) -> Option<u32> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `publish` is never used
+   --> src\portal_shortcuts.rs:155:4
+    |
+155 | fn publish(
+    |    ^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\portal_shortcuts\model.rs:19:5
+   |
+17 | pub enum Status {
+   |          ------ variants in this enum
+18 |     Unsupported,
+19 |     Checking,
+   |     ^^^^^^^^
+20 |     Unavailable,
+   |     ^^^^^^^^^^^
+21 |     Ready,
+   |     ^^^^^
+22 |     Connecting,
+   |     ^^^^^^^^^^
+23 |     Active,
+   |     ^^^^^^
+24 |     Declined,
+   |     ^^^^^^^^
+25 |     Failed,
+   |     ^^^^^^
+26 |     Closed,
+   |     ^^^^^^
+   |
+   = note: `Status` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during de
+ad code analysis
+
+warning: methods `clear`, `apply`, `bound`, and `any_bound` are never used
+   --> src\portal_shortcuts\model.rs:69:12
+    |
+ 49 | impl Snapshot {
+    | ------------- methods in this implementation
+...
+ 69 |     pub fn clear(&mut self, status: Status) {
+    |            ^^^^^
+...
+ 77 |     pub fn apply(&mut self, shortcuts: Vec<(String, Option<String>)>, version: u32) {
+    |            ^^^^^
+...
+ 97 |     pub fn bound(&self, id: &str) -> bool {
+    |            ^^^^^
+...
+105 |     pub fn any_bound(&self) -> bool {
+    |            ^^^^^^^^^
+
+warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never con
+structed
+   --> src\state.rs:605:5
+    |
+604 | pub enum RecoveryAction {
+    |          -------------- variants in this enum
+605 |     OpenSettings,
+    |     ^^^^^^^^^^^^
+606 |     QuitKiri,
+    |     ^^^^^^^^
+607 |     OpenInputMonitoringSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+608 |     OpenMicrophoneSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored 
+during dead code analysis
+
+warning: `kiri` (lib) generated 11 warnings (run `cargo fix --lib -p kiri` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.55s

@@ -1,0 +1,279 @@
+diff --git a/src-tauri/src/platform/mod.rs b/src-tauri/src/platform/mod.rs
+index 3ccaf17..20070bc 100644
+--- a/src-tauri/src/platform/mod.rs
++++ b/src-tauri/src/platform/mod.rs
+@@ -272,6 +272,180 @@ pub trait ClickMonitorHandle: Send + Sync {
+     fn stop(self: Box<Self>);
+ }
+ 
++/// Label prefix shared by WebView-backed pinned screenshots. Window cleanup and
++/// the Windows topmost guard both key off it, so they cannot drift apart.
++pub const PIN_WINDOW_LABEL_PREFIX: &str = "pin-";
++
++/// True only when a pinned screenshot lost Windows' topmost band while still
++/// being meant to stay on top. A pin the user explicitly unpinned keeps that
++/// state; a label that is not a pin is never touched.
++#[cfg(any(windows, test))]
++pub(crate) fn pin_lost_topmost_band(
++    label: &str,
++    wants_topmost: bool,
++    native_topmost: bool,
++) -> bool {
++    label.starts_with(PIN_WINDOW_LABEL_PREFIX) && wants_topmost && !native_topmost
++}
++
++/// Re-asserts the native mechanism that keeps a pinned screenshot above other
++/// applications. macOS and Linux rely on `set_always_on_top` from the window
++/// manager, so this is a no-op there instead of a compile-time break.
++pub fn assert_window_topmost(window: &tauri::WebviewWindow) -> Result<()> {
++    #[cfg(windows)]
++    {
++        windows::assert_window_topmost(window)
++    }
++    #[cfg(not(windows))]
++    {
++        let _ = window;
++        Ok(())
++    }
++}
++
++/// Drops a pinned screenshot out of the native topmost band immediately.
++pub fn release_window_topmost(window: &tauri::WebviewWindow) -> Result<()> {
++    #[cfg(windows)]
++    {
++        windows::release_window_topmost(window)
++    }
++    #[cfg(not(windows))]
++    {
++        let _ = window;
++        Ok(())
++    }
++}
++
++/// Smallest physical window a pin may shrink to, in display-independent
++/// pixels. It matches the builder's minimum size, so zooming out can never hide
++/// the close control.
++const PIN_MIN_SIZE_DIPS: (f64, f64) = (80.0, 60.0);
++
++/// Largest physical edge one zoom step may produce. A pin is a composited
++/// surface, and the desktop allocates memory in proportion to its area, so the
++/// zoom stops at a bound that still covers pixel-level inspection instead of
++/// letting a wheel burst ask for an unbounded window.
++const PIN_MAX_ZOOM_EDGE: f64 = 8000.0;
++
++/// A pin's frame in physical screen pixels.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct PinFrame {
++    pub x: i32,
++    pub y: i32,
++    pub width: u32,
++    pub height: u32,
++}
++
++/// Scales a pin around the point under the pointer.
++///
++/// `anchor` is the pointer position inside the window as a fraction of its width
++/// and height, so the image content the user is inspecting stays under the
++/// cursor while the window grows or shrinks. The image aspect ratio is enforced
++/// so the pin never letterboxes, which is also what lets the reported zoom
++/// percentage be derived from the width alone. Bounds apply to the result, not
++/// to the requested factor: a wheel burst that overshoots stops at the bound.
++pub fn zoomed_pin_frame(
++    frame: PinFrame,
++    factor: f64,
++    anchor: (f64, f64),
++    aspect: Option<f64>,
++    scale: f64,
++) -> PinFrame {
++    let current_width = f64::from(frame.width.max(1));
++    let current_height = f64::from(frame.height.max(1));
++    let aspect = match aspect {
++        Some(value) if value.is_finite() && value >= 0.01 => value,
++        _ => current_width / current_height,
++    };
++    let factor = if factor.is_finite() {
++        factor.clamp(0.05, 20.0)
++    } else {
++        1.0
++    };
++    let scale = if scale.is_finite() && scale > 0.0 {
++        scale
++    } else {
++        1.0
++    };
++
++    let mut width = current_width * factor;
++    // Both edges must stay usable: a very wide image needs more than the
++    // minimum width before its height clears the minimum height.
++    let minimum_width = (PIN_MIN_SIZE_DIPS.0 * scale).max(PIN_MIN_SIZE_DIPS.1 * scale * aspect);
++    width = width.clamp(minimum_width.min(PIN_MAX_ZOOM_EDGE), PIN_MAX_ZOOM_EDGE);
++    let mut height = width / aspect;
++    if height > PIN_MAX_ZOOM_EDGE {
++        height = PIN_MAX_ZOOM_EDGE;
++        width = height * aspect;
++    }
++    let width = width.round().max(1.0);
++    let height = height.round().max(1.0);
++    let anchor_x = anchor.0.clamp(0.0, 1.0);
++    let anchor_y = anchor.1.clamp(0.0, 1.0);
++    PinFrame {
++        x: (f64::from(frame.x) + anchor_x * (current_width - width)).round() as i32,
++        y: (f64::from(frame.y) + anchor_y * (current_height - height)).round() as i32,
++        width: width as u32,
++        height: height as u32,
++    }
++}
++
++/// Resizes a pinned screenshot around the pointer that scrolled it.
++///
++/// Windows applies position and size in one native call so a fast wheel cannot
++/// paint the window at its new size on the old origin. Other platforms go
++/// through the window manager, which needs the two properties separately.
++pub fn zoom_pinned_window(
++    window: &tauri::WebviewWindow,
++    factor: f64,
++    anchor: (f64, f64),
++    aspect: Option<f64>,
++) -> Result<(u32, u32)> {
++    #[cfg(windows)]
++    {
++        windows::zoom_pinned_window(window, factor, anchor, aspect)
++    }
++    #[cfg(not(windows))]
++    {
++        let position = window.outer_position()?;
++        let size = window.inner_size()?;
++        let frame = zoomed_pin_frame(
++            PinFrame {
++                x: position.x,
++                y: position.y,
++                width: size.width,
++                height: size.height,
++            },
++            factor,
++            anchor,
++            aspect,
++            window.scale_factor().unwrap_or(1.0),
++        );
++        window.set_size(tauri::PhysicalSize::new(frame.width, frame.height))?;
++        window.set_position(tauri::PhysicalPosition::new(frame.x, frame.y))?;
++        Ok((frame.width, frame.height))
++    }
++}
++
++/// Starts the background guard that puts pins back into the topmost band if
++/// another program drops them. Idempotent and safe to call for every pin.
++pub fn ensure_pin_topmost_guard(app: &tauri::AppHandle) {
++    #[cfg(windows)]
++    windows::ensure_pin_topmost_guard(app);
++    #[cfg(not(windows))]
++    let _ = app;
++}
++
++/// Stops the guard once the last pinned screenshot is gone. Safe to call for
++/// every pin that closes: the platform layer keeps the guard alive while any
++/// other pin still exists.
++pub fn release_pin_topmost_guard(app: &tauri::AppHandle, closed_label: &str) {
++    #[cfg(windows)]
++    windows::release_pin_topmost_guard(app, closed_label);
++    #[cfg(not(windows))]
++    let _ = (app, closed_label);
++}
++
+ /// Excludes (or re-includes) one of Kiri's windows from screen capture.
+ pub fn set_window_capture_excluded(app: &tauri::AppHandle, label: &str, excluded: bool) {
+     current::set_window_capture_excluded(app, label, excluded);
+@@ -383,4 +557,93 @@ mod tests {
+             (-2560, 360, 2560, 1440)
+         );
+     }
++
++    #[test]
++    fn topmost_guard_repairs_only_pins_that_still_want_to_be_on_top() {
++        use super::pin_lost_topmost_band;
++
++        // A pin that lost the band is put back above other applications.
++        assert!(pin_lost_topmost_band("pin-2f0a", true, false));
++        // An explicit unpin is the user's intent, not a failure to repair.
++        assert!(!pin_lost_topmost_band("pin-2f0a", false, false));
++        // A pin that already holds the band needs no work; re-asserting it on
++        // every foreground change would reorder pins the user arranged.
++        assert!(!pin_lost_topmost_band("pin-2f0a", true, true));
++        // Every other Kiri window keeps its own stacking.
++        for label in ["library", "toast", "overlay", "editor-2f0a", "pinned-2f0a"] {
++            assert!(!pin_lost_topmost_band(label, true, false), "{label}");
++        }
++    }
++
++    #[test]
++    fn zoom_scales_a_pin_around_the_point_under_the_pointer() {
++        use super::{zoomed_pin_frame, PinFrame};
++
++        let frame = PinFrame { x: 100, y: 100, width: 400, height: 200 };
++        // Zooming from the centre keeps the centre pixel under the cursor and
++        // grows both edges with the image aspect ratio, not just one of them.
++        assert_eq!(
++            zoomed_pin_frame(frame, 2.0, (0.5, 0.5), Some(2.0), 1.0),
++            PinFrame { x: -100, y: 0, width: 800, height: 400 }
++        );
++        // Corner anchors keep the opposite corner exactly where it was, so a
++        // pin zoomed from its corner never appears to slide away.
++        assert_eq!(
++            zoomed_pin_frame(frame, 2.0, (0.0, 0.0), Some(2.0), 1.0),
++            PinFrame { x: 100, y: 100, width: 800, height: 400 }
++        );
++        assert_eq!(
++            zoomed_pin_frame(frame, 2.0, (1.0, 1.0), Some(2.0), 1.0),
++            PinFrame { x: -300, y: -100, width: 800, height: 400 }
++        );
++    }
++
++    #[test]
++    fn zoom_stays_within_reachable_and_affordable_bounds() {
++        use super::{zoomed_pin_frame, PinFrame};
++
++        // Zooming out cannot shrink a pin below its close controls; a wide
++        // image needs a wider minimum before its height clears that bound.
++        for (scale, expected) in [(1.0, (120, 60)), (2.0, (240, 120))] {
++            let tiny = zoomed_pin_frame(
++                PinFrame { x: 0, y: 0, width: 400, height: 200 },
++                0.01,
++                (0.5, 0.5),
++                Some(2.0),
++                scale,
++            );
++            assert_eq!((tiny.width, tiny.height), expected, "{scale}");
++        }
++        // An oversized burst is capped rather than turning into a failed
++        // window allocation.
++        let wide = zoomed_pin_frame(
++            PinFrame { x: 0, y: 0, width: 4000, height: 2000 },
++            100.0,
++            (0.5, 0.5),
++            Some(2.0),
++            1.0,
++        );
++        assert_eq!((wide.width, wide.height), (8000, 4000));
++        // A tall image is capped by height and the width follows the aspect.
++        let tall = zoomed_pin_frame(
++            PinFrame { x: 0, y: 0, width: 400, height: 800 },
++            100.0,
++            (0.5, 0.5),
++            Some(0.5),
++            1.0,
++        );
++        assert_eq!((tall.width, tall.height), (4000, 8000));
++        // A non-finite factor leaves the frame untouched instead of moving the
++        // pin to a bogus origin.
++        assert_eq!(
++            zoomed_pin_frame(
++                PinFrame { x: 7, y: 9, width: 400, height: 200 },
++                f64::NAN,
++                (0.3, 0.7),
++                None,
++                1.0,
++            ),
++            PinFrame { x: 7, y: 9, width: 400, height: 200 }
++        );
++    }
+ }

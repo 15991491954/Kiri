@@ -1,0 +1,9 @@
+[PASS] clipboard text/image pin opens pins=1
+[PASS] clipboard pin carries the shadow band pin=332x232 image=300x200 dpi=96 band=32
+方法调用失败，因为 [System.Object[]] 不包含名为“op_Addition”的方法。
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\pin-fix-live.ps1:87 字符: 3
++   $centre = @($rect.Left + [int]($width / 2), $rect.Top + [int]($heig ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (op_Addition:String) []，ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MethodNotFound
+ 

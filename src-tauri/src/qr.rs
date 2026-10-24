@@ -422,32 +422,6 @@ fn merge_codes(codes: &mut Vec<QrCode>, candidates: Vec<QrCode>, width: u32, hei
     }
 }
 
-pub fn crop_code(png: &[u8], code: &QrCode) -> Result<(Vec<u8>, u32, u32), String> {
-    let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
-        .map_err(|_| "The QR image could not be read.".to_string())?;
-    let xs = code.corners.map(|p| p[0] * image.width() as f64);
-    let ys = code.corners.map(|p| p[1] * image.height() as f64);
-    let min_x = xs.into_iter().fold(f64::INFINITY, f64::min);
-    let max_x = xs.into_iter().fold(0.0, f64::max);
-    let min_y = ys.into_iter().fold(f64::INFINITY, f64::min);
-    let max_y = ys.into_iter().fold(0.0, f64::max);
-    // Preserve a quiet zone around the selected code so its crop can be reused.
-    let margin = ((max_x - min_x).max(max_y - min_y) * 0.2).ceil();
-    let x = (min_x - margin).floor().max(0.0) as u32;
-    let y = (min_y - margin).floor().max(0.0) as u32;
-    let right = (max_x + margin).ceil().min(image.width() as f64) as u32;
-    let bottom = (max_y + margin).ceil().min(image.height() as f64) as u32;
-    let (width, height) = (right.saturating_sub(x), bottom.saturating_sub(y));
-    if width == 0 || height == 0 {
-        return Err("The QR image could not be read.".into());
-    }
-    let mut png = std::io::Cursor::new(Vec::new());
-    image
-        .crop_imm(x, y, width, height)
-        .write_to(&mut png, image::ImageFormat::Png)
-        .map_err(|_| "Could not save this QR code.".to_string())?;
-    Ok((png.into_inner(), width, height))
-}
 
 #[cfg(test)]
 mod tests {
@@ -538,11 +512,6 @@ mod tests {
             .iter()
             .all(|p| p.iter().all(|v| *v >= 0.0 && *v <= 1.0))));
         assert!(multi.iter().any(|c| c.corners[0][0] > 0.6));
-        for code in multi {
-            let (crop, _, _) =
-                crop_code(include_bytes!("../tests/fixtures/qr/multi.png"), &code).unwrap();
-            assert!(decode(&crop).unwrap().2.iter().any(|c| c.text == code.text));
-        }
     }
 
     fn public_montage(

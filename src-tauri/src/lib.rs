@@ -29,6 +29,8 @@ mod ocr;
 mod ocr_commands;
 mod ocr_controller;
 mod platform;
+mod pin;
+mod paths;
 mod protocol;
 mod media_playback;
 #[cfg(windows)]
@@ -40,7 +42,6 @@ mod shortcut_settings;
 mod portal_shortcuts;
 mod state;
 mod thumbnail;
-mod updates;
 mod window_tasks;
 
 use tauri::{Emitter, Manager};
@@ -59,7 +60,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             log::info!(
                 "[single-instance] reopen requested args={} cwd_present={}",
@@ -107,6 +107,10 @@ pub fn run() {
         })
         .setup(|app| {
             log::info!("[app] setup beginning");
+            // Copy settings, library and caches from the legacy `kiri` folders
+            // before anything reads them. Runs before Dock settings so an
+            // existing preference is still found.
+            paths::migrate_legacy_directories();
             let dock_visible = dock_settings::load(app.handle());
             app.manage(dock_settings::DockSettings::new(dock_visible));
             // Keep the regular-app default, or restore an explicit tray-only
@@ -149,6 +153,7 @@ pub fn run() {
             // user retry after releasing the conflict.
             shortcut_settings::register_all(app.handle());
             portal_shortcuts::init(app.handle());
+            commands::start_image_cache_cleanup(app.handle().clone());
             install_tray(app.handle())?;
             handle_desktop_action(app.handle(), &launch_args);
             log::info!("[app] setup complete");
@@ -194,6 +199,19 @@ pub fn run() {
                         window.app_handle(),
                         window.label(),
                     );
+                    // The topmost self-heal must never outlive the pins it
+                    // guards, but it also must not be torn down while another
+                    // pin is still opening. The platform layer re-checks the
+                    // remaining pins before and after it releases the hook.
+                    if window
+                        .label()
+                        .starts_with(crate::platform::PIN_WINDOW_LABEL_PREFIX)
+                    {
+                        crate::platform::release_pin_topmost_guard(
+                            window.app_handle(),
+                            window.label(),
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -266,6 +284,10 @@ pub fn run() {
             commands::copy_asset_file,
             commands::open_asset,
             commands::pin_asset,
+            commands::paste_as_pin,
+            commands::set_pin_topmost,
+            commands::raise_pin,
+            commands::zoom_pin,
             commands::open_editor,
             commands::take_editor_qr_request,
             commands::reveal_asset,
@@ -279,8 +301,10 @@ pub fn run() {
             commands::import_media,
             commands::paste_clipboard_image,
             commands::start_capture,
+            commands::set_capture_mode,
             commands::authorize_screenshot,
             commands::cancel_capture,
+            commands::close_capture_overlay,
             commands::prepare_capture_annotation,
             commands::confirm_capture,
             commands::save_file_dialog,
@@ -292,12 +316,8 @@ pub fn run() {
             qr_commands::scan_qr,
             qr_commands::cancel_qr,
             qr_commands::qr_action,
-            qr_commands::list_qr_favorites,
-            qr_commands::qr_favorite_action,
-            ocr_commands::list_ocr_records,
-            ocr_commands::update_ocr_history_text,
             ocr_commands::recognize_asset_local,
-            ocr_commands::copy_history_text,
+            ocr_commands::copy_ocr_text,
             ocr_commands::get_ocr_provider_settings,
             ocr_commands::save_ocr_provider_profile,
             ocr_commands::delete_ocr_provider_profile,
@@ -309,7 +329,7 @@ pub fn run() {
             commands::open_library,
             commands::copy_support_info,
             commands::open_support_folder,
-            updates::open_project_page,
+            commands::clear_image_cache,
             commands::copy_text,
             commands::copy_capture_color,
             commands::start_recording_flow,
@@ -349,8 +369,6 @@ pub fn run() {
             commands::set_recording_options,
             commands::get_annotation_appearance,
             commands::set_annotation_appearance,
-            updates::open_release_page,
-            updates::is_portable_build,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -360,6 +378,11 @@ pub fn run() {
                 if let Some(server) = app.try_state::<media_playback::MediaPlaybackServer>() {
                     server.stop();
                 }
+                // Native pins own hooks and layered windows outside Tauri's
+                // window list, so give them one explicit close before the
+                // process tears down. Best effort: the process is about to end.
+                #[cfg(windows)]
+                crate::pin::surface::close_all();
                 log::info!("[app] process exiting");
             }
             #[cfg(target_os = "macos")]
@@ -403,7 +426,7 @@ fn show_library_window_inner(app: &tauri::AppHandle, reason: &str) -> Result<(),
                 "library",
                 tauri::WebviewUrl::App("index.html?window=library".into()),
             )
-            .title("kiri")
+            .title("Lumen")
             .inner_size(960.0, 640.0)
             .min_inner_size(820.0, 540.0)
             .center()
@@ -414,7 +437,7 @@ fn show_library_window_inner(app: &tauri::AppHandle, reason: &str) -> Result<(),
     };
     #[cfg(debug_assertions)]
     window
-        .set_title("Kiri (dev)")
+        .set_title("Lumen (dev)")
         .map_err(|error| format!("library window title could not be set: {error}"))?;
     window
         .show()
@@ -581,6 +604,7 @@ fn desktop_launch_opens_library(args: &[String]) -> bool {
                 shortcut_settings::ShortcutAction::Capture
                     | shortcut_settings::ShortcutAction::Record
                     | shortcut_settings::ShortcutAction::Ocr
+                    | shortcut_settings::ShortcutAction::PastePin
             )
         )
 }
@@ -588,7 +612,8 @@ fn desktop_launch_opens_library(args: &[String]) -> bool {
 fn desktop_shortcut_action(args: &[String]) -> Option<shortcut_settings::ShortcutAction> {
     use shortcut_settings::ShortcutAction;
     [("--capture", ShortcutAction::Capture), ("--record", ShortcutAction::Record),
-        ("--ocr", ShortcutAction::Ocr), ("--library", ShortcutAction::Library)]
+        ("--ocr", ShortcutAction::Ocr), ("--library", ShortcutAction::Library),
+        ("--paste-pin", ShortcutAction::PastePin)]
         .into_iter().find_map(|(flag, action)| args.iter().any(|argument| argument == flag).then_some(action))
 }
 
@@ -661,7 +686,7 @@ fn build_tray_menu(
 pub(crate) fn refresh_tray_menu(app: &tauri::AppHandle, language: &str) -> Result<(), String> {
     let tray = app
         .tray_by_id(MAIN_TRAY_ID)
-        .ok_or_else(|| "The Kiri tray icon is unavailable.".to_string())?;
+        .ok_or_else(|| "The Lumen tray icon is unavailable.".to_string())?;
     let menu = build_tray_menu(app, language).map_err(|error| error.to_string())?;
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
@@ -692,7 +717,7 @@ fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     };
     let mut builder = TrayIconBuilder::with_id(MAIN_TRAY_ID)
         .menu(&menu)
-        .tooltip("Kiri")
+        .tooltip("Lumen")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open-library" => {
                 if let Err(error) = show_library_window(app, "tray") {
@@ -743,7 +768,9 @@ fn tray_click_opens_library(event: &tauri::tray::TrayIconEvent) -> bool {
 }
 
 fn schedule_capture_start(app: &tauri::AppHandle, source: &'static str) {
-    schedule_capture_mode(app, source, state::CaptureMode::Screenshot);
+    // Generic capture entries reuse the mode the user last worked in. The
+    // dedicated record/OCR shortcuts below still force their own mode.
+    schedule_capture_mode(app, source, state::load_capture_mode(app));
 }
 
 fn dispatch_shortcut_action(app: &tauri::AppHandle, action: shortcut_settings::ShortcutAction, source: &'static str) {
@@ -781,6 +808,21 @@ fn dispatch_shortcut_action(app: &tauri::AppHandle, action: shortcut_settings::S
                     log::warn!("[{source}] library open failed: {error}");
                 }
             }) { log::warn!("[{source}] could not schedule library open: {error}"); }
+        }
+        ShortcutAction::PastePin => {
+            // Clipboard reads and native pin creation are both blocking; never
+            // run them inside the shortcut callback or the main thread.
+            let target = app.clone();
+            std::mem::drop(tauri::async_runtime::spawn(async move {
+                if let Err(error) = commands::paste_as_pin(target.clone()).await {
+                    log::warn!("[{source}] paste pin failed: {error}");
+                    state::emit_notice(
+                        &target,
+                        error,
+                        "exclamationmark.triangle.fill".into(),
+                    );
+                }
+            }));
         }
     }
 }
@@ -823,7 +865,7 @@ fn schedule_capture_mode(app: &tauri::AppHandle, source: &'static str, mode: sta
         // window request runs against an unrealized GdkWindow.
         if let Err(error) = spawn_capture_start(move || {
             let _permit = permit;
-            if let Err(error) = commands::start_linux_capture_from_shortcut(handle.clone(), mode) {
+            if let Err(error) = commands::start_linux_capture_from_shortcut(handle.clone(), mode, None) {
                 log::warn!("[{source}] capture start returned: {error}");
                 let target = handle.clone();
                 let _ = handle.run_on_main_thread(move || {
@@ -873,19 +915,58 @@ where
 
 fn tray_labels(language: &str) -> (&'static str, &'static str, &'static str) {
     match language {
-        "zh-Hans" => ("打开素材库", "截图 / 录屏", "退出 Kiri"),
-        "ja" => ("ライブラリを開く", "キャプチャ", "Kiri を終了"),
-        "zh-Hant" => ("開啟素材庫", "截圖 / 錄影", "結束 Kiri"),
-        "de" => ("Bibliothek öffnen", "Aufnehmen", "Kiri beenden"),
-        "ko" => ("라이브러리 열기", "캡처", "Kiri 종료"),
-        "fr" => ("Ouvrir la bibliothèque", "Capturer", "Quitter Kiri"),
-        _ => ("Open Library", "Capture", "Quit Kiri"),
+        "zh-Hans" => ("打开素材库", "截图 / 录屏", "退出 Lumen"),
+        "ja" => ("ライブラリを開く", "キャプチャ", "Lumen を終了"),
+        "zh-Hant" => ("開啟素材庫", "截圖 / 錄影", "結束 Lumen"),
+        "de" => ("Bibliothek öffnen", "Aufnehmen", "Lumen beenden"),
+        "ko" => ("라이브러리 열기", "캡처", "Lumen 종료"),
+        "fr" => ("Ouvrir la bibliothèque", "Capturer", "Quitter Lumen"),
+        _ => ("Open Library", "Capture", "Quit Lumen"),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{tray_labels, tray_menu_entries};
+
+    #[test]
+    fn the_window_capabilities_cover_every_capture_overlay() {
+        // Every connected display owns its own overlay label (`overlay`,
+        // `overlay-2`, ...), and each one confirms its own capture from its own
+        // WebView. A label the capability list does not cover refuses that
+        // close, which left the user in the editing HUD after the image had
+        // already been saved and pinned.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("capabilities/default.json");
+        let text = std::fs::read_to_string(&path).expect("the capability file is readable");
+        let json: serde_json::Value =
+            serde_json::from_str(&text).expect("the capability file is JSON");
+        let labels: Vec<&str> = json["windows"]
+            .as_array()
+            .expect("windows is a list")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect();
+        let covers = |label: &str| {
+            labels.iter().any(|pattern| match pattern.strip_suffix('*') {
+                Some(prefix) => label.starts_with(prefix),
+                None => *pattern == label,
+            })
+        };
+        for label in ["overlay", "overlay-2", "overlay-3", "overlay-12"] {
+            assert!(covers(label), "the capability list must cover {label}");
+        }
+        let permissions: Vec<&str> = json["permissions"]
+            .as_array()
+            .expect("permissions is a list")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect();
+        assert!(
+            permissions.contains(&"core:window:allow-close"),
+            "a capture overlay must be allowed to close itself"
+        );
+    }
 
     #[cfg(any(windows, target_os = "linux"))]
     #[test]
@@ -933,18 +1014,18 @@ mod tests {
 
     #[test]
     fn tray_labels_cover_supported_languages_and_default_to_english() {
-        assert_eq!(tray_labels("en"), ("Open Library", "Capture", "Quit Kiri"));
+        assert_eq!(tray_labels("en"), ("Open Library", "Capture", "Quit Lumen"));
         assert_eq!(
             tray_labels("zh-Hans"),
-            ("打开素材库", "截图 / 录屏", "退出 Kiri")
+            ("打开素材库", "截图 / 录屏", "退出 Lumen")
         );
         assert_eq!(
             tray_labels("ja"),
-            ("ライブラリを開く", "キャプチャ", "Kiri を終了")
+            ("ライブラリを開く", "キャプチャ", "Lumen を終了")
         );
         assert_eq!(
             tray_labels("unknown"),
-            ("Open Library", "Capture", "Quit Kiri")
+            ("Open Library", "Capture", "Quit Lumen")
         );
     }
 
@@ -952,7 +1033,8 @@ mod tests {
     fn desktop_commands_dispatch_only_explicit_supported_actions() {
         use crate::shortcut_settings::ShortcutAction;
         for (flag, action) in [("--capture", ShortcutAction::Capture), ("--record", ShortcutAction::Record),
-            ("--ocr", ShortcutAction::Ocr), ("--library", ShortcutAction::Library)] {
+            ("--ocr", ShortcutAction::Ocr), ("--library", ShortcutAction::Library),
+            ("--paste-pin", ShortcutAction::PastePin)] {
             assert_eq!(super::desktop_shortcut_action(&["kiri".into(), flag.into()]), Some(action));
         }
         assert_eq!(super::desktop_shortcut_action(&["kiri".into(), "--unknown".into()]), None);
@@ -982,7 +1064,7 @@ mod tests {
 
     #[test]
     fn desktop_controls_and_capture_launch_without_opening_library() {
-        for flag in ["--autostart", "--finish-scroll-capture", "--cancel-scroll-capture", "--capture", "--record", "--ocr"] {
+        for flag in ["--autostart", "--finish-scroll-capture", "--cancel-scroll-capture", "--capture", "--record", "--ocr", "--paste-pin"] {
             assert!(!super::desktop_launch_opens_library(&["kiri".into(), flag.into()]));
         }
         assert!(!super::desktop_launch_opens_library(&[

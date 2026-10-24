@@ -1,5 +1,4 @@
-.pin-window { position: relative; width: 100vw; height: 100vh; overflow: hidden; border-radius: 8px; color: var(--kiri-label); }
-.pin-window::after { content: ""; position: absolute; inset: 0; z-index: 4; border: 2px solid #111; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8); pointer-events: none; }
+.pin-window { position: relative; width: 100vw; height: 100vh; overflow: hidden; color: var(--kiri-label); }
 .pin-window__image { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: move; }
 .pin-window__image img { display: block; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; }
 .pin-window__actions { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 4px; opacity: 0; pointer-events: none; transition: opacity .12s ease-out; }
@@ -10,6 +9,15 @@
 .kiri-pin-action:disabled { opacity: .5; cursor: default; }
 .pin-window__image p, .pin-window__error { margin: 0; padding: 8px 12px; background: var(--kiri-card); color: var(--kiri-secondary-label); font-size: 12px; text-align: center; }
 .pin-window__error { position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 3; border-radius: 6px; }
+.pin-window__zoom { position: absolute; z-index: 3; padding: 3px 8px; border-radius: 6px;
+  background: rgba(17, 17, 17, .82); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums;
+  pointer-events: none; }
+/* The badge follows the corner nearest the pointer, because an anchored zoom
+   can push the opposite corner of the window off the screen. */
+.pin-window__zoom[data-corner="top-left"] { top: 8px; left: 8px; }
+.pin-window__zoom[data-corner="top-right"] { top: 40px; right: 8px; }
+.pin-window__zoom[data-corner="bottom-left"] { bottom: 8px; left: 8px; }
+.pin-window__zoom[data-corner="bottom-right"] { bottom: 8px; right: 8px; }
 .pin-window__resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; z-index: 2; cursor: nwse-resize; }
 .pin-window__resize::after { content: ""; position: absolute; bottom: 3px; right: 3px; width: 6px; height: 6px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; filter: drop-shadow(0 0 1px #000); opacity: 0; }
 .pin-window:hover .pin-window__resize::after { opacity: 1; }

@@ -5,6 +5,7 @@
   "windows": [
     "library",
     "overlay",
+    "overlay-*",
     "editor-*",
     "countdown",
     "control-panel",
@@ -24,6 +25,10 @@
     "core:window:allow-set-size",
     "core:window:allow-hide",
     "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-start-resize-dragging",
     "core:window:allow-set-ignore-cursor-events",
     "core:event:default"
   ]

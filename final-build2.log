@@ -1,0 +1,68 @@
+
+> lumen@1.6.26 build E:\项目\Kiri录屏\Kiri\Kiri
+> pnpm icons:verify && tsc && vite build
+
+
+> lumen@1.6.26 icons:verify E:\项目\Kiri录屏\Kiri\Kiri
+> node scripts/app-icons.mjs verify
+
+App icon verification passed: transparent corners and visual-safe sizing are present in PNG, ICNS, and ICO assets.
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 1953 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                       0.40 kB │ gzip:   0.27 kB
+dist/assets/RecordingRegionWindow-CS1LJXue.css        0.14 kB │ gzip:   0.13 kB
+dist/assets/ScrollCaptureRegionWindow-Cc1BR_yo.css    0.74 kB │ gzip:   0.34 kB
+dist/assets/ChoiceSelect-B5vocGy1.css                 1.62 kB │ gzip:   0.67 kB
+dist/assets/CountdownWindow-xVy6FRyX.css              1.88 kB │ gzip:   0.78 kB
+dist/assets/LibraryWindow-DmDfy_Y5.css                2.03 kB │ gzip:   0.75 kB
+dist/assets/PinWindow-DNGVz9FF.css                    2.11 kB │ gzip:   0.78 kB
+dist/assets/text-result-DrmsHuKc.css                  2.14 kB │ gzip:   0.76 kB
+dist/assets/EditorWindow-Dz16FN4L.css                 2.19 kB │ gzip:   0.83 kB
+dist/assets/AnnotationToolbarButton-Bj3gqgoi.css      3.17 kB │ gzip:   0.94 kB
+dist/assets/ScrollCaptureWindow-BxDAnNge.css          3.59 kB │ gzip:   1.00 kB
+dist/assets/OverlayWindow-CydDC7Kj.css                6.53 kB │ gzip:   1.80 kB
+dist/assets/QrOverlay-COgPmypY.css                    9.69 kB │ gzip:   2.34 kB
+dist/assets/SettingsView-pMM6YyRV.css                24.36 kB │ gzip:   4.58 kB
+dist/assets/ViewerWindow-2BehOF_a.css                39.71 kB │ gzip:   7.04 kB
+dist/assets/index-Dzv_d4zx.css                       41.49 kB │ gzip:   7.39 kB
+dist/assets/text-result-yOatRT9e.js                   0.07 kB │ gzip:   0.08 kB
+dist/assets/RecordingRegionWindow-hBrHATKN.js         0.16 kB │ gzip:   0.15 kB
+dist/assets/rotate-ccw-C701kGaU.js                    0.21 kB │ gzip:   0.19 kB
+dist/assets/image-plus-fYCjhSRe.js                    0.37 kB │ gzip:   0.26 kB
+dist/assets/grip-vertical-CLVv5RmP.js                 0.37 kB │ gzip:   0.20 kB
+dist/assets/volume-2-BaMFnvoS.js                      0.40 kB │ gzip:   0.27 kB
+dist/assets/gif-conversion-Bueq6P-2.js                0.46 kB │ gzip:   0.25 kB
+dist/assets/viewer-copy-shortcut-BBYkuaZx.js          0.49 kB │ gzip:   0.34 kB
+dist/assets/text-composition-DdDY-FLt.js              0.60 kB │ gzip:   0.36 kB
+dist/assets/providerLabel-DCU6wQUf.js                 1.05 kB │ gzip:   0.56 kB
+dist/assets/RippleWindow-Bhtlh34f.js                  1.36 kB │ gzip:   0.77 kB
+dist/assets/event-DX-0ih1j.js                         1.38 kB │ gzip:   0.67 kB
+dist/assets/ScrollCaptureRegionWindow-CYe-3dpL.js     1.75 kB │ gzip:   0.75 kB
+dist/assets/ConfirmWindow-DEHtLUML.js                 2.25 kB │ gzip:   1.07 kB
+dist/assets/CountdownWindow-BCsR9aU1.js               2.73 kB │ gzip:   1.24 kB
+dist/assets/OcrDialog-CC5sAXF4.js                     3.10 kB │ gzip:   1.27 kB
+dist/assets/ChoiceSelect-9DE_VmjT.js                  3.91 kB │ gzip:   1.58 kB
+dist/assets/ControlPanelWindow-CbCzgx11.js            5.61 kB │ gzip:   2.30 kB
+dist/assets/PinWindow-CBa0MITU.js                     6.20 kB │ gzip:   2.31 kB
+dist/assets/ipc-oMf99vc4.js                           8.25 kB │ gzip:   2.79 kB
+dist/assets/ScrollCaptureWindow-D_3YP9dl.js          10.59 kB │ gzip:   4.05 kB
+dist/assets/KiriIcons-DAEnpv26.js                    12.12 kB │ gzip:   4.58 kB
+dist/assets/window-BqI-sBSv.js                       13.37 kB │ gzip:   3.29 kB
+dist/assets/QrOverlay-CHwK00Tx.js                    16.42 kB │ gzip:   5.34 kB
+dist/assets/ToastWindow-CxqULsaQ.js                  17.11 kB │ gzip:   4.80 kB
+dist/assets/EditorWindow-DcO8jAAv.js                 26.16 kB │ gzip:   9.04 kB
+dist/assets/SettingsView-2Z5W9Rdu.js                 46.76 kB │ gzip:  13.21 kB
+dist/assets/LibraryWindow-BnsPXtfz.js                59.73 kB │ gzip:  18.20 kB
+dist/assets/OverlayWindow-CFPJnzoP.js                62.76 kB │ gzip:  19.84 kB
+dist/assets/AnnotationToolbarButton-DY8fM_fO.js      92.59 kB │ gzip:  29.07 kB
+dist/assets/ViewerWindow-Cirp8x9a.js                107.12 kB │ gzip:  34.00 kB
+dist/assets/index-BgdkBPNF.js                       539.84 kB │ gzip: 174.65 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.26s

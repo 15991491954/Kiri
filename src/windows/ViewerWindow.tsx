@@ -7,7 +7,7 @@ import { api, mediaUrl, onAssetContentChanged, type AssetAvailability } from "..
 import { VideoTrimPlayer, type VideoClosePreparation } from "./VideoTrimPlayer";
 import { VideoCloseGuard } from "./VideoCloseGuard";
 import { videoEditingCapabilities } from "./video-capabilities.js";
-import { OcrDialog } from "../ocr/TextHistory";
+import { OcrDialog } from "../ocr/OcrDialog";
 import { t } from "../i18n";
 import { KiriIcon } from "../components/KiriIcons";
 import { installViewerCopyShortcut } from "./viewer-copy-shortcut.js";
@@ -83,7 +83,11 @@ export function ViewerWindow(props: { id: string }) {
   }, [loadAsset, props.id]);
 
   const prepareClose = useCallback(async () => {
-    if (viewerMediaKind(state) !== "video" || !videoClosePreparation) return true;
+    // Missing, unreadable, or failed media cannot be saved: a stale player
+    // preparation must not keep the preview window unclosable.
+    if (state.kind !== "ready" || viewerMediaKind(state) !== "video" || !videoClosePreparation) {
+      return true;
+    }
     return videoClosePreparation.prepareClose();
   }, [state, videoClosePreparation]);
 

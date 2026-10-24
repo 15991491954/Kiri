@@ -511,7 +511,7 @@ def tray_callback_acceptance(main_window, label):
     # taskbar mouse press or Explorer's overflow placement.
     main_window = wait_for("native main panel", lambda: next((window for window in
         Desktop(backend="win32").windows(process=process.pid, visible_only=True)
-        if window.window_text().lower().startswith("kiri")), None))
+        if window.window_text().lower().startswith("lumen")), None))
     # UIA's top-level parent can be a WebView child HWND. Operate on the real
     # top-level Win32 window, and wait for the whole serial presenter to finish.
     previous_opens = native_log.read_text(encoding="utf-8", errors="replace").count("library visible reason=tray-left-click")
@@ -600,7 +600,7 @@ def smoke(executable, update_button, label):
                     return None
                 try:
                     text = ctypes.wstring_at(address)
-                    return text if text.startswith("Kiri: ") else None
+                    return text if text.startswith("Lumen: ") else None
                 finally:
                     kernel32.GlobalUnlock(handle)
             finally:

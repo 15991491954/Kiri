@@ -1,0 +1,6 @@
+START width=400
+GAP_0ms width=644 applied_total=5 this_batch=5
+GAP_2ms width=1037 applied_total=9.99 this_batch=5
+GAP_5ms width=1671 applied_total=15 this_batch=5.01
+GAP_10ms width=2691 applied_total=20 this_batch=5
+GAP_20ms width=4334 applied_total=25 this_batch=5

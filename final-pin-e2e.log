@@ -1,0 +1,24 @@
+[PASS] run 1: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=54e9601916004046bfb08e65405d811b"}
+[PASS] run 1: one new native pin before=0 after=1
+[PASS] run 1: no editing overlay left behind overlays=0 elapsedMs=4234
+[PASS] run 1: the pin carries its glow band pin=424x424 selection=400x400 dpi=96 expectedBand=24
+[PASS] run 1: the pin is visible above the photo rect rect=588,338 424x424
+[PASS] run 1: hovering a pin shows the normal arrow cursor=65539 arrow=65539
+[PASS] run 1: the wheel zooms the pin before=424 after=464
+[PASS] run 1: the zoom badge stays small badge=56x20 expected=56x20
+[PASS] run 1: wheel back returns to exactly 100% start=424x424 back=424x424
+[PASS] run 1: Escape closes the pin under the pointer left=0
+[PASS] run 2: the toolbar Pin button was clicked {"ok":true,"label":"置顶截图","href":"http://localhost:1420/index.html?window=overlay&captureToken=ae0459fbecb24afcb2f6e57c26ce8b2b"}
+[PASS] run 2: one new native pin before=0 after=1
+[PASS] run 2: no editing overlay left behind overlays=0 elapsedMs=4201
+[PASS] run 2: the pin carries its glow band pin=424x424 selection=400x400 dpi=96 expectedBand=24
+[PASS] run 2: the pin is visible above the photo rect rect=588,338 424x424
+[FAIL] run 2: hovering a pin shows the normal arrow cursor=65561 arrow=65539
+[PASS] run 2: the wheel zooms the pin before=424 after=464
+[PASS] run 2: the zoom badge stays small badge=56x20 expected=56x20
+[PASS] run 2: wheel back returns to exactly 100% start=424x424 back=424x424
+[PASS] run 2: Escape closes the pin under the pointer left=0
+[PASS] the foreground application kept focus 
+
+20/21 checks passed
+  - run 2: hovering a pin shows the normal arrow (cursor=65561 arrow=65539)

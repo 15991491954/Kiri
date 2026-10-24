@@ -1,0 +1,2 @@
+src/components/MacTitlebar.tsx(61,24): error TS18047: 'gesture.origin' is possibly 'null'.
+src/components/MacTitlebar.tsx(62,24): error TS18047: 'gesture.origin' is possibly 'null'.

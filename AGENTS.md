@@ -1,4 +1,4 @@
-# Kiri repository guide for agents
+# Lumen repository guide for agents
 
 This file is the first source of truth for agents working in this repository.
 Read it before editing, then read `docs/architecture.md`.
@@ -17,13 +17,14 @@ Read it before editing, then read `docs/architecture.md`.
 
 ## Product contract
 
-Kiri is a local-first capture utility for macOS, Windows, and
+Lumen is a local-first capture utility for macOS, Windows, and
 Linux. Preserve these decisions:
 
-- The default global capture shortcut is `⇧⌘A` on macOS and `Shift+Ctrl+A` on
-  Windows and Linux X11. These use native global-hotkey registration; the shortcut does
+- The default global shortcuts are `F1` for capture, `F2` for pinning the
+  copied image or text, and `F3` for recording, on every platform. These use
+  native global-hotkey registration; the shortcut does
   not require Input Monitoring permission. Settings accepts native-library-supported
-  keys with optional modifiers and can restore this default. Bare typing/navigation
+  keys with optional modifiers and can restore these defaults. Bare typing/navigation
   keys and Shift-only choices need explicit confirmation; function/media keys or
   combinations containing Control, Alt, or Meta save directly (ADR 0111).
   On Wayland, the user configures `kiri --capture` in desktop settings, or opts
@@ -42,13 +43,13 @@ Linux. Preserve these decisions:
   resizable with eight handles. Linux X11 supplies window bounds; Wayland uses
   region drag and currently rejects multiple connected displays before capture.
 - Screenshot completion is clipboard-first and returns focus to the original
-  application. Do not open the Kiri library after every capture.
+  application. Do not open the Lumen library after every capture.
 - Escape cancels capture and countdown; Return confirms a screenshot.
 - Annotation tools appear immediately after region selection. Existing text
   and shapes remain selectable and editable; size controls update live.
 - Text backgrounds default to transparent. Mosaic is a continuous brush with
   adjustable diameter and intensity.
-- Recording is Retina/DPI-scale, high-quality MP4. Kiri's recording controls
+- Recording is Retina/DPI-scale, high-quality MP4. Lumen's recording controls
   and paused time must not appear in the exported video.
   Linux MP4 recording can include system audio and microphone through the local
   PulseAudio/PipeWire audio service and hides the floating control panel; use tray
@@ -148,14 +149,14 @@ Cargo registry as part of repository cleanup.
 
 Do not add a runtime synthetic-capture mode to the user-facing application.
 Capture QA must use unit-level injected data or an isolated test harness, never
-replace the visible desktop with a mock screen inside normal dev or prod Kiri.
+replace the visible desktop with a mock screen inside normal dev or prod Lumen.
 
 For changes to capture, recording, permissions, focus, keyboard handling, or
 overlay windows, also package and test the fixed-path app:
 
 ```bash
 ./scripts/install-app.sh
-open /Applications/Kiri.app
+open /Applications/Lumen.app
 ```
 
 Use a stable signing identity (`KIRI_SIGNING_IDENTITY`). Do not silently use
@@ -193,9 +194,9 @@ the separate checklist in `docs/linux.md` and report those limits explicitly.
   background styles.
 - Verify mosaic brush diameter/intensity and editing of existing annotations.
 - For recording, inspect extracted frames around start, click ripple,
-  pause/resume, and stop. Confirm clarity and absence of all Kiri controls.
+  pause/resume, and stop. Confirm clarity and absence of all Lumen controls.
 - Avoid leaving QA captures in the user's library. Move only agent-created
-  test assets to Kiri Trash, which is recoverable; never empty Trash without
+  test assets to Lumen Trash, which is recoverable; never empty Trash without
   consent.
 
 ## Localization and documentation

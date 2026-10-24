@@ -1,0 +1,8 @@
+[FAIL] the capture overlay opens count=0
+no overlay
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\scroll-capture-e2e.ps1:66 字符: 32
++   if ($overlays.Count -eq 0) { throw "no overlay" }
++                                ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (no overlay:String) [], RuntimeException
+    + FullyQualifiedErrorId : no overlay
+ 

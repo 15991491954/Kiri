@@ -200,24 +200,7 @@ export function useAppUpdater() {
     }
   };
 
-  const checkRef = useRef(checkForUpdates);
-  checkRef.current = checkForUpdates;
-  useEffect(() => {
-    if (!platformResolved || manualUpdates || isPortable !== false) return;
-    let active = true;
-    let stop: (() => void) | undefined;
-    const nativeWindow = getCurrentWindow();
-    const checkVisiblePanel = async () => {
-      try {
-        if (active && await nativeWindow.isVisible() && active) await checkRef.current(true);
-      } catch { /* Visibility failures must not trigger a network request. */ }
-    };
-    void nativeWindow.onFocusChanged(event => {
-      if (event.payload) void checkVisiblePanel();
-    }).then(unlisten => { if (active) stop = unlisten; else unlisten(); }).catch(() => {});
-    void checkVisiblePanel();
-    return () => { active = false; stop?.(); };
-  }, [platformResolved, manualUpdates, isPortable]);
+
 
   return { currentVersion, isWindows, isPortable, manualUpdates, updateState,
     hasUpdate: stateDetails(updateState) !== null,

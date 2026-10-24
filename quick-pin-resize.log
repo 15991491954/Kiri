@@ -1,0 +1,15 @@
+Add-Type : c:\Users\zhangyan\AppData\Local\Temp\st03px2z.0.cs(7) : 类型“PinGrip”已定义了一个名为“IsWindowVisible”的具有
+相同参数类型的成员
+c:\Users\zhangyan\AppData\Local\Temp\st03px2z.0.cs(6) :   [DllImport("user32.dll")] public static extern bool IsWindowV
+isible(IntPtr h);
+c:\Users\zhangyan\AppData\Local\Temp\st03px2z.0.cs(7) : >>>   [DllImport("user32.dll")] public static extern bool IsWin
+dowVisible(IntPtr h);
+c:\Users\zhangyan\AppData\Local\Temp\st03px2z.0.cs(8) :   [DllImport("user32.dll")] public static extern bool SetCursor
+Pos(int x, int y);
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\pin-resize-clipboard.ps1:4 字符: 1
++ Add-Type @"
++ ~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (Microsoft.Power...peCompilerError:AddTypeCompilerError) [Add-Type]，Excepti
+    on
+    + FullyQualifiedErrorId : SOURCE_CODE_ERROR,Microsoft.PowerShell.Commands.AddTypeCommand
+ 

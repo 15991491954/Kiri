@@ -1,0 +1,312 @@
+diff --git a/src/qr/QrResults.tsx b/src/qr/QrResults.tsx
+index 4ac3d14..450897a 100644
+--- a/src/qr/QrResults.tsx
++++ b/src/qr/QrResults.tsx
+@@ -1,25 +1,23 @@
+ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+-import { QrCode, Copy, ExternalLink, Star, X, Trash2, ChevronRight } from "lucide-react";
+-import { api, mediaUrl, onLibraryChanged, type AssetDto, type QrCodeDto, type QrScanDto } from "../lib/ipc";
++import { QrCode, Copy, ExternalLink, X, ChevronRight } from "lucide-react";
++import { api, type QrCodeDto, type QrScanDto } from "../lib/ipc";
+ import { t, fmt } from "../i18n";
+ import type { Rect } from "../annotation/geom";
+ import { initialQrSelection, qrCodeCenter, qrContentType, qrLooksLikeLink } from "./selection.js";
+-import "../ocr/text-history.css";
++import "../ocr/text-result.css";
+ import "./qr.css";
+ 
+-export function QrDetails({ code, action, saved = false, removable = false, autoSaving = false, autoSaveError = null, preview, meta }: {
+-  code: QrCodeDto; action(action: string): Promise<unknown>; saved?: boolean; removable?: boolean; autoSaving?: boolean; autoSaveError?: string | null; preview?: ReactNode; meta?: ReactNode;
++export function QrDetails({ code, action, preview, meta }: {
++  code: QrCodeDto; action(action: string): Promise<unknown>; preview?: ReactNode; meta?: ReactNode;
+ }) {
+   const [busy, setBusy] = useState(false);
+   const busyRef = useRef(false);
+   const [message, setMessage] = useState("");
+-  const [favorite, setFavorite] = useState(saved);
+   const contentType = qrContentType(code);
+   const linkWarning = code.suspicious && contentType !== "WeChat" && (!!code.url || qrLooksLikeLink(code.text ?? ""));
+   const directionWarning = code.text?.includes("\u202e") === true;
+   const mounted = useRef(true);
+   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+-  useEffect(() => { setFavorite(saved); }, [saved]);
+   const run = async (name: string) => {
+     if (busyRef.current) return;
+     busyRef.current = true;
+@@ -27,9 +25,7 @@ export function QrDetails({ code, action, saved = false, removable = false, auto
+     try {
+       await action(name);
+       if (!mounted.current) return;
+-      if (name === "favorite") setFavorite(true);
+-      if (name === "unfavorite" || name === "remove") setFavorite(false);
+-      setMessage(t(name === "copy" || name === "copyImage" ? "Copied to Clipboard" : name === "favorite" ? "Saved to QR Favorites" : name === "remove" || name === "unfavorite" ? "Moved to Trash" : "Link opened"));
++      setMessage(t(name === "copy" ? "Copied to Clipboard" : "Link opened"));
+     } catch (error) {
+       if (mounted.current) setMessage(t(typeof error === "string" ? error : "Could not complete this QR action."));
+     } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
+@@ -38,20 +34,14 @@ export function QrDetails({ code, action, saved = false, removable = false, auto
+     <div className="qr-actions">
+       {code.url && <button type="button" className="kiri-button kiri-button--primary" disabled={busy} onClick={() => void run("open")}><ExternalLink size={14}/>{t("Open Link")}</button>}
+       <button type="button" className={`kiri-button ${code.url ? "kiri-button--secondary" : "kiri-button--primary"}`} disabled={busy} onClick={() => void run("copy")}><Copy size={14}/>{t("Copy Text")}</button>
+-      {!removable && <button type="button" className="kiri-button kiri-button--secondary" disabled={busy || autoSaving} onClick={() => void run(favorite ? "unfavorite" : "favorite")}><Star size={14} fill={favorite ? "currentColor" : "none"}/>{t(autoSaving ? "Saving…" : favorite ? "Remove Favorite" : "Save QR Code")}</button>}
+-      {removable && <>
+-        <button type="button" className="kiri-button kiri-button--secondary" disabled={busy} onClick={() => void run("copyImage")}><QrCode size={14}/>{t("Copy QR Image")}</button>
+-        <button type="button" className="kiri-button kiri-button--secondary" disabled={busy} onClick={() => void run("remove")}><Trash2 size={14}/>{t("Remove Favorite")}</button>
+-      </>}
+     </div>
+   ) : null;
+-  return <section className={`qr-details${removable ? " qr-details--saved" : ""}`} aria-label={t("QR Content")}>
++  return <section className="qr-details" aria-label={t("QR Content")}>
+     <header className="qr-details__header">
+-      <div className="text-history__record-heading">
++      <div className="text-result__heading">
+         <span className="text-reader__caption qr-content-type">{t(code.text ? contentType : "QR Content")}</span>
+         {meta}
+       </div>
+-      {removable && controls}
+     </header>
+     <div className="qr-details__body">
+       {preview}
+@@ -61,11 +51,10 @@ export function QrDetails({ code, action, saved = false, removable = false, auto
+           {code.host && <p className="qr-host">{t("Destination")}: <bdi>{code.host}</bdi></p>}
+           {(linkWarning || directionWarning) && <p className="qr-warning" role="note">{t(linkWarning ? "Review this content carefully. This link may be unsafe." : "Review this content carefully.")}</p>}
+           {!code.url && linkWarning && <p className="qr-warning">{t("Only explicit HTTP or HTTPS links without credentials can be opened.")}</p>}
+-          {!removable && controls}
++          {controls}
+         </>}
+       </div>
+     </div>
+-    {autoSaveError && <p className="qr-feedback" role="status">{t(autoSaveError)}</p>}
+     {message && <p className="qr-feedback" role="status">{message}</p>}
+   </section>;
+ }
+@@ -78,13 +67,8 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+   onClose?(): void;
+ }) {
+   const [selected, setSelected] = useState<number | null>(() => initialQrSelection(scan.codes));
+-  const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
+-  const [autoSaving, setAutoSaving] = useState<Set<string>>(() => new Set());
+-  const [saveErrors, setSaveErrors] = useState<Map<string, string>>(() => new Map());
+   const [opening, setOpening] = useState(false);
+   const openingRef = useRef(false);
+-  const autoAttempts = useRef(new Set<string>());
+-  const pendingAutoSave = useRef(new Map<string, Promise<unknown>>());
+   const mounted = useRef(true);
+   const panelRef = useRef<HTMLDivElement>(null);
+   const [panelHeight, setPanelHeight] = useState(240);
+@@ -103,29 +87,6 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+   const onMarkerSelect = (index: number) => {
+     if (openingRef.current) return;
+     setSelected(index);
+-    const target = scan.codes.find(code => code.index === index);
+-    if (!target?.text || autoAttempts.current.has(target.text)) return;
+-    const text = target.text;
+-    autoAttempts.current.add(text);
+-    setAutoSaving(previous => new Set(previous).add(text));
+-    const pending = Promise.resolve().then(() => api.qrAction(scan.requestId, index, "favorite"))
+-      .then(result => {
+-        if (mounted.current) setFavorites(previous => new Set(previous).add(text));
+-        return result;
+-      })
+-      .catch(error => {
+-        if (mounted.current) setSaveErrors(previous => new Map(previous).set(text, typeof error === "string" ? error : "Could not save this QR code."));
+-        throw error;
+-      })
+-      .finally(() => {
+-        pendingAutoSave.current.delete(text);
+-        if (mounted.current) setAutoSaving(previous => {
+-          const next = new Set(previous); next.delete(text); return next;
+-        });
+-      });
+-    pendingAutoSave.current.set(text, pending);
+-    // A failed automatic save stays visible and can be retried with Save QR Code.
+-    void pending.catch(() => {});
+   };
+   const targets = <div className="qr-targets" role="group" aria-label={t("Choose a QR code in the image")}>
+         {scan.codes.map(code => {
+@@ -135,30 +96,15 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+           </button>;
+         })}
+       </div>;
+-  const details = code ? <QrDetails key={code.index} code={code} saved={!!code.text && favorites.has(code.text)} autoSaving={!!code.text && autoSaving.has(code.text)} autoSaveError={code.text ? saveErrors.get(code.text) ?? null : null} action={async action => {
++  const details = code ? <QrDetails key={code.index} code={code} action={async action => {
+       const isOpen = action === "open";
+       if (isOpen) {
+         if (openingRef.current) return;
+         openingRef.current = true; setOpening(true);
+       }
+       try {
+-        if (isOpen) {
+-          // Preserve every code already selected before opening tears down the scan.
+-          await Promise.allSettled([...pendingAutoSave.current.values()]);
+-        } else if (code.text && (action === "favorite" || action === "unfavorite")) {
+-          await pendingAutoSave.current.get(code.text)?.catch(() => {});
+-        }
+-        if (!mounted.current) return;
+         const result = await api.qrAction(scan.requestId, code.index, action);
+         if (isOpen && mounted.current) onOpened?.();
+-        if (mounted.current && code.text && (action === "favorite" || action === "unfavorite")) setFavorites(previous => {
+-          const next = new Set(previous);
+-          if (action === "favorite") next.add(code.text!); else next.delete(code.text!);
+-          return next;
+-        });
+-        if (mounted.current && code.text && action === "favorite") setSaveErrors(previous => {
+-          const next = new Map(previous); next.delete(code.text!); return next;
+-        });
+         return result;
+       } finally {
+         if (isOpen) {
+@@ -195,38 +141,3 @@ export function QrResults({ scan, onOpened, sourceRect, viewport, onClose }: {
+       <div className="qr-prompt" role="status"><QrCode size={28}/><p>{t(scan.codes.length ? "Choose a QR code in the image" : "No QR codes found. Try a clearer image or a larger selection.")}</p></div>}
+   </div>;
+ }
+-
+-export function QrFavorites() {
+-  const [query, setQuery] = useState("");
+-  const [records, setRecords] = useState<AssetDto[]>([]);
+-  const [selected, setSelected] = useState<string | null>(null);
+-  const [error, setError] = useState(false);
+-  const [loading, setLoading] = useState(true);
+-  const [revision, setRevision] = useState(0);
+-  useEffect(() => { const subscription = onLibraryChanged(() => setRevision(n => n + 1)); return () => { void subscription.then(stop => stop()).catch(() => {}); }; }, []);
+-  useEffect(() => {
+-    let current = true; setError(false); setLoading(true);
+-    const timer = setTimeout(() => { void api.listQrFavorites(query).then(items => {
+-      if (!current) return;
+-      setRecords(items); setSelected(id => items.some(a => a.id === id) ? id : items[0]?.id ?? null); setLoading(false);
+-    }, () => { if (current) { setError(true); setLoading(false); setRecords([]); } }); }, query ? 150 : 0);
+-    return () => { current = false; clearTimeout(timer); };
+-  }, [query, revision]);
+-  const asset = records.find(a => a.id === selected);
+-  return <div className="text-history">
+-    <aside className="text-history__sidebar"><label className="text-history__search"><QrCode size={15}/><input type="search" aria-label={t("Search QR Favorites")} placeholder={t("Search QR Favorites")} value={query} onChange={event => setQuery(event.target.value)}/></label>
+-      <div className="text-history__list">{records.map(asset => <button type="button" className="ocr-history__item" aria-current={asset.id === selected || undefined} key={asset.id} onClick={() => setSelected(asset.id)}><span className="text-history__excerpt">{asset.qrText}</span><time>{new Date(asset.createdAt).toLocaleString()}</time></button>)}</div>
+-    </aside>
+-    <main className="text-history__detail">{asset ? <QrDetails key={asset.id} code={favoriteCode(asset.qrText ?? "")} saved removable
+-      meta={<time>{new Date(asset.createdAt).toLocaleString()}</time>}
+-      preview={<img className="qr-favorite-image" src={mediaUrl(asset.id)} alt={t("QR Source Image")} />}
+-      action={action => api.qrFavoriteAction(asset.id, action)} /> : <div className="text-history__empty" role={error ? "alert" : "status"}><QrCode size={28}/><p>{t(error ? "Could not load QR Favorites." : loading ? "Loading…" : query ? "No QR favorites match this search." : "Save a QR code to find and reuse it here.")}</p></div>}</main>
+-  </div>;
+-}
+-
+-function favoriteCode(text: string): QrCodeDto {
+-  // The backend repeats URL validation before every explicit open action.
+-  let url: URL | null = null;
+-  try { if (/^https?:\/\//i.test(text) && !/[\s\\\u0000-\u001f\u007f\u202e]/.test(text)) { const parsed = new URL(text); if (!parsed.username && !parsed.password) url = parsed; } } catch { /* Plain content. */ }
+-  return { index: 0, corners: [], text, url: url?.href ?? null, host: url?.hostname ?? null, suspicious: text.includes("\u202e") || (url ? /xn--|localhost|^\[|^\d+\.\d+\.\d+\.\d+$/.test(url.hostname) : qrLooksLikeLink(text)) };
+-}
+diff --git a/src/qr/qr.css b/src/qr/qr.css
+index 8b2b761..6145066 100644
+--- a/src/qr/qr.css
++++ b/src/qr/qr.css
+@@ -12,25 +12,14 @@
+ .kiri-qr-marker:disabled { opacity: .55; cursor: wait; }
+ .kiri-qr-marker svg { display: block; pointer-events: none; }
+ .qr-details { min-width: 0; }
+-.qr-content { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; line-height: 1.75; font-size: 14px; padding: 18px 0; box-sizing: border-box; max-height: min(240px, 30vh); overflow: auto; unicode-bidi: plaintext; }
++.qr-content { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; cursor: text; line-height: 1.75; font-size: 14px; padding: 18px 0; box-sizing: border-box; max-height: min(240px, 30vh); overflow: auto; unicode-bidi: plaintext; }
+ .qr-host, .qr-warning, .qr-feedback { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+ .qr-host, .qr-feedback { color: var(--kiri-secondary-label); }
+ .qr-host { max-height: 4.8em; overflow: auto; }
+ .qr-warning { color: var(--kiri-coral); }
+ .qr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+ .qr-prompt { color: var(--kiri-secondary-label); font-size: 13px; line-height: 1.7; padding: 24px 0; }
+-/* Saved QR details use the same metadata/action line as Text History. */
+-.qr-details--saved .qr-details__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding-bottom: 18px; margin-bottom: 24px; border-bottom: 1px solid var(--kiri-surface-border); }
+-.qr-details--saved .qr-actions { justify-content: flex-end; }
+-.qr-details--saved .qr-details__body { display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: start; gap: 28px; }
+ .qr-details__content { min-width: 0; }
+-.qr-favorite-image { display: block; width: 200px; max-width: 100%; max-height: 240px; box-sizing: border-box; padding: 12px; object-fit: contain; background: var(--kiri-canvas); border: 1px solid var(--kiri-surface-border); border-radius: 8px; }
+-.qr-details--saved .qr-content { padding: 0 0 12px; max-height: none; }
+-.qr-details--saved .qr-host { margin: 0; }
+-@container (max-width: 560px) {
+-  .qr-details--saved .qr-details__body { grid-template-columns: 1fr; gap: 20px; }
+-  .qr-details--saved .qr-actions { justify-content: flex-start; }
+-}
+ 
+ .qr-overlay, .qr-results-inline { position: absolute; inset: 0; pointer-events: none; }
+ .qr-overlay { z-index: 20; }
+diff --git a/src/windows/LibraryWindow.tsx b/src/windows/LibraryWindow.tsx
+index 93c439a..f6b5c9f 100644
+--- a/src/windows/LibraryWindow.tsx
++++ b/src/windows/LibraryWindow.tsx
+@@ -25,8 +25,7 @@ import {
+ } from "../lib/ipc";
+ import { t, fmt } from "../i18n";
+ import { useAppUpdater } from "../settings/useAppUpdater";
+-import { QrFavorites } from "../qr/QrResults";
+-import { TextHistory, OcrDialog } from "../ocr/TextHistory";
++import { OcrDialog } from "../ocr/OcrDialog";
+ import brandIcon from "../../src-tauri/icons/128x128.png";
+ import { EmptyTrashDialog } from "../components/EmptyTrashDialog";
+ import { KiriIcon, type IconName } from "../components/KiriIcons";
+@@ -49,7 +48,7 @@ const SettingsView = React.lazy(() =>
+ );
+ 
+ type Section = "library" | "trash";
+-type Destination = "captures" | "text" | "qr" | "settings";
++type Destination = "captures" | "settings";
+ 
+ function thumbnailUrl(id: string, revision: number): string {
+   return kiriResourceUrl("thumbnail", [id], { v: revision });
+@@ -972,21 +971,17 @@ export function LibraryWindow() {
+       <SegmentedPicker
+         options={[
+           { label: t("Library"), icon: "square.grid.3x3.fill" },
+-          { label: t("Text History"), icon: "text.viewfinder" },
+-          { label: t("QR Favorites"), icon: "qrcode" },
+           { label: t("Trash"), icon: "trash" },
+           { label: t("Settings"), icon: "slider.horizontal.3", notification: updater.hasUpdate ? t("Update available") : undefined },
+         ]}
+-        value={destination === "settings" ? 4 : destination === "qr" ? 2 : destination === "text" ? 1 : section === "library" ? 0 : 3}
++        value={destination === "settings" ? 2 : section === "library" ? 0 : 1}
+         onChange={(index) => {
+           clearSelection();
+           setMenuFor(null);
+-          if (index === 4) {
++          if (index === 2) {
+             setDestination("settings");
+             return;
+           }
+-          if (index === 1) { setDestination("text"); return; }
+-          if (index === 2) { setDestination("qr"); return; }
+           setDestination("captures");
+           setSection(index === 0 ? "library" : "trash");
+           setKindFilter("all");
+@@ -1002,20 +997,16 @@ export function LibraryWindow() {
+               <h1 id="library-page-title" className="library-control-panel__title">
+                 {destination === "settings"
+                   ? t("Settings")
+-                  : destination === "qr" ? t("QR Favorites")
+-                  : destination === "text" ? t("Text History")
+                   : showingTrash
+                     ? t("Trash")
+                     : t("Library")}
+               </h1>
+               {destination !== "settings" && <span className="library-control-panel__subtitle">
+-                {destination === "qr" ? t("Find and reuse saved QR codes")
+-                  : destination === "text" ? t("Read, copy, and revisit recognized text")
+-                  : libraryUnavailable
+-                    ? t("Unavailable")
+-                    : libraryMigrating
+-                      ? t("Moving…")
+-                      : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
++                {libraryUnavailable
++                  ? t("Unavailable")
++                  : libraryMigrating
++                    ? t("Moving…")
++                    : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
+               </span>}
+             </div>
+ 
+@@ -1339,10 +1330,6 @@ export function LibraryWindow() {
+         </>
+       )}
+         </>
+-      ) : destination === "qr" ? (
+-        <QrFavorites />
+-      ) : destination === "text" ? (
+-        <TextHistory />
+       ) : (
+         <React.Suspense
+           fallback={

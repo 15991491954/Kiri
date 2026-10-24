@@ -1,0 +1,336 @@
+﻿diff --git a/src/windows/OverlayWindow.tsx b/src/windows/OverlayWindow.tsx
+index 65e72de..b9a427d 100644
+--- a/src/windows/OverlayWindow.tsx
++++ b/src/windows/OverlayWindow.tsx
+@@ -46,6 +46,15 @@ import { useAnnotationAppearance } from "../annotation/useAnnotationAppearance";
+ import {AnnotationStyleControls} from "../annotation/AnnotationStyleControls";
+ import AnnotationCanvas, { type AnnotationCanvasHandle } from "../annotation/AnnotationCanvas";
+ import { AnnotationInteractionLock } from "../annotation/interaction-lock.js";
++import { interactionCursor } from "../annotation/cursors.js";
++import {
++  canSwitchMode,
++  cycleMode,
++  idleWheelState,
++  modeForKey,
++  normalizeWheelDelta,
++  wheelModeStep,
++} from "../annotation/mode-switching.js";
+ import { KiriIcon, type IconName } from "../components/KiriIcons";
+ import { AnnotationToolbarButton } from "../components/AnnotationToolbarButton";
+ import { QrOverlay } from "../qr/QrOverlay";
+@@ -100,6 +109,10 @@ const ACCENT = "#050505";
+ const MODE_SELECTOR_DRAG_THRESHOLD = 4;
+ const FLOATING_CONTROL_MARGIN = 8;
+ const DEFAULT_HINT_TOP = 102;
++// Slightly larger than the 10px visual handle radius so the cursor changes
++// just before the pointer reaches the dot.
++const HANDLE_HIT_RADIUS = 12;
++const CAPTURE_MODE_WRITE_DELAY_MS = 300;
+ 
+ type ModeSelectorDrag = {
+   pointerId: number;
+@@ -178,7 +191,6 @@ export function OverlayWindow() {
+   const qrRequestRef = useRef<string | null>(null);
+   const qrReturnPhaseRef = useRef<"selecting" | "annotating">("selecting");
+   const [ocrText, setOcrText] = useState("");
+-  const [ocrSaved, setOcrSaved] = useState(false);
+   const [ocrFailed, setOcrFailed] = useState(false);
+   const [preparedOcr, setPreparedOcr] = useState<PreparedOcrRequestDto | null>(null);
+   const [remoteOcrFailed, setRemoteOcrFailed] = useState(false);
+@@ -212,6 +224,11 @@ export function OverlayWindow() {
+   const suppressModeSelectorClickRef = useRef(false);
+   const completionLock = useMemo(() => new AnnotationInteractionLock(), []);
+   const [completing, setCompleting] = useState(false);
++  const [hoverHandle, setHoverHandle] = useState<string | null>(null);
++  const [hoverInsideSelection, setHoverInsideSelection] = useState(false);
++  const wheelStateRef = useRef(idleWheelState());
++  const modeWriteTimerRef = useRef<number | null>(null);
++  const modeResolvedRef = useRef(false);
+   const modeRef = useRef<Mode>("screenshot");
+   const preparedOcrRef = useRef<PreparedOcrRequestDto | null>(null);
+   const ocrGenerationRef = useRef(0);
+@@ -242,6 +259,7 @@ export function OverlayWindow() {
+         if (disposed) return;
+         const initialMode = ctx.initialMode ?? "screenshot";
+         modeRef.current = initialMode;
++        modeResolvedRef.current = true;
+         setMode(initialMode);
+         setContext(ctx);
+       })
+@@ -519,7 +537,6 @@ export function OverlayWindow() {
+       setPreparedOcr(null);
+       setOcrFailed(false);
+       setOcrText(text.text);
+-      setOcrSaved(text.saved);
+       setPhase("ocr-result");
+     } catch (error) {
+       if (generation !== ocrGenerationRef.current) return;
+@@ -551,7 +568,6 @@ export function OverlayWindow() {
+       setPreparedOcr(null);
+       setOcrFailed(false);
+       setOcrText(text.text);
+-      setOcrSaved(text.saved);
+       setPhase("ocr-result");
+     } catch {
+       if (generation !== ocrGenerationRef.current) return;
+@@ -798,7 +814,7 @@ export function OverlayWindow() {
+         selectionRef.current
+       ) {
+         // Handle or move the existing selection.
+-        const handle = hitTestHandle(p, selectionRef.current, 10);
++        const handle = hitTestHandle(p, selectionRef.current, HANDLE_HIT_RADIUS);
+         if (handle) {
+           setResizeHandle(handle);
+           setDrag({ start: p, current: p, moved: false });
+@@ -838,6 +854,15 @@ export function OverlayWindow() {
+           hoverWindowRef.current = candidate;
+           setHoverWindow(candidate);
+         }
++        const currentSelection = selectionRef.current;
++        const regionPhase =
++          phaseRef.current === "selecting" || phaseRef.current === "record-options";
++        setHoverHandle(
++          regionPhase && currentSelection
++            ? hitTestHandle(p, currentSelection, HANDLE_HIT_RADIUS)
++            : null,
++        );
++        setHoverInsideSelection(regionPhase && !!currentSelection && contains(currentSelection, p));
+         return;
+       }
+       setHoverWindow(null);
+@@ -930,6 +955,33 @@ export function OverlayWindow() {
+ 
+   // Switching modes clears transient UI while reusing a completed selection.
+   // OCR starts only from this explicit action or a committed pointer release.
++  // Remember the mode the user actually works in, debounced so holding a mode
++  // key or spinning the wheel still writes once. Explicit entry points
++  // (record/OCR shortcuts) force their own mode for that session.
++  const persistCaptureMode = useCallback((value: Mode) => {
++    if (modeWriteTimerRef.current !== null) clearTimeout(modeWriteTimerRef.current);
++    modeWriteTimerRef.current = setTimeout(() => {
++      modeWriteTimerRef.current = null;
++      void api.setCaptureMode(value).catch(() => {});
++    }, CAPTURE_MODE_WRITE_DELAY_MS);
++  }, []);
++
++  useEffect(
++    () => () => {
++      // Only a debounce that never fired needs the closing write. Writing on
++      // every unmount would let a peer display overlay that never changed its
++      // mode overwrite the choice made on the display the user worked in.
++      if (modeWriteTimerRef.current === null) return;
++      clearTimeout(modeWriteTimerRef.current);
++      modeWriteTimerRef.current = null;
++      // A capture that failed before its context arrived never learned the
++      // backend's resolved mode; writing the local default would clobber it.
++      if (!modeResolvedRef.current) return;
++      void api.setCaptureMode(modeRef.current).catch(() => {});
++    },
++    [],
++  );
++
+   const switchMode = useCallback(
+     (next: Mode) => {
+       if (completionLock.locked) return;
+@@ -938,6 +990,7 @@ export function OverlayWindow() {
+       discardQr();
+       modeRef.current = next;
+       setMode(next);
++      persistCaptureMode(next);
+       setSizeControlsOpen(false);
+       setPhase("selecting");
+       setDrag(null);
+@@ -968,9 +1021,64 @@ export function OverlayWindow() {
+       // With a valid region: screenshot re-shows the toolbar (selecting
+       // phase with a selection); record shows the options popover.
+     },
+-    [completionLock, discardPreparedOcr, discardQr, runOcr],
++    [completionLock, discardPreparedOcr, discardQr, runOcr, persistCaptureMode],
+   );
+ 
++  // --- mode switching without moving the pointer ---
++  // Digits pick a mode outright; the wheel cycles them in place. Both only
++  // apply while no annotation or result surface owns the overlay, and both
++  // ignore editable controls so numeric inputs keep their native behavior.
++  useEffect(() => {
++    const onModeKeyDown = (e: KeyboardEvent) => {
++      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
++      if (completionLock.locked) return;
++      if (isTextComposition(e)) return;
++      if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]")) return;
++      if (!canSwitchMode(phaseRef.current)) return;
++      const next = modeForKey(e.key);
++      if (!next) return;
++      e.preventDefault();
++      switchMode(next);
++    };
++    const onModeWheel = (e: WheelEvent) => {
++      if (completionLock.locked) return;
++      if (!canSwitchMode(phaseRef.current)) return;
++      // Panels with their own scrolling range keep the wheel: the mode
++      // selector is draggable chrome, the recording options scroll, and the
++      // size fields need their native stepper behavior.
++      if (
++        e.target instanceof Element &&
++        e.target.closest(
++          ".kiri-mode-select, .kiri-capture-toolbar, .kiri-record-options, " +
++            ".kiri-capture-tool-options, .kiri-capture-dimension, .kiri-color-picker",
++        )
++      ) return;
++      const result = wheelModeStep(
++        wheelStateRef.current,
++        normalizeWheelDelta(e.deltaY, e.deltaMode),
++        performance.now(),
++      );
++      wheelStateRef.current = result.state;
++      if (!result.direction) return;
++      e.preventDefault();
++      switchMode(cycleMode(modeRef.current, result.direction));
++    };
++    window.addEventListener("keydown", onModeKeyDown);
++    window.addEventListener("wheel", onModeWheel, { passive: false });
++    return () => {
++      window.removeEventListener("keydown", onModeKeyDown);
++      window.removeEventListener("wheel", onModeWheel);
++    };
++  }, [completionLock, switchMode]);
++
++  // Leaving a region phase invalidates hover hit-test state gathered on the
++  // frozen screen; a stale handle would otherwise keep a resize cursor.
++  useEffect(() => {
++    if (phase === "mode-select" || phase === "selecting" || phase === "record-options") return;
++    setHoverHandle(null);
++    setHoverInsideSelection(false);
++  }, [phase]);
++
+   // --- render ---
+   const selectingRect = drag && drag.moved && !resizeHandle ? normalized(drag.start, drag.current) : null;
+   const displayRect = selection ?? selectingRect;
+@@ -999,12 +1107,15 @@ export function OverlayWindow() {
+         // frozen image is ready (mirroring the original's freeze behavior).
+         background: frozenSrc ? "#141414" : "transparent",
+         overflow: "hidden",
+-        cursor:
+-          completing
+-            ? "progress"
+-            : phase === "selecting" || phase === "record-options"
+-            ? "crosshair"
+-            : "default",
++        cursor: interactionCursor({
++          completing,
++          phase,
++          resizeHandle,
++          moving: !!moveDrag,
++          dragging: !!drag,
++          hoverHandle,
++          hoverInside: hoverInsideSelection,
++        }),
+       }}
+       onPointerDown={completing || phase === "annotating" ? undefined : onPointerDown}
+       onPointerDownCapture={colorPicker.clear}
+@@ -1019,7 +1130,7 @@ export function OverlayWindow() {
+         const eligible = event.target === event.currentTarget &&
+           modeRef.current === "screenshot" && phaseRef.current === "selecting" &&
+           !selectionClickMovedRef.current && !!region && isValidSelection(region, 3) &&
+-          contains(region, point) && !hitTestHandle(point, region, 10);
++          contains(region, point) && !hitTestHandle(point, region, HANDLE_HIT_RADIUS);
+         doubleClickCanFinishRef.current = event.detail === 1
+           ? eligible : doubleClickCanFinishRef.current && eligible;
+       }}
+@@ -1261,29 +1372,34 @@ export function OverlayWindow() {
+               active={mode === "screenshot"}
+               icon="camera.viewfinder"
+               label={t("Screenshot")}
++              badge="1"
+               onClick={() => switchMode("screenshot")}
+             />
+             <ModeButton
+               active={mode === "record"}
+               icon="record.circle"
+               label={t("Record")}
++              badge="2"
+               onClick={() => switchMode("record")}
+             />
+             <ModeButton
+               active={mode === "ocr"}
+               icon="text.viewfinder"
+               label={t("OCR")}
++              badge="3"
+               onClick={() => switchMode("ocr")}
+             />
+           </div>
+           {!selection && (
+             <HintLabel
+               text={
+-                mode === "screenshot"
++                (mode === "screenshot"
+                   ? t("Drag to choose a capture area   路   Click a window   路   Esc to cancel")
+                   : mode === "record"
+                     ? t("Drag to choose a recording area   路   Click a window   路   Esc to cancel")
+-                    : t("Drag to choose text to recognize   路   Esc to cancel")
++                    : t("Drag to choose text to recognize   路   Esc to cancel")) +
++                "   路   " +
++                t("Press 1 / 2 / 3 to change mode")
+               }
+               top={DEFAULT_HINT_TOP}
+             />
+@@ -1321,7 +1437,6 @@ export function OverlayWindow() {
+       {phase === "ocr-result" && (
+         <OcrPanel
+           text={ocrText}
+-          saved={ocrSaved}
+           failed={ocrFailed}
+           anchor={selection ?? { x: 0, y: 0, width: bounds.width, height: 0 }}
+           bounds={bounds}
+@@ -1445,6 +1560,7 @@ function ModeButton(props: {
+   active: boolean;
+   icon: IconName;
+   label: string;
++  badge?: string;
+   onClick(): void;
+ }) {
+   return (
+@@ -1452,11 +1568,17 @@ function ModeButton(props: {
+       type="button"
+       onClick={props.onClick}
+       className="kiri-mode-btn"
++      aria-keyshortcuts={props.badge}
+       data-active={props.active || undefined}
+     >
+       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+         <KiriIcon name={props.icon} size={14} />
+         {props.label}
++        {props.badge && (
++          <span className="kiri-mode-btn__badge" aria-hidden="true">
++            {props.badge}
++          </span>
++        )}
+       </span>
+     </button>
+   );
+@@ -1577,7 +1699,6 @@ function SizeBadge(props: { rect: Rect; bounds: Rect; pixelScale: number }) {
+ }
+ 
+ function OcrPanel(props: {
+-  saved: boolean;
+   text: string;
+   failed: boolean;
+   anchor: Rect;
+@@ -1635,9 +1756,6 @@ function OcrPanel(props: {
+         boxShadow: "0 16px 42px rgba(0,0,0,0.22)",
+       }}
+     >
+-      {!failed && text.trim() && <div role="status" style={{ flexShrink: 0, fontSize: 11, color: "var(--kiri-secondary-label)" }}>
+-        {t(props.saved ? "Saved to Text History" : "History wasn't saved. Copy the text before closing.")}
+-      </div>}
+       <div style={{ display: "flex", flexShrink: 0, justifyContent: "space-between", alignItems: "center" }}>
+         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+           <span
+@@ -1689,6 +1807,7 @@ function OcrPanel(props: {
+           font: "450 13px/1.48 var(--kiri-font-ui)",
+           userSelect: "text",
+           WebkitUserSelect: "text",
++          cursor: "text",
+           whiteSpace: "pre-wrap",
+           border: "1px solid rgba(255,255,255,0.24)",
+           boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.08)",

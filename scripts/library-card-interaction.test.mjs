@@ -679,7 +679,7 @@ test("changing media tabs, favorites, tags, search and Trash resets the grid, wh
     assert.equal(grid.scrollTop,0);assert.equal(grid.scrollLeft,0);
   };
   const filter = tree => nodes(tree).find(node=>node?.type?.name==="FilterBar");
-  for(const kind of ["image","video","gif","all"]) change(tree=>filter(tree).props.onChangeKind(kind));
+  for(const kind of ["video","gif","all"]) change(tree=>filter(tree).props.onChangeKind(kind));
   change(tree=>filter(tree).props.onToggleFavorites());
   change(tree=>filter(tree).props.onToggleFavorites());
   change(tree=>filter(tree).props.onToggleTag("work"));
@@ -695,7 +695,6 @@ test("changing media tabs, favorites, tags, search and Trash resets the grid, wh
 });
 
 for (const [method,message] of [
-  ["pasteClipboardImage","Clipboard image added to Library."],
   ["importMedia","Imported %d files."],
 ]) {
   test(`${method} success uses an automatically dismissed toast without shifting the header`, async (context) => {
@@ -703,7 +702,7 @@ for (const [method,message] of [
     const harness = createLibraryHarness({[method]:async()=>({id:"fixture",ids:["fixture"],failed:0})});
     const library = harness.mount("LibraryWindow",{});
     library.render();await settleRequests();library.render();await settleRequests();
-    const label = method==="importMedia"?"Import media":"Paste Image";
+    const label = method==="importMedia"?"Import video":"Paste Image";
     nodes(library.render()).find(node=>node?.type==="button"&&nodes(node).includes(label)).props.onClick();
     await settleRequests();
     const tree=library.render();
@@ -716,17 +715,11 @@ for (const [method,message] of [
   });
 }
 
-test("failed paste uses a readable error toast; a newer notice gets its own full lifetime", async (context) => {
+test("a newer notice gets its own full lifetime", async (context) => {
   context.mock.timers.enable({apis:["setTimeout"]});
-  const harness=createLibraryHarness({pasteClipboardImage:async()=>{throw new Error("clipboard unavailable");}});
+  const harness=createLibraryHarness({});
   const library=harness.mount("LibraryWindow",{});
   library.render();await settleRequests();library.render();await settleRequests();
-  nodes(library.render()).find(node=>node?.type==="button"&&nodes(node).includes("Paste Image")).props.onClick();
-  await settleRequests();
-  let toast=nodes(library.render()).find(node=>node?.props?.className==="library-toast");
-  assert.equal(toast.props.role,"alert");
-  assert.ok(nodes(toast).includes("Could not paste an image from the clipboard."));
-  context.mock.timers.tick(2500);
   harness.emit("notice",{id:"new",title:"Copied",symbol:"checkmark"});library.render();
   context.mock.timers.tick(1500);library.render();
   assert.ok(nodes(library.render()).includes("Copied"));
@@ -745,8 +738,8 @@ test("Trash destructive actions stay in Trash when switching to secondary destin
     library.render(); await settleRequests();
     return library.render();
   };
-  for (const destination of [1, 2, 4]) {
-    assert.ok(nodes(await navigate(3)).find(node => node?.type === "button" && node.props.className?.includes("library-empty-trash")));
+  for (const destination of [0, 2]) {
+    assert.ok(nodes(await navigate(1)).find(node => node?.type === "button" && node.props.className?.includes("library-empty-trash")));
     const tree = await navigate(destination);
     assert.equal(nodes(tree).some(node => node?.type === "button" && node.props.className?.includes("library-empty-trash")), false);
   }

@@ -1,0 +1,8 @@
+[PASS] the capture overlay opens target=kiri
+node : Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76
+所在位置 E:\项目\Kiri录屏\Kiri\Kiri\.cursor\pin-shot-e2e.ps1:111 字符: 12
++   $click = node (Join-Path $PSScriptRoot "cdp-pin-click.mjs") 9333 2> ...
++            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Assertion faile...sync.c, line 76:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

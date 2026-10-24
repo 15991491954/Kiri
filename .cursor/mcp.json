@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "codegraph-ragflow": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": [
+        "serve",
+        "--mcp",
+        "--path",
+        "D:\\项目拉取\\ragflow-main"
+      ]
+    }
+  }
+}

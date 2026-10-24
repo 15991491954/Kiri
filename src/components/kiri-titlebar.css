@@ -1,0 +1,100 @@
+/* macOS-style window chrome for the main, undecorated window. */
+.kiri-titlebar {
+  position: relative;
+  z-index: 40;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: 46px;
+  padding: 0 14px 0 16px;
+  background: var(--kiri-titlebar, rgba(246, 246, 248, 0.96));
+  border-bottom: 1px solid var(--kiri-hairline);
+  border-radius: 10px 10px 0 0;
+}
+html[data-maximized="true"] .kiri-titlebar { border-radius: 0; }
+.kiri-titlebar__drag {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.kiri-titlebar__lights {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.kiri-window-light {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: default;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.16);
+}
+.kiri-window-light span {
+  font: 700 9px/1 var(--kiri-font-ui);
+  color: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transform: translateY(-0.5px);
+  transition: opacity 0.1s ease-out;
+}
+.kiri-titlebar__lights:hover .kiri-window-light span,
+.kiri-window-light:focus-visible span { opacity: 1; }
+.kiri-window-light--close { background: #ff5f57; }
+.kiri-window-light--minimize { background: #febc2e; }
+.kiri-window-light--zoom { background: #28c840; }
+.kiri-window-light:hover { opacity: 0.86; }
+.kiri-window-light:focus-visible { outline: 2px solid var(--kiri-accent); outline-offset: 2px; }
+.kiri-window-light:active { filter: brightness(0.86); }
+.kiri-titlebar__brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--kiri-label);
+  opacity: 0.9;
+  pointer-events: none;
+}
+.kiri-titlebar__brand strong {
+  font: 600 13px/1 var(--kiri-font-ui);
+  letter-spacing: -0.01em;
+}
+.kiri-titlebar__titles {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.kiri-titlebar__title { font: 600 13px/1 var(--kiri-font-ui); color: var(--kiri-label); }
+.kiri-titlebar__detail { font: 400 12px/1 var(--kiri-font-ui); color: var(--kiri-secondary-label); }
+.kiri-titlebar__spacer { flex: 1; }
+
+/* Screen-reader-only labels still need a focusable target, so the lights keep
+   their native button semantics and a visible focus ring. */
+
+.kiri-resize-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+.kiri-resize-edge {
+  position: absolute;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiri-window-light span { transition: none; }
+}

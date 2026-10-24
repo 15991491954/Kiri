@@ -27,8 +27,8 @@ hotkey_id, probe_id = 2122, 2123
 held = False
 deadline = time.monotonic() + 150  # Leave cleanup time within the three-minute CI gate.
 recording_hint = "Press a key or combination. Esc cancels."
-capture_default, capture_custom = "Shift+Ctrl+A", "Ctrl+Alt+K"
-defaults = {"Record": "Shift+Ctrl+Alt+R", "Recognize Text": "Shift+Ctrl+Alt+O",
+capture_default, capture_custom = "F1", "Ctrl+Alt+K"
+defaults = {"Record": "F3", "Recognize Text": "Shift+Ctrl+Alt+O",
             "Show main window": "Shift+Ctrl+Alt+L"}
 recording_defaults = {"Pause/Resume Recording": "Shift+Ctrl+Alt+P",
                       "Stop and Save Recording": "Shift+Ctrl+Alt+S"}

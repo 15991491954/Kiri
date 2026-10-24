@@ -77,7 +77,7 @@ export function PortalShortcutsCard() {
       <div className="kiri-shortcut-copy">
         <strong>{t("Wayland Desktop Shortcuts")}</strong>
         <span role="status" aria-live="polite">{t(status ? STATUS_TEXT[status.status] : "Loading desktop shortcut status…")}</span>
-        <span>{t("Only Capture, Pause/Resume, and Stop are requested. Your desktop chooses the keys. Approved shortcuts are restored when Kiri starts; the desktop may ask again.")}</span>
+        <span>{t("Only Capture, Pause/Resume, and Stop are requested. Your desktop chooses the keys. Approved shortcuts are restored when Lumen starts; the desktop may ask again.")}</span>
         {error && <span role="alert">{t(error)}</span>}
       </div>
       <dl className="kiri-portal-bindings">
@@ -110,9 +110,9 @@ export function PortalShortcutsCard() {
         </button>}
       </div>
       <div className="kiri-shortcut-copy">
-        <span>{t("You can always assign these commands in your desktop's keyboard settings. Kiri cannot verify command-based bindings. Configure a working Stop shortcut before recording.")}</span>
+        <span>{t("You can always assign these commands in your desktop's keyboard settings. Lumen cannot verify command-based bindings. Configure a working Stop shortcut before recording.")}</span>
         {status?.status === "active" && !status.canConfigure && <span>{t("This Portal has no configuration UI. Change keys in desktop settings, or reconnect to request setup again.")}</span>}
-        <span>{t("Disconnect stops Kiri listening and disables automatic restoration. Your desktop may keep its saved key choices.")}</span>
+        <span>{t("Disconnect stops Lumen listening and disables automatic restoration. Your desktop may keep its saved key choices.")}</span>
       </div>
     </div>
   );

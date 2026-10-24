@@ -1,7 +1,7 @@
 // EditorWindow — annotation editor for saved captures
 // Screenshot tools share one document; viewing zoom never changes saved pixels.
 
-import { OcrDialog } from "../ocr/TextHistory";
+import { OcrDialog } from "../ocr/OcrDialog";
 import { QrOverlay } from "../qr/QrOverlay";
 import type { AssetDto, QrScanDto } from "../lib/ipc";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

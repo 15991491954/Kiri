@@ -1,0 +1,116 @@
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `Window` is never constructed
+  --> src\capture\scroll.rs:29:5
+   |
+25 | pub enum ScrollTarget {
+   |          ------------ variant in this enum
+...
+29 |     Window {
+   |     ^^^^^^
+   |
+   = note: `ScrollTarget` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `export_video` is never used
+   --> src\video_export.rs:557:8
+    |
+557 | pub fn export_video(
+    |        ^^^^^^^^^^^^
+
+warning: function `export_video_with_annotations` is never used
+   --> src\video_export.rs:567:8
+    |
+567 | pub fn export_video_with_annotations(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `wait_for_link_launcher` is never used
+   --> src\qr_commands.rs:419:4
+    |
+419 | fn wait_for_link_launcher(
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `stop_link_launcher` is never used
+   --> src\qr_commands.rs:451:4
+    |
+451 | fn stop_link_launcher(child: &mut std::process::Child) {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: variants `Unsupported` and `Denied` are never constructed
+  --> src\platform\mod.rs:30:5
+   |
+28 | pub enum MicrophoneAccess {
+   |          ---------------- variants in this enum
+29 |     Authorized,
+30 |     Unsupported,
+   |     ^^^^^^^^^^^
+31 |     Denied,
+   |     ^^^^^^
+   |
+   = note: `MicrophoneAccess` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `window_capture_id` is never used
+   --> src\platform\mod.rs:461:8
+    |
+461 | pub fn window_capture_id(_app: &tauri::AppHandle, _label: &str) -> Option<u32> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `close_all` is never used
+  --> src\pin\surface.rs:32:8
+   |
+32 | pub fn close_all() {
+   |        ^^^^^^^^^
+
+warning: function `close_all` is never used
+    --> src\pin\surface_windows.rs:1063:8
+     |
+1063 | pub fn close_all() {
+     |        ^^^^^^^^^
+
+warning: function `publish` is never used
+   --> src\portal_shortcuts.rs:155:4
+    |
+155 | fn publish(
+    |    ^^^^^^^
+
+warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never constructed
+   --> src\state.rs:605:5
+    |
+604 | pub enum RecoveryAction {
+    |          -------------- variants in this enum
+605 |     OpenSettings,
+    |     ^^^^^^^^^^^^
+606 |     QuitKiri,
+    |     ^^^^^^^^
+607 |     OpenInputMonitoringSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+608 |     OpenMicrophoneSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `kiri` (lib test) generated 12 warnings (run `cargo fix --lib -p kiri --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.49s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\kiri_lib-f2b5fa396335776e.exe)
+
+running 1 test
+
+thread 'video_export::windows_export::tests::windows_native_video_export_smoke' (29664) panicked at src\video_export_windows.rs:477:13:
+GIF duration 6
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test video_export::windows_export::tests::windows_native_video_export_smoke ... FAILED
+
+failures:
+
+failures:
+    video_export::windows_export::tests::windows_native_video_export_smoke
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 495 filtered out; finished in 3.29s
+
+error: test failed, to rerun pass `--lib`

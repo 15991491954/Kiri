@@ -19,16 +19,18 @@ pub enum ShortcutAction {
     Record,
     Ocr,
     Library,
+    PastePin,
     RecordingPauseResume,
     RecordingStop,
 }
 
 impl ShortcutAction {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Capture,
         Self::Record,
         Self::Ocr,
         Self::Library,
+        Self::PastePin,
         Self::RecordingPauseResume,
         Self::RecordingStop,
     ];
@@ -38,8 +40,9 @@ impl ShortcutAction {
             Self::Record => 1,
             Self::Ocr => 2,
             Self::Library => 3,
-            Self::RecordingPauseResume => 4,
-            Self::RecordingStop => 5,
+            Self::PastePin => 4,
+            Self::RecordingPauseResume => 5,
+            Self::RecordingStop => 6,
         }
     }
     pub fn scope(self) -> ShortcutScope {
@@ -54,20 +57,22 @@ impl ShortcutAction {
         } else {
             Modifiers::CONTROL
         };
+        // Capture, pin, and record are the three actions a user reaches for
+        // without looking. F1/F2/F3 are dedicated function keys, so they are
+        // global without modifiers and save directly (ADR 0111).
         let key = match self {
-            Self::Capture => Code::KeyA,
-            Self::Record => Code::KeyR,
+            Self::Capture => Code::F1,
+            Self::PastePin => Code::F2,
+            Self::Record => Code::F3,
             Self::Ocr => Code::KeyO,
             Self::Library => Code::KeyL,
             Self::RecordingPauseResume => Code::KeyP,
             Self::RecordingStop => Code::KeyS,
         };
-        let modifiers = if self == Self::Capture {
-            primary | Modifiers::SHIFT
-        } else {
-            primary | Modifiers::SHIFT | Modifiers::ALT
-        };
-        Shortcut::new(Some(modifiers), key)
+        if matches!(self, Self::Capture | Self::PastePin | Self::Record) {
+            return Shortcut::new(None, key);
+        }
+        Shortcut::new(Some(primary | Modifiers::SHIFT | Modifiers::ALT), key)
     }
     pub fn command(self) -> &'static str {
         match self {
@@ -75,6 +80,7 @@ impl ShortcutAction {
             Self::Record => "kiri --record",
             Self::Ocr => "kiri --ocr",
             Self::Library => "kiri --library",
+            Self::PastePin => "kiri --paste-pin",
             Self::RecordingPauseResume => "kiri --toggle-recording-pause",
             Self::RecordingStop => "kiri --stop-recording",
         }
@@ -89,7 +95,7 @@ pub enum ShortcutScope {
 }
 
 #[derive(Clone)]
-pub struct Bindings([Option<Shortcut>; 6]);
+pub struct Bindings([Option<Shortcut>; 7]);
 impl Default for Bindings {
     fn default() -> Self {
         Self(ShortcutAction::ALL.map(|action| Some(action.default_binding())))
@@ -116,8 +122,8 @@ impl Bindings {
 pub struct ShortcutBindings {
     current: Mutex<Bindings>,
     // Zero means unassigned; widen/offset u32 IDs so native ID zero is valid.
-    ids: [AtomicU64; 6],
-    pressed_ids: [AtomicU64; 6],
+    ids: [AtomicU64; 7],
+    pressed_ids: [AtomicU64; 7],
     editing: AtomicBool,
     library_focused: AtomicBool,
     recording_active: AtomicBool,
@@ -236,7 +242,7 @@ fn decode(bytes: &[u8]) -> Result<Bindings, String> {
     if preferences.version != 1 {
         return Err("Unsupported shortcut settings version.".into());
     }
-    let mut bindings = Bindings([None; 6]);
+    let mut bindings = Bindings([None; 7]);
     // Saved custom choices take priority over newly introduced default actions.
     for action in ShortcutAction::ALL {
         if let Some(value) = preferences.bindings.get(&action) {
@@ -255,19 +261,79 @@ fn decode(bytes: &[u8]) -> Result<Bindings, String> {
 fn load_from_dir(dir: &Path) -> Bindings {
     match std::fs::read(dir.join("shortcuts.json")) {
         Ok(bytes) => match decode(&bytes) {
-            Ok(bindings) => return bindings,
+            Ok(bindings) => return migrate_legacy_defaults(bindings),
             Err(error) => log::warn!("Could not load action shortcuts: {error}"),
         },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => log::warn!("Could not read action shortcuts: {error}"),
     }
+    let primary = if cfg!(target_os = "macos") {
+        Modifiers::SUPER
+    } else {
+        Modifiers::CONTROL
+    };
+    // The pre-F1 settings file only stored the capture chord. A file that still
+    // holds the original default follows the new F1 default; a custom chord is
+    // kept.
+    let legacy_capture = Shortcut::new(Some(primary | Modifiers::SHIFT), Code::KeyA);
     let capture = std::fs::read_to_string(dir.join("capture-shortcut.txt"))
         .ok()
         .and_then(|value| parse(value.trim()).ok())
         .unwrap_or_else(default_binding);
-    let mut bindings = Bindings([None; 6]);
+    let capture = if capture == legacy_capture {
+        ShortcutAction::Capture.default_binding()
+    } else {
+        capture
+    };
+    let mut bindings = Bindings([None; 7]);
     bindings.0[ShortcutAction::Capture.index()] = Some(capture);
+    // Paste-as-pin and record take their new defaults here as well, so an
+    // upgrade from the legacy file lands on F2/F3 instead of the old chords.
+    for action in [ShortcutAction::PastePin, ShortcutAction::Record] {
+        if let Ok(updated) = bindings.with(action, Some(action.default_binding())) {
+            bindings = updated;
+        }
+    }
     for action in ShortcutAction::ALL.into_iter().skip(1) {
+        if !matches!(action, ShortcutAction::PastePin | ShortcutAction::Record) {
+            if let Ok(updated) = bindings.with(action, Some(action.default_binding())) {
+                bindings = updated;
+            }
+        }
+    }
+    bindings
+}
+
+/// Moves stored bindings that are still the original defaults onto the current
+/// defaults (F1 screenshot, F2 pin, F3 record).
+///
+/// Pins are migrated first so record can take F3 from it without a conflict. A
+/// binding the user actually customized is left exactly as it is; only the old
+/// default values are replaced.
+fn migrate_legacy_defaults(mut bindings: Bindings) -> Bindings {
+    let primary = if cfg!(target_os = "macos") {
+        Modifiers::SUPER
+    } else {
+        Modifiers::CONTROL
+    };
+    let legacy = [
+        (
+            ShortcutAction::PastePin,
+            Shortcut::new(None, Code::F3),
+        ),
+        (
+            ShortcutAction::Record,
+            Shortcut::new(Some(primary | Modifiers::SHIFT | Modifiers::ALT), Code::KeyR),
+        ),
+        (
+            ShortcutAction::Capture,
+            Shortcut::new(Some(primary | Modifiers::SHIFT), Code::KeyA),
+        ),
+    ];
+    for (action, previous) in legacy {
+        if bindings.get(action) != Some(previous) {
+            continue;
+        }
         if let Ok(updated) = bindings.with(action, Some(action.default_binding())) {
             bindings = updated;
         }
@@ -275,16 +341,12 @@ fn load_from_dir(dir: &Path) -> Bindings {
     bindings
 }
 pub fn load(app: &AppHandle) -> Bindings {
-    app.path()
-        .app_config_dir()
+    crate::paths::config_dir(app)
         .map(|dir| load_from_dir(&dir))
         .unwrap_or_default()
 }
 
 pub fn label(shortcut: Shortcut) -> String {
-    if shortcut == default_binding() {
-        return crate::core::shortcut::KIRI_CAPTURE.display_label();
-    }
     label_for_platform(shortcut, cfg!(target_os = "macos"))
 }
 
@@ -380,7 +442,7 @@ pub fn is_registered(app: &AppHandle, action: ShortcutAction) -> bool {
         && current(app, action).is_some_and(|key| app.global_shortcut().is_registered(key))
 }
 const MEDIA_KEY_ACCESS_ERROR: &str =
-    "Media key shortcuts require Accessibility access. Enable it for Kiri in System Settings.";
+    "Media key shortcuts require Accessibility access. Enable it for Lumen in System Settings.";
 const UNSUPPORTED_KEY_ERROR: &str = "This key is not supported as a shortcut.";
 
 fn registration_error(error: &str) -> String {
@@ -642,10 +704,8 @@ pub fn replace(app: &AppHandle, action: ShortcutAction, value: Option<&str>) -> 
     let mut active = state.current.lock().unwrap();
     let updated = active.with(action, candidate)?;
     let previous = active.get(action);
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|_| "Could not save the shortcuts.".to_string())?;
+    let dir = crate::paths::config_dir(app)
+        .ok_or_else(|| "Could not save the shortcuts.".to_string())?;
     let bytes = encode(&updated)?;
     // Stage the complete preference before touching registrations. Persist is an
     // atomic destination replacement on macOS, Linux, and Windows.
@@ -766,10 +826,7 @@ mod tests {
             let shortcut = parse(value).unwrap();
             assert_eq!(parse(&shortcut.to_string()).unwrap(), shortcut, "{value}");
         }
-        assert_eq!(
-            label(default_binding()),
-            crate::core::shortcut::KIRI_CAPTURE.display_label()
-        );
+        assert_eq!(label(default_binding()), "F1");
     }
     #[test]
     fn special_key_labels_are_readable_on_both_platform_styles() {
@@ -864,15 +921,19 @@ mod tests {
             assert_eq!(state.action_for(&action.default_binding()), Some(action));
         }
         assert_eq!(state.action_for(&parse("Alt+Digit7").unwrap()), None);
-        assert!(!ShortcutAction::Capture
-            .default_binding()
-            .mods
-            .contains(Modifiers::ALT));
+        // Capture, pin, and record are bare function keys: they are not used
+        // for typing, so they need no modifier (ADR 0111).
         for action in [
+            ShortcutAction::Capture,
             ShortcutAction::Record,
-            ShortcutAction::Ocr,
-            ShortcutAction::Library,
+            ShortcutAction::PastePin,
         ] {
+            assert!(
+                action.default_binding().mods.is_empty(),
+                "{action:?} must be a bare function key"
+            );
+        }
+        for action in [ShortcutAction::Ocr, ShortcutAction::Library] {
             assert!(action.default_binding().mods.contains(Modifiers::ALT));
         }
     }
@@ -920,6 +981,7 @@ mod tests {
                 "record",
                 "ocr",
                 "library",
+                "pastePin",
                 "recordingPauseResume",
                 "recordingStop"
             ])
@@ -967,6 +1029,68 @@ mod tests {
             Some(ShortcutAction::Ocr.default_binding())
         );
     }
+    #[test]
+    fn stored_original_defaults_follow_the_f1_f2_f3_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers::SUPER
+        } else {
+            Modifiers::CONTROL
+        };
+        let stored = Bindings::default()
+            .with(
+                ShortcutAction::Capture,
+                Some(Shortcut::new(Some(primary | Modifiers::SHIFT), Code::KeyA)),
+            )
+            .unwrap()
+            .with(
+                ShortcutAction::Record,
+                Some(Shortcut::new(
+                    Some(primary | Modifiers::SHIFT | Modifiers::ALT),
+                    Code::KeyR,
+                )),
+            )
+            .unwrap()
+            .with(ShortcutAction::PastePin, Some(Shortcut::new(None, Code::F3)))
+            .unwrap();
+        std::fs::write(
+            directory.path().join("shortcuts.json"),
+            encode(&stored).unwrap(),
+        )
+        .unwrap();
+        let loaded = load_from_dir(directory.path());
+        assert_eq!(
+            loaded.get(ShortcutAction::Capture),
+            Some(ShortcutAction::Capture.default_binding()),
+            "the old capture default must become F1"
+        );
+        assert_eq!(
+            loaded.get(ShortcutAction::Record),
+            Some(ShortcutAction::Record.default_binding()),
+            "the old record default must become F3"
+        );
+        assert_eq!(
+            loaded.get(ShortcutAction::PastePin),
+            Some(ShortcutAction::PastePin.default_binding()),
+            "the old F3 pin must move to F2 so record can use F3"
+        );
+    }
+
+    #[test]
+    fn a_customized_binding_survives_the_default_migration() {
+        let directory = tempfile::tempdir().unwrap();
+        let custom = parse("Alt+KeyB").unwrap();
+        let stored = Bindings::default()
+            .with(ShortcutAction::Capture, Some(custom))
+            .unwrap();
+        std::fs::write(
+            directory.path().join("shortcuts.json"),
+            encode(&stored).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(load_from_dir(directory.path()).get(ShortcutAction::Capture), Some(custom));
+    }
+
     #[test]
     fn persisted_disabled_and_custom_bindings_override_legacy() {
         let directory = tempfile::tempdir().unwrap();

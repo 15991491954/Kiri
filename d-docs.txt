@@ -1,0 +1,293 @@
+﻿diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 63c6c05..312f1b1 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -12,8 +12,20 @@ requires macOS 14+; Windows-specific behavior is also built in CI.
+ 
+ Install Xcode Command Line Tools on macOS, MSVC C++ build tools on Windows,
+ or the [Ubuntu dependencies](docs/linux.md#build-from-source) on Linux.
+ 
++On Windows, an ordinary PowerShell session does not inherit the MSVC
++environment, so `cargo` may fail with `linker link.exe not found`. Load the
++toolchain once per session (or use the wrapper for a single command):
++
++```powershell
++. .\scripts\windows-msvc-env.ps1
++cargo check --manifest-path src-tauri/Cargo.toml
++
++# or
++.\scripts\cargo.ps1 check --manifest-path src-tauri/Cargo.toml
++```
++
+ ```bash
+ git clone https://github.com/yuxino/kiri.git
+ cd kiri
+ pnpm install --frozen-lockfile
+diff --git a/docs/README.md b/docs/README.md
+index 1b4c5aa..67157b6 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -229,4 +229,12 @@ development.
+ 
+ - [ADR 0113: Contextual image editor and zoom](adr/0113-contextual-image-editor-and-zoom.md)
+ 
+ - [`adr/0114-opt-in-login-startup.md`](adr/0114-opt-in-login-startup.md) 鈥?opt-in system login startup and resident launch behavior.
++
++- [`adr/0115-transient-ocr-and-qr-results.md`](adr/0115-transient-ocr-and-qr-results.md) 鈥?remove the Text History and QR Favorites destinations while keeping OCR and QR recognition transient.
++
++- [`adr/0116-overlay-mode-switching-and-cursor-feedback.md`](adr/0116-overlay-mode-switching-and-cursor-feedback.md) 鈥?number-key and wheel mode switching, a remembered capture mode, and directional selection cursors.
++
++- [`adr/0117-per-display-capture-overlays.md`](adr/0117-per-display-capture-overlays.md) 鈥?one frozen overlay per connected display, display-local selections, and owner-bound confirmation.
++
++- [`adr/0118-pin-windows-and-clipboard-pins.md`](adr/0118-pin-windows-and-clipboard-pins.md) 鈥?Windows-native pinned images that drag by the image and zoom under the wheel, screenshots and clipboard pins, pointer-targeted Escape, and memory-only clipboard pins.
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 05d8e16..a591e1f 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -38,18 +38,19 @@ modules.
+ 
+ | Label | Purpose |
+ | --- | --- |
+ | `library` | Capture library and Settings |
+-| `overlay` | Active-display capture, selection, annotation, and OCR consent |
++| `overlay` | Primary capture surface: active-display selection, annotation, and OCR consent |
++| `overlay-2`, `overlay-3`, 鈥?| One additional capture surface per other frozen display |
+ | `countdown` | Recording countdown |
+ | `control-panel` | Recording pause/resume/stop controls |
+ | `scroll-capture` | Nonactivating scrolling screenshot preview and completion controls |
+ | `scroll-capture-region` | Persistent pointer-transparent selection guide with dimming outside the crop |
+ | `recording-region` | Passive, capture-excluded recording region outline |
+ | `ripple` | Optional recorded click highlight |
+ | `editor-*` | Full screenshot editor |
+ | `viewer-*` | Image, video, or GIF viewer |
+-| `pin-*` | Resizable flattened screenshot reference; optionally topmost |
++| `pin-*` | Resizable flattened screenshot reference; always in the topmost band until unpinned |
+ | `toast` | Passive status feedback or an interactive completion preview |
+ | `confirm` | Destructive-action confirmation |
+ 
+ The backend owns window creation and validates commands against the expected
+@@ -58,11 +59,26 @@ unrestricted filesystem path.
+ 
+ Each active screenshot has at most one pin window. It reads the saved flattened
+ image through the existing local media route. Unpinning or closing that window
+ does not change the library asset.
++Pins are more than optionally topmost. Windows keeps every pin in the
++`WS_EX_TOPMOST` band: creation, reuse and each pin/unpin transition re-assert
++the band synchronously and verify the native extended style instead of trusting
++the creation flag, and a foreground hook started only while pins exist repairs
++pins that still want to be on top after another application is activated.
++Clicking a pin raises it above its sibling pins inside that band without taking
++keyboard focus, so several pins stay above normal windows at the same time
++(ADR 0118).
+ macOS and Windows move the image reference using captured pointer coordinates
+ and serialized physical position updates; Linux retains native dragging
+ (ADRs 0095 and 0107).
++A wheel over a pin zooms only that pin: the native side applies position and
++size in one call around the point under the pointer, keeps the image aspect
++ratio, leaves the topmost band and the order among sibling pins untouched, and
++returns the applied size, which the pin shows as a percentage while the wheel is
++active. 100% is one image pixel per physical screen pixel, queued notches
++coalesce into one native call, and the close-control minimum plus an 8000-pixel
++maximum edge bound the result.
+ The screenshot toolbar also starts OCR through the existing explicit mode switch,
+ reusing the committed selection and remote-consent flow.
+ 
+ Recent screenshot references retain the validated selection position and logical
+@@ -128,11 +144,14 @@ reads after a newer change. See ADR 0079.
+    during recording (including pauses), remain registered through pause/resume
+    transitions, and release when stopping enters finalization or recording fails.
+    They stay inactive during region selection and countdown. A registration
+    conflict reports an error without aborting recording; other control paths remain
+-   available. Record and OCR carry their
+-   initial mode in the capture session; the overlay reads that mode alongside
+-   its frozen display context. The candidate is registered before the old binding is
++   available. The default capture shortcut, the tray item, and `--capture`
++   resolve the last mode the overlay wrote to `capture-mode.json`, while the
++   Record/OCR shortcuts, `--record`, and `--ocr` force their own mode in the
++   capture session. The overlay reads that mode alongside its frozen display
++   context, and `1`/`2`/`3` or the wheel switch modes before the region is
++   committed (ADR 0116). The candidate is registered before the old binding is
+    released; the native preference is atomically persisted and loaded on launch.
+    Shortcut and tray requests acquire an owned scheduling permit before
+    dispatch, so key repeat cannot leave a burst of stale capture starts behind
+    a slow or timed-out native freeze. Windows runs the complete startup on a
+@@ -168,11 +187,11 @@ reads after a newer change. See ADR 0079.
+    Post-processing logs a warning after thirty seconds without abandoning an
+    already captured frame. Stage-specific failures remain visible, and Kiri
+    will not accumulate replacement workers while the original worker is still
+    active.
+-3. Rust keeps one reference-counted allocation for the full frozen PNG and
+-   shares it with the session, OCR preparation, and custom protocol. The
+-   overlay receives a capture-scoped, unguessable `kiri://` URL. The image is
++3. Rust keeps one reference-counted allocation per frozen display and shares
++   it with the session, OCR preparation, and custom protocol. Each overlay
++   receives its own capture-scoped, unguessable `kiri://` URL. The images are
+    not written to disk.
+ 4. The overlay performs window hit testing, region selection, and annotation in
+    a fixed logical document coordinate space. macOS includes visible third-party
+    floating panels, including subtitle overlays, in addition to normal windows.
+@@ -192,8 +211,24 @@ reads after a newer change. See ADR 0079.
+    window on the originating display. The preview does not take focus; a copy
+    failure is reported without discarding the saved asset, and a save failure
+    never presents a preview for an asset that does not exist.
+ 
++Capture also covers the other connected displays when the platform can freeze
++each one independently. The display under the pointer is frozen and presented
++first; once its overlay has requested its context, a coordinator thread freezes
++the remaining displays one at a time and creates `overlay-2`, `overlay-3`, 鈥?for
++them. Selection, annotation, OCR, QR, recording, and scrolling capture always
++read the pixels and logical geometry of the overlay that requested them.
++`prepare_capture_annotation` binds its snapshot to that owner, so a peer overlay
++cannot confirm another display's image, and completion feedback, the recording
++countdown, and the recording control bar follow the confirming display. Escape
++cancels the whole session from any overlay; Return confirms only the overlay
++that owns the selection. A secondary display that fails to freeze is skipped and
++logged without disturbing the primary session. A rectangle never spans two
++displays, and Wayland still offers one display. Frozen frames are addressed by
++one unguessable token per display and revoked as a group when the session ends
++(ADR 0117).
++
+ Escape cancels the active session and releases its frozen image. There is no
+ runtime synthetic-desktop or temporary-library mode in development or
+ production; deterministic capture data belongs in unit tests or an isolated
+ test harness.
+@@ -203,8 +238,15 @@ selected region, away from resize handles and overlay controls. In annotation
+ mode, only the Select tool's unmarked canvas accepts this action; text keeps its
+ double-click editing behavior. Both clicks must be eligible and use the same
+ synchronous completion lock and confirmation pipeline as Return.
+ 
++The overlay and the annotation canvas share one cursor mapping: blank frozen
++screen keeps `crosshair`, the eight dot handles show their resize direction,
++and the region interior shows `move`. An active drag keeps its cursor even when
++the pointer slips off the handle. Handle hit testing uses a 12-point radius
++around 10 px dots, so the cursor changes just before the pointer reaches one
++(ADR 0116).
++
+ Idle Screenshot hover samples a bounded 15脳15 sRGB patch from the original
+ decoded frozen image, before any overlay compositing. Actual image dimensions
+ map logical pointer coordinates to display-local physical pixels. The passive
+ loupe hides during gestures, annotation and other capture modes. Its Cmd/Ctrl+C
+@@ -440,12 +482,11 @@ text or styling is changed. See ADRs 0088, 0090 and 0092.
+ 
+ ## Managed library flow
+ 
+ The main window uses a persistent destination sidebar and a shared workspace
+-header for Library, Text History, QR Favorites, Trash and Settings. Contextual
+-capture filters and search share a toolbar; batch actions occupy an in-flow row
+-above the scrolling grid. Text and QR details consolidate actions with record
+-metadata. Settings has General, Shortcuts, Text Recognition, and About tabs;
++header for Library, Trash and Settings. Contextual capture filters and search
++share a toolbar; batch actions occupy an in-flow row above the scrolling grid.
++Settings has General, Shortcuts, Text Recognition, and About tabs;
+ the tab row stays visible while the selected page scrolls (ADR 0110). Container
+ queries follow the actual content/section width instead of the overall native
+ window width (ADR 0098). This layout does not change capture, editor or native
+ IPC policies.
+@@ -515,19 +556,19 @@ then delegates a validated HTTP/HTTPS URL to the default browser with one action
+ Successful opening ends the owned capture or leaves the editor open with its draft
+ restored; failures retain the result. No image or
+ payload is uploaded.
+ 
+-QR Favorites stores an optional searchable `qrText` field and a selected-code PNG
+-crop through one atomic library import. Duplicate active payloads reuse a record;
+-removal uses recoverable Trash. The normal capture grid excludes QR records while
+-the QR Favorites destination provides search and content/image reuse.
++QR results are transient: selecting a code copies its payload or opens a
++validated HTTP/HTTPS link, and Kiri writes no crop, payload, or library record.
+ Standard square WeChat QR codes use this local path; circular Mini Program
+ codes are unsupported. See [ADR 0061](adr/0061-local-qr-recognition-and-favorites.md)
+ and [ADR 0063](adr/0063-qr-center-markers-and-supported-geometry.md).
+ [ADR 0064](adr/0064-direct-qr-selection-and-opening.md) records direct selection,
+-automatic saving, content labels and one-action browser handoff.
++content labels and one-action browser handoff.
+ [ADR 0068](adr/0068-qr-markers-in-saved-image-editor.md) extends original-image
+ markers to the editor and library menu while preserving pending edits.
++[ADR 0115](adr/0115-transient-ocr-and-qr-results.md) removes the QR Favorites
++destination and its persisted records.
+ 
+ ## OCR flow
+ 
+ Local OCR is the default and runs through macOS Vision, Windows.Media.Ocr, or
+@@ -554,22 +595,21 @@ WebView CSP does not allow direct provider access.
+ Copying recognized text completes the capture session and closes its full-screen
+ overlay before the global success notice is presented. The confirmation must
+ never remain hidden behind the OCR result surface.
+ 
+-Successful, nonempty local and remote OCR results persist as image assets with
+-optional `ocrText` metadata and an independent PNG snapshot (ADR 0030). A single
+-index commit records both, rolling back new files if persistence fails. The
+-capture grid excludes these records; Text History searches their corrected text and
+-reads them without reopening the capture overlay. Trash and library migration
+-use the existing asset lifecycle. Snapshots cannot enter the annotation editor.
++Successful, nonempty local and remote OCR results stay in the requesting
++overlay or image dialog for copying. Kiri no longer writes a text record, text
++metadata, or a separate PNG snapshot into the library, so recognition never
++changes the library index or Trash. Closing the result discards it, and the
++source capture or saved image stays unchanged (ADR 0115).
+ 
+ Historic screenshot OCR is an explicitly local command from the library,
+ viewer, or editor. It reads bounded saved flattened PNG bytes and holds at most
+ one background recognition operation. A library identity/generation check
+-prevents a delayed result being saved into a different library. Overlay result
+-persistence checks the active capture owner while holding the capture lock;
+-canceled sessions cannot write late history. Clipboard copying from history is
+-separate from overlay completion and does not cancel another capture session.
++prevents a delayed result from being returned into a different library. Overlay
++results check the active capture owner while holding the capture lock, so
++canceled sessions cannot publish late text. Clipboard copying is separate from
++overlay completion and does not cancel another capture session.
+ 
+ ## Recording and GIF flow
+ 
+ Recording preparation offers MP4/GIF, Start, and four inline controls for system
+diff --git a/docs/privacy/en.md b/docs/privacy/en.md
+index b00e0b1..7a2dda3 100644
+--- a/docs/privacy/en.md
++++ b/docs/privacy/en.md
+@@ -80,19 +80,20 @@ account identifier.
+ Local OCR is enabled by default and uses macOS Vision, Windows.Media.Ocr, or
+ system Tesseract on Linux. It does not require an API key or network connection,
+ and image pixels do not leave the device.
+ 
+-## Text History
+-
+-Successful nonempty OCR results are saved in the active local library with a
+-copy of the recognized image. Text and source pixels stay together through
+-library moves and recoverable Trash. Permanently deleting the record removes
+-both. Recognizing a saved screenshot uses its saved flattened pixels, not its
+-unannotated editing source or unsaved edits. Its text record owns a separate
+-snapshot, so deleting the original screenshot does not delete this history.
+-History is not sent to remote providers. Local recognition of saved screenshots
+-continues if the result dialog is closed. If history cannot be saved, Kiri keeps
+-the result visible for copying and reports the save failure.
++## OCR and QR results
++
++Local OCR returns text to the capture overlay or image dialog for copying; Kiri
++does not write a text-history record or a separate snapshot to the library. QR
++recognition likewise shows its payloads only in the result surface: Copy places
++the text on the clipboard and Open Link hands a validated HTTP/HTTPS URL to the
++default browser, while no crop or payload is saved. Closing the surface discards
++the result.
++
++Records created by earlier versions that stored OCR text or QR favorites remain
++in the existing library and keep their text searchable. They follow the normal
++recoverable Trash and permanent-deletion lifecycle.
+ 
+ ## Optional remote OCR
+ 
+ Users may save multiple Alibaba Cloud, OpenAI, or image-capable OpenAI Chat
+diff --git a/docs/privacy/zh-CN.md b/docs/privacy/zh-CN.md
+index 52186c8..eeca2f2 100644
+--- a/docs/privacy/zh-CN.md
++++ b/docs/privacy/zh-CN.md
+@@ -29,11 +29,13 @@ macOS 涓?Windows 瀹夎鐗堝湪鎵撳紑涓婚潰鏉挎椂妫€鏌ユ洿鏂般€傚悓涓€娆¤繍琛? ## 鏈湴 OCR
+ 
+ Kiri 榛樿浣跨敤 macOS Vision銆乄indows.Media.Ocr 鎴?Linux 绯荤粺 Tesseract 杩涜鏈湴鏂囧瓧璇嗗埆銆傚畠涓嶉渶瑕?API Key 鎴栫綉缁滆繛鎺ワ紝鍥剧墖鍍忕礌涓嶄細绂诲紑璁惧銆? 
+-## 鏂囧瓧鍘嗗彶
++## OCR 涓庝簩缁寸爜缁撴灉
+ 
+-璇嗗埆鎴愬姛涓旈潪绌虹殑鏂囧瓧浼氬拰璇嗗埆鏃剁殑鍥剧墖鍓湰涓€璧蜂繚瀛樺湪褰撳墠鏈湴绱犳潗搴撲腑銆傜Щ鍔ㄧ礌鏉愬簱鏃朵竴骞惰縼绉伙紱绉诲叆鍥炴敹绔欏悗浠嶅彲鎭㈠锛屾案涔呭垹闄よ褰曟椂鎵嶄細涓€璧峰垹闄ゃ€傚巻鍙叉埅鍥剧殑鏈湴璇嗗埆浣跨敤宸蹭繚瀛樼殑鍘嬪钩鍥剧墖锛屼笉浣跨敤缂栬緫宸ョ▼鐨勬湭鏍囨敞婧愬浘鎴栧皻鏈繚瀛樼殑淇敼銆傛枃瀛楄褰曚繚鐣欑嫭绔嬪揩鐓э紝鍥犳鍒犻櫎鍘熸埅鍥句笉浼氬垹闄よ繖浠芥枃瀛楀巻鍙层€傚巻鍙茶褰曚笉浼氬彂閫佺粰杩滅▼鏈嶅姟銆傚叧闂巻鍙叉埅鍥剧殑璇嗗埆绐楀彛鍚庯紝鏈湴璇嗗埆浠嶄細缁х画锛涜嫢淇濆瓨澶辫触锛岀獥鍙ｄ細淇濈暀鍙鍒剁殑缁撴灉骞舵彁绀烘湭淇濆瓨銆?+鏈湴 OCR 浼氭妸鏂囧瓧杩斿洖缁欐埅鍥炬诞灞傛垨鍥剧墖瀵硅瘽妗嗕緵澶嶅埗锛汯iri 涓嶄細鍐嶆妸鏂囧瓧鍘嗗彶璁板綍鎴栫嫭绔嬪揩鐓у啓鍏ョ礌鏉愬簱銆備簩缁寸爜璇嗗埆鍚屾牱鍙湪缁撴灉鐣岄潰鏄剧ず鍐呭锛氬鍒朵細鎶婃枃瀛楀啓鍏ュ壀璐存澘锛屾墦寮€閾炬帴浼氭妸鏍￠獙閫氳繃鐨?HTTP/HTTPS 鍦板潃浜ょ粰榛樿娴忚鍣紝涓嶄細淇濆瓨浜岀淮鐮佽鍓浘鎴栬瘑鍒唴瀹广€傚叧闂粨鏋滅晫闈㈠悗锛岀粨鏋滃嵆琚涪寮冦€?+
++鏃х増鏈繚瀛樿繃 OCR 鏂囧瓧鎴栦簩缁寸爜鏀惰棌鐨勮褰曚粛淇濈暀鍦ㄧ幇鏈夌礌鏉愬簱涓紝鍏朵腑鐨勬枃瀛椾粛鍙鎼滅储鍛戒腑锛屽苟缁х画閬靛惊姝ｅ父鐨勫洖鏀剁珯涓庢案涔呭垹闄ゆ祦绋嬨€? 
+ ## 鍙€夌殑杩滅▼ OCR
+ 
+ 浣犲彲浠ュ悓鏃朵繚瀛橀樋閲屼簯銆丱penAI锛屾垨鏀寔鍥剧墖杈撳叆鐨?OpenAI Chat Completions 鍏煎鏈嶅姟銆傛柊寤烘垨閫変腑閰嶇疆鏈韩涓嶄細鍙戦€佹暟鎹€傛瘡娆¤繙绋嬭姹傚墠锛孠iri 閮戒細鏄剧ず閰嶇疆鍚嶇О銆佺洰鏍囧煙鍚嶃€佹ā鍨嬨€佸綋鍓嶉€夊尯鐨勫儚绱犲昂瀵镐笌鏂囦欢澶у皬銆傚彧鏈夋槑纭偣鍑诲彲瑙佺殑銆屽彂閫併€嶆垨銆岄噸璇曘€嶆寜閽紝鎵嶄細鎶婅閫夊尯鐨?PNG銆佺畝鐭殑鏂囧瓧璇嗗埆鎸囦护涓庢ā鍨嬪悕绉板彂缁欏搴旀湇鍔°€?

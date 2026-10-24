@@ -34,16 +34,6 @@ const assets: unknown[] = workspace || params.has("sizes") || params.has("scroll
   isFavorite: index % 3 === 0,
   ...(workspace ? {kind:"image",title:["Capture toolbar", "Keyboard shortcuts", "Local workflow", "Window selection"][index % 4],tags:["Kiri"],pixelWidth:1440,pixelHeight:900} : {}),
 })) : [];
-const recordBase = { kind:"image", filename:"fixture.png", pixelWidth:640, pixelHeight:360, duration:null, sourceApplication:null, isFavorite:false, trashedAt:null, gifEligible:false, tags:[], fileSize:12000, ocrOriginalText:null };
-const textRecords: {id:string;createdAt:number;ocrText:string;ocrOriginalText:string|null;[key:string]:unknown}[] = workspace ? [
-  { ...recordBase, id:"text-1", createdAt:Date.parse("2026-10-12T09:30:00Z"), ocrText:"Kiri\nCapture, annotate, and keep everything local.\n\nSelect a window or drag a region. Add notes, copy the image, or pin it on your screen.\n\nScreenshot · Recording · Text recognition", qrText:null },
-  { ...recordBase, id:"text-2", createdAt:Date.parse("2026-10-11T09:30:00Z"), ocrText:"Keyboard shortcuts\nShift + Command + A: Capture\nReturn: Confirm\nEscape: Cancel", qrText:null },
-  { ...recordBase, id:"text-3", createdAt:Date.parse("2026-10-10T09:30:00Z"), ocrText:"截图与录屏保存在本机。\n文字可编辑、复制，随时回来查看。", qrText:null },
-] : [];
-const qrRecords = workspace ? [
-  { ...recordBase, id:"qr-1", createdAt:Date.parse("2026-10-12T09:30:00Z"), ocrText:null, qrText:"https://example.com/" },
-  { ...recordBase, id:"qr-2", createdAt:Date.parse("2026-10-11T09:30:00Z"), ocrText:null, qrText:"A plain text QR example" },
-] : [];
 const svgPreview = (id:string) => {
   const index = Number(id.split("-").pop()) || 0;
   const titles = ["Capture toolbar", "Keyboard shortcuts", "Local workflow", "Window selection"];
@@ -110,16 +100,7 @@ Object.assign(window, {
         case "cancel_gif_conversion": actions.push(command); return true;
         case "get_recording_save_jobs": return [...savingJobs];
         case "list_assets": return [...assets].filter((asset:any) => !workspace || asset.title.toLowerCase().includes(String(args.query ?? "").toLowerCase()));
-        case "list_ocr_records": return textRecords.filter(asset => asset.ocrText.toLowerCase().includes(String(args.query ?? "").toLowerCase()));
-        case "list_qr_favorites": return qrRecords.filter(asset => asset.qrText.toLowerCase().includes(String(args.query ?? "").toLowerCase()));
-        case "copy_history_text": case "qr_favorite_action": case "reveal_library": actions.push(command); return null;
-        case "update_ocr_history_text": {
-          const asset = textRecords.find(asset => asset.id === args.id)!;
-          const original = asset.ocrOriginalText ?? asset.ocrText;
-          asset.ocrOriginalText = args.replacement == null ? null : original;
-          asset.ocrText = String(args.replacement ?? original);
-          return {...asset};
-        }
+        case "reveal_library": actions.push(command); return null;
         case "empty_trash":
           actions.push(command);
           if (params.has("trashFailure")) throw new Error("Controlled trash deletion failure");
@@ -135,7 +116,7 @@ Object.assign(window, {
           if (params.has("copyFailure")) throw new Error("Test clipboard unavailable");
           return null;
         case "copy_asset": actions.push(command); return null;
-        case "list_pending_recordings": case "list_text_history": return [];
+        case "list_pending_recordings": return [];
         case "import_media": actions.push(command); return { ids: [], failed: 0 };
         case "paste_clipboard_image":
           actions.push(command);

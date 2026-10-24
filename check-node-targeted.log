@@ -1,0 +1,51 @@
+﻿鉁?each of the eight handles reports a resize direction that matches its edge (0.6567ms)
+鉁?blank canvas keeps the crosshair until a region exists (0.1856ms)
+鉁?hovering a handle or the inside of a region previews the pending action (0.0932ms)
+鉁?an active drag outranks hover state so the cursor does not flicker (0.0801ms)
+鉁?all seven complete dictionaries preserve placeholders and their order (10.9315ms)
+鉁?locale resolution and live formatting cover every selectable language (54.3181ms)
+鉁?a language change received during startup wins over the stale saved preference (7.6664ms)
+鉁?OS locale is used only without a saved choice and cannot overwrite a newer event (5.2915ms)
+鉁?native Portal labels match each complete UI dictionary without embedding the dictionaries (2.2917ms)
+鉁?an open confirmation follows language changes without freezing the library's translated copy (705.2609ms)
+鉁?confirmation localizes the batch count while preserving caller-owned raw text (25.8771ms)
+鉁?digits 1, 2 and 3 select screenshot, record and OCR (1.1998ms)
+鉁?mode keys stay inert while annotations or results own the overlay (0.1326ms)
+鉁?cycling wraps in both directions (0.9106ms)
+鉁?wheel movement below the threshold accumulates without switching (0.1745ms)
+鉁?crossing the threshold switches once and ignores momentum (0.1444ms)
+鉁?upward wheel movement reports the negative direction (0.0752ms)
+鉁?zero and non-finite deltas leave the accumulator untouched (0.1082ms)
+鉁?line and page wheel modes are normalised to pixels (0.0927ms)
+鉁?copy completion for another record never marks the newly selected text copied (98.8543ms)
+鉁?copy failures stay visible without losing text (1.4241ms)
+鉁?OCR dialog starts once and reads saved text without recognizing again (0.954ms)
+鉁?an already open OCR dialog uses refreshed saved corrections (0.7024ms)
+鉁?an existing source viewer refreshes OCR metadata after saved asset changes (25.5175ms)
+鉁?library QR entry opens the original image editor instead of a second image dialog (254.073ms)
+鉁?editor QR IPC preserves source revision and exposes the editor request event (26.3121ms)
+鉁?screenshot toolbar recognition is explicit and does not complete the capture (34.8866ms)
+鉁?region selection and initial mode choice do not trigger QR recognition (1.0232ms)
+鉁?single, multiple and empty scans await explicit selection (0.237ms)
+鉁?single-code center button selects without opening or copying (10.4692ms)
+鉁?perspective markers use the diagonal intersection rather than corner average (0.2437ms)
+鉁?duplicate payloads retain their distinct positions and select explicitly (1.6519ms)
+鉁?opening invokes the default-browser action once without another confirmation (1.128ms)
+鉁?result opening closes only after success and failures leave the result available (1.4462ms)
+鉁?rapid repeated clicks invoke only one open while its request is pending (0.4805ms)
+鉁?an opening response from a closed result cannot dismiss a newer dialog (0.4741ms)
+鉁?link, plain text and standard WeChat payloads get distinct simple labels (0.8507ms)
+鉁?plain colon content stays copyable without link warnings in results (0.9776ms)
+鉁?explicit unsupported links retain warnings while WeChat schemes and RTL use their own content treatment (1.4657ms)
+鉁?opening a code locks further selection until the open action settles (0.4941ms)
+鉁?damaged and unsafe codes cannot open; content can still be copied (0.38ms)
+鉁?empty result explains retry and performs no action (0.3317ms)
+鈩?tests 42
+鈩?suites 0
+鈩?pass 42
+鈩?fail 0
+鈩?cancelled 0
+鈩?skipped 0
+鈩?todo 0
+鈩?duration_ms 1137.9037
+

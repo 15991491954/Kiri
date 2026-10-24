@@ -46,6 +46,15 @@ import { useAnnotationAppearance } from "../annotation/useAnnotationAppearance";
 import {AnnotationStyleControls} from "../annotation/AnnotationStyleControls";
 import AnnotationCanvas, { type AnnotationCanvasHandle } from "../annotation/AnnotationCanvas";
 import { AnnotationInteractionLock } from "../annotation/interaction-lock.js";
+import { interactionCursor } from "../annotation/cursors.js";
+import {
+  canSwitchMode,
+  cycleMode,
+  idleWheelState,
+  modeForKey,
+  normalizeWheelDelta,
+  wheelModeStep,
+} from "../annotation/mode-switching.js";
 import { KiriIcon, type IconName } from "../components/KiriIcons";
 import { AnnotationToolbarButton } from "../components/AnnotationToolbarButton";
 import { QrOverlay } from "../qr/QrOverlay";
@@ -61,7 +70,7 @@ function recordingStartError(error: unknown): string {
   const message = String(error);
   for (const known of [
     "The selected microphone is unavailable. Choose another microphone and try again.",
-    "Microphone access is off. Enable Kiri in System Settings to record your microphone.",
+    "Microphone access is off. Enable Lumen in System Settings to record your microphone.",
   ]) if (message.includes(known)) return known;
   return "Could not start screen recording.";
 }
@@ -76,7 +85,7 @@ function scrollingStartError(error: unknown): string {
     "Could not register Escape for scrolling capture.",
     "Scrolling capture requires Windows 10 version 2004 or later.",
     "Scrolling capture requires desktop composition to exclude its controls.",
-    "Could not exclude Kiri controls from scrolling capture.",
+    "Could not exclude Lumen controls from scrolling capture.",
     "Could not create scrolling capture controls.",
     "Could not start the scrolling capture stream.",
   ]) if (message.includes(known)) return known;
@@ -100,6 +109,88 @@ const ACCENT = "#050505";
 const MODE_SELECTOR_DRAG_THRESHOLD = 4;
 const FLOATING_CONTROL_MARGIN = 8;
 const DEFAULT_HINT_TOP = 102;
+// Slightly larger than the 10px visual handle radius so the cursor changes
+// just before the pointer reaches the dot.
+const HANDLE_HIT_RADIUS = 12;
+const CAPTURE_MODE_WRITE_DELAY_MS = 300;
+// A confirmed capture closes its own overlay. WebView2 can accept that close
+// and still keep the window alive, so each close step has a budget and the
+// backend gets the remaining chance; its worker-thread fallback always ends the
+// close. Without these bounds a pin click left a disabled editing HUD forever.
+const OVERLAY_SELF_CLOSE_TIMEOUT_MS = 600;
+const OVERLAY_BACKEND_CLOSE_TIMEOUT_MS = 2000;
+// A confirmation that never settles must not trap the user in the editing HUD.
+// The pixels are already exported by then, so the overlay closes itself and
+// the backend finishes (or reports) the capture.
+const EXPORT_RESULT_TIMEOUT_MS = 5000;
+const CONFIRM_CAPTURE_TIMEOUT_MS = 8000;
+// The single pending-confirmation slot keeps the previous capture busy for a
+// moment after its overlays start closing. Retrying briefly is safe: that
+// error is returned before this capture's session is consumed. The window is
+// wider than the backend's own 900 ms stall timeout, so a fresh 📌 click waits
+// for that slot to clear instead of restoring an editing HUD that is about to
+// close. A WebView2 close that is still unwinding on a slow machine can take
+// a few seconds, so the retry window covers more than the common case.
+const CONFIRM_BUSY_RETRY_DELAY_MS = 260;
+const CONFIRM_BUSY_MAX_ATTEMPTS = 20;
+const CONFIRM_BUSY_MESSAGE = "The previous capture is still completing.";
+// A pin handoff exports the capture before it confirms it. Every step is
+// bounded above, so this only fires when a step never settles at all. It is the
+// last resort that keeps a transparent full-screen window from holding the
+// desktop: the HUD is already gone from the click on, so a stuck handoff would
+// otherwise leave an invisible window that swallows input until the app exits.
+const PIN_HANDOFF_TIMEOUT_MS = 15000;
+// Backend errors that mean this overlay's capture session is gone. Retrying or
+// restoring the editor after one of these would be a dead end, so the overlay
+// closes instead.
+const LOST_CAPTURE_SESSION_ERRORS = [
+  "This command is only available from the active capture overlay.",
+  "Capture confirmation is only available to its overlay.",
+  "No active capture session.",
+  "The capture annotation snapshot changed before confirmation.",
+  "The capture session changed before confirmation.",
+];
+
+/** Resolves `undefined` when `work` has not settled within `ms`. */
+function settleWithin<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>(resolve => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/** True when a confirmation error means this overlay's capture session is gone. */
+function lostCaptureSession(message: string): boolean {
+  return LOST_CAPTURE_SESSION_ERRORS.some(text => message.includes(text));
+}
+
+/**
+ * Resolves once the renderer has painted the pending React update.
+ *
+ * The pin handoff replaces the whole editor tree with a transparent page, and
+ * the export that follows renders the full-resolution canvas synchronously.
+ * Without yielding a frame first, that work owns the main thread before the
+ * paint, so the toolbar stayed fully visible for the whole export and the 📌
+ * click looked ignored. A hidden or throttled WebView can withhold animation
+ * frames, so a short timer settles the wait as well.
+ */
+function afterPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => requestAnimationFrame(settle));
+    }
+    setTimeout(settle, 80);
+  });
+}
 
 type ModeSelectorDrag = {
   pointerId: number;
@@ -145,6 +236,25 @@ function windowCandidate(
   return null;
 }
 
+/**
+ * Floating overlay chrome that owns its own pointer gestures.
+ *
+ * The toolbar, tool options, mode selector, size fields, record options and
+ * error banner are drawn above the frozen screen but inside the overlay root.
+ * Without this guard their pointer-down also starts a region drag; the
+ * pointer-up that follows can then replace the selection with the window
+ * behind the button and move the toolbar before the click is delivered, which
+ * is the intermittent "clicked 📌, still editing" report.
+ */
+const OVERLAY_CHROME_SELECTOR =
+  ".kiri-hud, .kiri-capture-dimension, .kiri-record-options, .kiri-annotation-error";
+
+export function pointerStartsInOverlayChrome(target: EventTarget | null): boolean {
+  const closest = (target as { closest?: (selector: string) => unknown } | null)?.closest;
+  return typeof closest === "function" && !!closest.call(target, OVERLAY_CHROME_SELECTOR);
+}
+
+
 export function OverlayWindow() {
   const [context, setContext] = useState<CaptureContextDto | null>(null);
   const [frozenSrc, setFrozenSrc] = useState<string>("");
@@ -178,7 +288,6 @@ export function OverlayWindow() {
   const qrRequestRef = useRef<string | null>(null);
   const qrReturnPhaseRef = useRef<"selecting" | "annotating">("selecting");
   const [ocrText, setOcrText] = useState("");
-  const [ocrSaved, setOcrSaved] = useState(false);
   const [ocrFailed, setOcrFailed] = useState(false);
   const [preparedOcr, setPreparedOcr] = useState<PreparedOcrRequestDto | null>(null);
   const [remoteOcrFailed, setRemoteOcrFailed] = useState(false);
@@ -212,6 +321,42 @@ export function OverlayWindow() {
   const suppressModeSelectorClickRef = useRef(false);
   const completionLock = useMemo(() => new AnnotationInteractionLock(), []);
   const [completing, setCompleting] = useState(false);
+  // A confirmed capture has already been saved and (optionally) pinned. The
+  // editing HUD must disappear at that moment: WebView2 can accept the native
+  // close and keep painting the last frame, which read as an ignored 📌 click.
+  const [confirmed, setConfirmed] = useState(false);
+  const confirmedRef = useRef(false);
+  // A Pin click hands this screenshot over to a floating reference. The editing
+  // HUD leaves the screen as soon as the click lands, before the pixels are
+  // exported: the export, a busy previous completion, and the confirmation can
+  // each take a moment, and a toolbar that is still fully painted during that
+  // window is indistinguishable from an ignored 📌 click ("clicked pin, still
+  // editing"). A failure that leaves this capture's session alive releases the
+  // handoff again, so the editor returns with an error and a retry works.
+  const [pinning, setPinning] = useState(false);
+  // A handoff that never settles must not leave this transparent full-screen
+  // window alive: after the HUD is gone nothing else is clickable.
+  useEffect(() => {
+    if (!pinning) return;
+    const timer = setTimeout(() => {
+      if (confirmedRef.current) return;
+      reportFrontend("pin handoff did not settle; closing the overlay");
+      confirmedRef.current = true;
+      setConfirmed(true);
+      void api.closeCaptureOverlay().catch(() => { void getCurrentWindow().close().catch(() => {}); });
+    }, PIN_HANDOFF_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [pinning]);
+  // Set once the annotation pixels are exported and the confirmation is being
+  // sent. From then on the frozen screenshot is stale: the toolbar and the
+  // selection chrome are hidden before the IPC reply, so a slow or failed
+  // confirmation can never leave an editable-looking HUD behind.
+  const [committing, setCommitting] = useState(false);
+  const [hoverHandle, setHoverHandle] = useState<string | null>(null);
+  const [hoverInsideSelection, setHoverInsideSelection] = useState(false);
+  const wheelStateRef = useRef(idleWheelState());
+  const modeWriteTimerRef = useRef<number | null>(null);
+  const modeResolvedRef = useRef(false);
   const modeRef = useRef<Mode>("screenshot");
   const preparedOcrRef = useRef<PreparedOcrRequestDto | null>(null);
   const ocrGenerationRef = useRef(0);
@@ -242,6 +387,7 @@ export function OverlayWindow() {
         if (disposed) return;
         const initialMode = ctx.initialMode ?? "screenshot";
         modeRef.current = initialMode;
+        modeResolvedRef.current = true;
         setMode(initialMode);
         setContext(ctx);
       })
@@ -447,47 +593,199 @@ export function OverlayWindow() {
     void api.cancelCapture().catch(() => {});
   }, [discardPreparedOcr, discardQr]);
 
+  // A confirmed capture leaves this overlay to close itself. The WebView close
+  // needs `core:window:allow-close` for its label, and every display owns a
+  // different label (`overlay`, `overlay-2`, ...). Leaving that path without a
+  // fallback stranded the editing HUD on a secondary display after the image
+  // had already been saved and pinned, so a refused close is retried through
+  // the backend, which closes the same window from a worker thread.
+  const closeConfirmedOverlay = useCallback(async () => {
+    const selfClosed = await settleWithin(
+      getCurrentWindow().close().then(() => true).catch(error => {
+        reportFrontend(`overlay close rejected: ${String(error)}`);
+        return false;
+      }),
+      OVERLAY_SELF_CLOSE_TIMEOUT_MS,
+    );
+    if (selfClosed) return true;
+    if (selfClosed === undefined) {
+      reportFrontend("overlay close did not settle; closing from the backend");
+    }
+    const closedByBackend = await settleWithin(
+      api.closeCaptureOverlay().then(() => true).catch(next => {
+        reportFrontend(`close_capture_overlay rejected: ${String(next)}`);
+        return false;
+      }),
+      OVERLAY_BACKEND_CLOSE_TIMEOUT_MS,
+    );
+    // An unanswered backend close is still recovered by the confirmation
+    // fallback that runs on its worker thread.
+    return closedByBackend !== false;
+  }, []);
+
   const complete = useCallback(
     async (pinOnTop = false) => {
-      if (!completionLock.acquire()) return;
-      const modeSelectorGesture = modeSelectorDragRef.current;
-      if (modeSelectorGesture) {
-        if (modeSelectorGesture.captureTarget.hasPointerCapture(modeSelectorGesture.pointerId)) {
-          modeSelectorGesture.captureTarget.releasePointerCapture(modeSelectorGesture.pointerId);
-        }
-        modeSelectorDragRef.current = null;
-        setModeSelectorDragging(false);
+      if (!completionLock.acquire()) {
+        // A completion that never settled must not make the editor look
+        // interactive while every click is ignored.
+        reportFrontend("complete: a previous completion is still in flight");
+        return;
       }
-      setCompleting(true);
+      // True once the pixels are exported and the confirmation is in flight.
+      // From that point the editor must not come back: the backend consumes
+      // the capture session before it can fail, so a restored toolbar would be
+      // unable to confirm anything (the reported "clicked 📌, still editing").
+      let handedOff = false;
       try {
+        // The 📌 button promises a floating reference, not a finished edit.
+        // Take the editing HUD off screen before the (possibly slow) export
+        // starts so the click is always visibly answered; `handedOff` decides
+        // below whether the editor may return.
+        if (pinOnTop) {
+          setAnnotationError(null);
+          setPinning(true);
+          // An open text editor makes the export return null, which would put
+          // the editing HUD straight back after a 📌 click. Commit it; a
+          // composition the commit refuses to touch is dropped, because the
+          // click has already decided to leave the editor.
+          const canvas = canvasRef.current;
+          if (canvas && !canvas.commitTextEditing()) canvas.cancelTextEditing();
+          // The export renders the full-resolution canvas synchronously. Hand
+          // the renderer one frame first so the HUD removal is actually
+          // painted; otherwise the toolbar stays visible for the whole export
+          // and the click reads as ignored. This window also stops swallowing
+          // clicks the user aims at the pin or the desktop underneath it while
+          // the pixels are being exported.
+          await afterPaint();
+          await getCurrentWindow().setIgnoreCursorEvents(true).catch(() => {});
+        }
+        // Everything after the lock is inside `try` on purpose. Releasing a
+        // stale mode-selector pointer capture can throw when the pointer was
+        // cancelled between the check and the release; that must not escape
+        // with the completion lock still held, which would silently ignore
+        // every later 📌/Done click while the editing HUD stayed on screen.
+        const modeSelectorGesture = modeSelectorDragRef.current;
+        if (modeSelectorGesture) {
+          try {
+            if (modeSelectorGesture.captureTarget.hasPointerCapture(modeSelectorGesture.pointerId)) {
+              modeSelectorGesture.captureTarget.releasePointerCapture(modeSelectorGesture.pointerId);
+            }
+          } catch {
+            // The pointer is already gone; dropping the reference below is all
+            // that is needed.
+          }
+          modeSelectorDragRef.current = null;
+          setModeSelectorDragging(false);
+        }
+        setCompleting(true);
         const canvas = canvasRef.current;
         if (!canvas) {
           reportFrontend("complete: annotation canvas not mounted");
+          setAnnotationError("Could not finish this screenshot.");
           return;
         }
         if (!selection) {
           reportFrontend("complete: annotation selection not available");
+          setAnnotationError("Could not finish this screenshot.");
           return;
         }
-        const result = await canvas.exportResult();
-        if (!result) {
-          reportFrontend("complete: exportResult returned no data");
+        const exportOnce = () => settleWithin(canvas.exportResult(), EXPORT_RESULT_TIMEOUT_MS);
+        let exported = await exportOnce();
+        if (exported === undefined) {
+          reportFrontend("complete: exportResult did not settle");
+        }
+        if (!exported) {
+          // A null export is transient (an image still decoding, an editor
+          // settling). One retry keeps a 📌 click from putting the editing HUD
+          // back on screen when the user asked for a floating reference.
+          reportFrontend("complete: exportResult returned no data; retrying");
+          exported = await exportOnce();
+        }
+        if (!exported) {
+          reportFrontend("complete: exportResult returned no data twice");
+          setAnnotationError("Could not finish this screenshot.");
           return;
         }
-        await api.confirmCapture(result.png, { selection, document: result.document }, pinOnTop);
+        const payload = exported;
+        handedOff = true;
+        setCommitting(true);
+        let failure = "";
+        for (let attempt = 0; attempt < CONFIRM_BUSY_MAX_ATTEMPTS; attempt++) {
+          if (attempt > 0) {
+            await new Promise(resolve => setTimeout(resolve, CONFIRM_BUSY_RETRY_DELAY_MS));
+          }
+          const outcome = await settleWithin(
+            api.confirmCapture(payload.png, { selection, document: payload.document }, pinOnTop)
+              .then(() => ({ failed: false, message: "" }))
+              .catch((error: unknown) => {
+                const message = String(error);
+                reportFrontend(`confirm_capture rejected: ${message}`);
+                return { failed: true, message };
+              }),
+            CONFIRM_CAPTURE_TIMEOUT_MS,
+          );
+          if (outcome === undefined) {
+            // Don't retry an unanswered request: it may already be committing
+            // the capture. Closing the overlay is always safe here because the
+            // backend owns the completion from now on.
+            reportFrontend("confirm_capture did not settle; closing the overlay");
+            failure = "";
+            break;
+          }
+          if (!outcome.failed) {
+            failure = "";
+            break;
+          }
+          failure = outcome.message;
+          if (!failure.includes(CONFIRM_BUSY_MESSAGE)) break;
+          reportFrontend("confirm_capture: previous capture still completing; retrying");
+        }
+        if (failure && !lostCaptureSession(failure)) {
+          // The session is still alive (the backend rejected before consuming
+          // it), so give the editor back and let the user retry.
+          handedOff = false;
+          setCommitting(false);
+          setAnnotationError("Could not finish this screenshot.");
+          return;
+        }
+        // The capture is saved (or its session is gone) and the pin is queued.
+        // The backend already hid this overlay; hiding the React tree as well
+        // keeps a webview that has not painted the hide from showing the HUD.
+        confirmedRef.current = true;
+        setConfirmed(true);
         // The backend confirmation is synchronous. Close this owner WebView
         // only after its IPC response has arrived; dispatching a backend
         // close while WebView2 is still waiting can deadlock the Windows UI
         // thread and strand both the resident process and the next launch.
-        await getCurrentWindow().close();
+        if (!(await closeConfirmedOverlay())) {
+          // The capture is already saved and copied. The backend destroys the
+          // hidden overlay, so this is diagnostic rather than user-facing.
+          reportFrontend("confirmed overlay did not acknowledge its close; backend will retry");
+        }
       } catch (error) {
         reportFrontend(`confirm_capture rejected: ${String(error)}`);
+        if (handedOff) {
+          confirmedRef.current = true;
+          setConfirmed(true);
+          await closeConfirmedOverlay();
+        } else {
+          setAnnotationError("Could not finish this screenshot.");
+        }
       } finally {
+        if (!handedOff) {
+          setCommitting(false);
+          // The capture is still confirmable: give the editor back so the user
+          // can retry or switch to Done instead of staring at a blank overlay.
+          setPinning(false);
+          // The handoff stopped ignoring cursor events; the restored editor
+          // must receive clicks again.
+          if (pinOnTop) void getCurrentWindow().setIgnoreCursorEvents(false).catch(() => {});
+        }
         completionLock.release();
         setCompleting(false);
       }
     },
-    [completionLock, selection],
+    [closeConfirmedOverlay, completionLock, selection],
   );
 
   const startScrollCapture = useCallback(async () => {
@@ -519,7 +817,6 @@ export function OverlayWindow() {
       setPreparedOcr(null);
       setOcrFailed(false);
       setOcrText(text.text);
-      setOcrSaved(text.saved);
       setPhase("ocr-result");
     } catch (error) {
       if (generation !== ocrGenerationRef.current) return;
@@ -551,7 +848,6 @@ export function OverlayWindow() {
       setPreparedOcr(null);
       setOcrFailed(false);
       setOcrText(text.text);
-      setOcrSaved(text.saved);
       setPhase("ocr-result");
     } catch {
       if (generation !== ocrGenerationRef.current) return;
@@ -643,6 +939,14 @@ export function OverlayWindow() {
       )) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      // A confirmed capture can still be on screen while its native close is
+      // pending. Escape then forces that close instead of being swallowed by
+      // the completion lock.
+      if (confirmedRef.current) {
+        void getCurrentWindow().close().catch(() => {});
+        void api.closeCaptureOverlay().catch(() => {});
+        return;
+      }
       if (completionLock.locked) return;
       if (phaseRef.current === "qr-result") { closeQr(); return; }
       if (phaseRef.current === "annotating" && canvasRef.current?.cancelTextEditing()) return;
@@ -772,6 +1076,12 @@ export function OverlayWindow() {
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
+      if (pointerStartsInOverlayChrome(e.target)) {
+        // The chrome behind this gesture owns it. Starting a region selection
+        // here would move the toolbar out from under the click (see
+        // `pointerStartsInOverlayChrome`).
+        return;
+      }
       selectionPointerStartRef.current = toPoint(e);
       selectionClickMovedRef.current = false;
       // OCR results: allow drawing a fresh region directly (no button) —
@@ -798,7 +1108,7 @@ export function OverlayWindow() {
         selectionRef.current
       ) {
         // Handle or move the existing selection.
-        const handle = hitTestHandle(p, selectionRef.current, 10);
+        const handle = hitTestHandle(p, selectionRef.current, HANDLE_HIT_RADIUS);
         if (handle) {
           setResizeHandle(handle);
           setDrag({ start: p, current: p, moved: false });
@@ -838,6 +1148,15 @@ export function OverlayWindow() {
           hoverWindowRef.current = candidate;
           setHoverWindow(candidate);
         }
+        const currentSelection = selectionRef.current;
+        const regionPhase =
+          phaseRef.current === "selecting" || phaseRef.current === "record-options";
+        setHoverHandle(
+          regionPhase && currentSelection
+            ? hitTestHandle(p, currentSelection, HANDLE_HIT_RADIUS)
+            : null,
+        );
+        setHoverInsideSelection(regionPhase && !!currentSelection && contains(currentSelection, p));
         return;
       }
       setHoverWindow(null);
@@ -930,6 +1249,33 @@ export function OverlayWindow() {
 
   // Switching modes clears transient UI while reusing a completed selection.
   // OCR starts only from this explicit action or a committed pointer release.
+  // Remember the mode the user actually works in, debounced so holding a mode
+  // key or spinning the wheel still writes once. Explicit entry points
+  // (record/OCR shortcuts) force their own mode for that session.
+  const persistCaptureMode = useCallback((value: Mode) => {
+    if (modeWriteTimerRef.current !== null) clearTimeout(modeWriteTimerRef.current);
+    modeWriteTimerRef.current = setTimeout(() => {
+      modeWriteTimerRef.current = null;
+      void api.setCaptureMode(value).catch(() => {});
+    }, CAPTURE_MODE_WRITE_DELAY_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      // Only a debounce that never fired needs the closing write. Writing on
+      // every unmount would let a peer display overlay that never changed its
+      // mode overwrite the choice made on the display the user worked in.
+      if (modeWriteTimerRef.current === null) return;
+      clearTimeout(modeWriteTimerRef.current);
+      modeWriteTimerRef.current = null;
+      // A capture that failed before its context arrived never learned the
+      // backend's resolved mode; writing the local default would clobber it.
+      if (!modeResolvedRef.current) return;
+      void api.setCaptureMode(modeRef.current).catch(() => {});
+    },
+    [],
+  );
+
   const switchMode = useCallback(
     (next: Mode) => {
       if (completionLock.locked) return;
@@ -938,6 +1284,7 @@ export function OverlayWindow() {
       discardQr();
       modeRef.current = next;
       setMode(next);
+      persistCaptureMode(next);
       setSizeControlsOpen(false);
       setPhase("selecting");
       setDrag(null);
@@ -968,8 +1315,63 @@ export function OverlayWindow() {
       // With a valid region: screenshot re-shows the toolbar (selecting
       // phase with a selection); record shows the options popover.
     },
-    [completionLock, discardPreparedOcr, discardQr, runOcr],
+    [completionLock, discardPreparedOcr, discardQr, runOcr, persistCaptureMode],
   );
+
+  // --- mode switching without moving the pointer ---
+  // Digits pick a mode outright; the wheel cycles them in place. Both only
+  // apply while no annotation or result surface owns the overlay, and both
+  // ignore editable controls so numeric inputs keep their native behavior.
+  useEffect(() => {
+    const onModeKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (completionLock.locked) return;
+      if (isTextComposition(e)) return;
+      if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]")) return;
+      if (!canSwitchMode(phaseRef.current)) return;
+      const next = modeForKey(e.key);
+      if (!next) return;
+      e.preventDefault();
+      switchMode(next);
+    };
+    const onModeWheel = (e: WheelEvent) => {
+      if (completionLock.locked) return;
+      if (!canSwitchMode(phaseRef.current)) return;
+      // Panels with their own scrolling range keep the wheel: the mode
+      // selector is draggable chrome, the recording options scroll, and the
+      // size fields need their native stepper behavior.
+      if (
+        e.target instanceof Element &&
+        e.target.closest(
+          ".kiri-mode-select, .kiri-capture-toolbar, .kiri-record-options, " +
+            ".kiri-capture-tool-options, .kiri-capture-dimension, .kiri-color-picker",
+        )
+      ) return;
+      const result = wheelModeStep(
+        wheelStateRef.current,
+        normalizeWheelDelta(e.deltaY, e.deltaMode),
+        performance.now(),
+      );
+      wheelStateRef.current = result.state;
+      if (!result.direction) return;
+      e.preventDefault();
+      switchMode(cycleMode(modeRef.current, result.direction));
+    };
+    window.addEventListener("keydown", onModeKeyDown);
+    window.addEventListener("wheel", onModeWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", onModeKeyDown);
+      window.removeEventListener("wheel", onModeWheel);
+    };
+  }, [completionLock, switchMode]);
+
+  // Leaving a region phase invalidates hover hit-test state gathered on the
+  // frozen screen; a stale handle would otherwise keep a resize cursor.
+  useEffect(() => {
+    if (phase === "mode-select" || phase === "selecting" || phase === "record-options") return;
+    setHoverHandle(null);
+    setHoverInsideSelection(false);
+  }, [phase]);
 
   // --- render ---
   const selectingRect = drag && drag.moved && !resizeHandle ? normalized(drag.start, drag.current) : null;
@@ -980,12 +1382,31 @@ export function OverlayWindow() {
     (mode === "record" && (phase === "selecting" || phase === "record-options"));
   const showSizeControls = sizeControlsOpen && canResizeSelection;
 
+  // A confirmed capture renders no editing UI at all. The window is about to
+  // be destroyed; a transparent page is better than leaving a frozen
+  // screenshot and its toolbar behind if the native close lags.
+  //
+  // A pending Pin handoff is hidden instead of unmounted: the annotation canvas
+  // has to stay mounted so the export can still run, and a handoff that fails
+  // must return the editor with its annotations intact. The overlay window is
+  // transparent, so an invisible tree shows the desktop underneath.
+  if (confirmed) {
+    return (
+      <div
+        className="overlay-root kiri-dark"
+        aria-hidden="true"
+        style={{ position: "fixed", inset: 0, background: "transparent" }}
+      />
+    );
+  }
+
   return (
     <div
       className="overlay-root kiri-dark"
       aria-busy={completing}
       data-interaction-disabled={completing || undefined}
-      inert={completing}
+      data-handoff={pinning ? "pin" : undefined}
+      inert={completing || pinning}
       style={{
         position: "fixed",
         left: 0,
@@ -999,12 +1420,20 @@ export function OverlayWindow() {
         // frozen image is ready (mirroring the original's freeze behavior).
         background: frozenSrc ? "#141414" : "transparent",
         overflow: "hidden",
-        cursor:
-          completing
-            ? "progress"
-            : phase === "selecting" || phase === "record-options"
-            ? "crosshair"
-            : "default",
+        // A pin handoff hides the whole editor without unmounting it: the
+        // annotation canvas must survive for the export and for a retry, and a
+        // transparent window shows the desktop once nothing paints.
+        visibility: pinning ? "hidden" : undefined,
+        pointerEvents: pinning ? "none" : undefined,
+        cursor: interactionCursor({
+          completing,
+          phase,
+          resizeHandle,
+          moving: !!moveDrag,
+          dragging: !!drag,
+          hoverHandle,
+          hoverInside: hoverInsideSelection,
+        }),
       }}
       onPointerDown={completing || phase === "annotating" ? undefined : onPointerDown}
       onPointerDownCapture={colorPicker.clear}
@@ -1019,7 +1448,7 @@ export function OverlayWindow() {
         const eligible = event.target === event.currentTarget &&
           modeRef.current === "screenshot" && phaseRef.current === "selecting" &&
           !selectionClickMovedRef.current && !!region && isValidSelection(region, 3) &&
-          contains(region, point) && !hitTestHandle(point, region, 10);
+          contains(region, point) && !hitTestHandle(point, region, HANDLE_HIT_RADIUS);
         doubleClickCanFinishRef.current = event.detail === 1
           ? eligible : doubleClickCanFinishRef.current && eligible;
       }}
@@ -1229,7 +1658,7 @@ export function OverlayWindow() {
       {/* Mode selector — ALWAYS visible (spec §1.2: never hidden), so the
           mode can be switched at any point: before/during selection and
           after a region is chosen (spec §2.4 changeCaptureMode). */}
-      {phase !== "ocr-result" && phase !== "qr-result" && (
+      {!committing && phase !== "ocr-result" && phase !== "qr-result" && (
         <>
           <div
             ref={modeSelectorRef}
@@ -1261,29 +1690,34 @@ export function OverlayWindow() {
               active={mode === "screenshot"}
               icon="camera.viewfinder"
               label={t("Screenshot")}
+              badge="1"
               onClick={() => switchMode("screenshot")}
             />
             <ModeButton
               active={mode === "record"}
               icon="record.circle"
               label={t("Record")}
+              badge="2"
               onClick={() => switchMode("record")}
             />
             <ModeButton
               active={mode === "ocr"}
               icon="text.viewfinder"
               label={t("OCR")}
+              badge="3"
               onClick={() => switchMode("ocr")}
             />
           </div>
           {!selection && (
             <HintLabel
               text={
-                mode === "screenshot"
+                (mode === "screenshot"
                   ? t("Drag to choose a capture area   ·   Click a window   ·   Esc to cancel")
                   : mode === "record"
                     ? t("Drag to choose a recording area   ·   Click a window   ·   Esc to cancel")
-                    : t("Drag to choose text to recognize   ·   Esc to cancel")
+                    : t("Drag to choose text to recognize   ·   Esc to cancel")) +
+                "   ·   " +
+                t("Press 1 / 2 / 3 to change mode")
               }
               top={DEFAULT_HINT_TOP}
             />
@@ -1321,7 +1755,6 @@ export function OverlayWindow() {
       {phase === "ocr-result" && (
         <OcrPanel
           text={ocrText}
-          saved={ocrSaved}
           failed={ocrFailed}
           anchor={selection ?? { x: 0, y: 0, width: bounds.width, height: 0 }}
           bounds={bounds}
@@ -1445,6 +1878,7 @@ function ModeButton(props: {
   active: boolean;
   icon: IconName;
   label: string;
+  badge?: string;
   onClick(): void;
 }) {
   return (
@@ -1452,11 +1886,17 @@ function ModeButton(props: {
       type="button"
       onClick={props.onClick}
       className="kiri-mode-btn"
+      aria-keyshortcuts={props.badge}
       data-active={props.active || undefined}
     >
       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
         <KiriIcon name={props.icon} size={14} />
         {props.label}
+        {props.badge && (
+          <span className="kiri-mode-btn__badge" aria-hidden="true">
+            {props.badge}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -1577,7 +2017,6 @@ function SizeBadge(props: { rect: Rect; bounds: Rect; pixelScale: number }) {
 }
 
 function OcrPanel(props: {
-  saved: boolean;
   text: string;
   failed: boolean;
   anchor: Rect;
@@ -1635,9 +2074,6 @@ function OcrPanel(props: {
         boxShadow: "0 16px 42px rgba(0,0,0,0.22)",
       }}
     >
-      {!failed && text.trim() && <div role="status" style={{ flexShrink: 0, fontSize: 11, color: "var(--kiri-secondary-label)" }}>
-        {t(props.saved ? "Saved to Text History" : "History wasn't saved. Copy the text before closing.")}
-      </div>}
       <div style={{ display: "flex", flexShrink: 0, justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span
@@ -1689,6 +2125,7 @@ function OcrPanel(props: {
           font: "450 13px/1.48 var(--kiri-font-ui)",
           userSelect: "text",
           WebkitUserSelect: "text",
+          cursor: "text",
           whiteSpace: "pre-wrap",
           border: "1px solid rgba(255,255,255,0.24)",
           boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.08)",

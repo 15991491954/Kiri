@@ -1,5 +1,5 @@
 /**
- * Kiri i18n:
+ * Lumen i18n:
  *  - keys are the English strings themselves (English fallback)
  *  - follows the OS preferred language; seven languages are supported
  *  - the user's manual choice is persisted by the backend (language.json)
@@ -79,7 +79,7 @@ export function t(key: string): string {
 }
 
 /**
- * Kiri formatting: `%@` consumes the next argument as a string,
+ * Lumen formatting: `%@` consumes the next argument as a string,
  * `%d` formats the next argument as an integer.
  */
 export function fmt(key: string, ...args: (string | number)[]): string {

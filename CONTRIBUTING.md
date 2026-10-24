@@ -13,6 +13,18 @@ requires macOS 14+; Windows-specific behavior is also built in CI.
 Install Xcode Command Line Tools on macOS, MSVC C++ build tools on Windows,
 or the [Ubuntu dependencies](docs/linux.md#build-from-source) on Linux.
 
+On Windows, an ordinary PowerShell session does not inherit the MSVC
+environment, so `cargo` may fail with `linker link.exe not found`. Load the
+toolchain once per session (or use the wrapper for a single command):
+
+```powershell
+. .\scripts\windows-msvc-env.ps1
+cargo check --manifest-path src-tauri/Cargo.toml
+
+# or
+.\scripts\cargo.ps1 check --manifest-path src-tauri/Cargo.toml
+```
+
 ```bash
 git clone https://github.com/yuxino/kiri.git
 cd kiri

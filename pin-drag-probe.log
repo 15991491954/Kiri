@@ -1,0 +1,5 @@
+pin=2296180
+start=1041,388 424x324
+centerDrag=1082,416 moved=41,28
+edgeDrag=1082,379 size=524x399 deltaW=100
+afterEsc=2296180

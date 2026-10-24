@@ -1,0 +1,69 @@
+ï»¿===== paste-image =====
+CLIP_HAS_IMAGE=True
+PINS=1
+hwnd=0x1581334 pid=32376 rect=2050,600 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+CLIP_STILL_HAS_IMAGE=True
+===== wheel =====
+BEFORE=2050,600 300x200
+AFTER_UP=2035,590 330x220
+BADGES=1 visible=1
+  BADGE hwnd=0xDC134C pid=32376 rect=2043,598 96x36 visible=True ex=0x80800A8 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+  BADGE_PATH=E:\ÏîÄ¿\KiriÂ¼ÆÁ\Kiri\Kiri\.cursor\pin-badge.png
+RATIO=1.1 EXPECTED=1.1
+BADGE_VISIBLE_AFTER_1.6S=0
+AFTER_DOWN=2050,600 300x200
+DOWN_RATIO=0.9091 EXPECTED=0.9091
+===== paste-image =====
+CLIP_HAS_IMAGE=True
+PINS=2
+hwnd=0x8104CA pid=32376 rect=2074,624 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+hwnd=0x1581334 pid=32376 rect=2050,600 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+CLIP_STILL_HAS_IMAGE=True
+===== drag =====
+BEFORE=2050,600 300x200
+AFTER =2050,600 300x200
+DELTA =0,0 EXPECTED=40,32
+SIZE_UNCHANGED=True
+===== dragfast =====
+BEFORE=2050,600 AFTER=2050,600
+DELTA =0,0 EXPECTED=-220,140
+===== topmost =====
+HIT_BEFORE=0x1581334 pin=0x1581334
+NOTEPAD=0x440504 FG=0x440504
+HIT_AFTER=0x1581334 class=KiriPinWindow pinOnTop=True
+FG_AFTER_PIN_CLICK=0x440504 stillNotepad=True
+===== escape =====
+TARGET=hwnd=0x8104CA pid=32376 rect=1894,796 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+OTHER =hwnd=0x1581334 pid=32376 rect=2050,600 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+PINS_AFTER=1 TARGET_DESTROYED=True OTHER_ALIVE=True
+PINS_AFTER_EMPTY_ESC=1
+===== drag =====
+BEFORE=2050,600 300x200
+AFTER =2090,632 300x200
+DELTA =40,32 EXPECTED=40,32
+SIZE_UNCHANGED=True
+===== dragfast =====
+BEFORE=2090,632 AFTER=1870,772
+DELTA =-220,140 EXPECTED=-220,140
+===== paste-text =====
+PINS=2
+hwnd=0x13404D2 pid=32376 rect=1893,892 262x64 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+hwnd=0x1581334 pid=32376 rect=1870,772 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+===== paste-files =====
+PINS=4 FILES=2
+hwnd=0xB80F84 pid=32376 rect=2292,322 160x100 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+hwnd=0xD40DBC pid=32376 rect=2278,298 140x100 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+hwnd=0x13404D2 pid=32376 rect=1893,892 262x64 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+hwnd=0x1581334 pid=32376 rect=1870,772 300x200 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False
+FILES=C:\Users\zhangyan\AppData\Local\Temp\kiri-pin-qa\qa-1.png;C:\Users\zhangyan\AppData\Local\Temp\kiri-pin-qa\qa-2.png
+===== textwrap =====
+NEW_PINS=1
+TEXT_PIN hwnd=0x6904BA pid=32376 rect=1700,514 393x164 visible=True ex=0x8080088 topmost=True layered=True toolwindow=True noactivate=True appwindow=False PATH=E:\ÏîÄ¿\KiriÂ¼ÆÁ\Kiri\Kiri\.cursor\pin-textwrap.png
+CHARS=300
+===== menu =====
+MENU_OPEN=1
+MENU_AFTER_OUTSIDE_CLICK=1
+PINS_AFTER_MENU=5
+===== close-all =====
+PINS_LEFT=0 BADGES_LEFT=1
+IDLE_CPU_MS_OVER_5S=0 WS_MB=54.5 HANDLES=670

@@ -1,0 +1,229 @@
+
+> lumen@1.6.27 tauri E:\项目\Kiri录屏\Kiri\Kiri
+> node scripts/tauri-cli.mjs "build" "--bundles" "nsis" "--config" "src-tauri/tauri.pr-windows.conf.json"
+
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `node src-tauri/installer-theme/build.mjs && pnpm build`
+Shared installer verified: offline, full-color 4x, seven languages.
+
+> lumen@1.6.27 build E:\项目\Kiri录屏\Kiri\Kiri
+> pnpm icons:verify && tsc && vite build
+
+
+> lumen@1.6.27 icons:verify E:\项目\Kiri录屏\Kiri\Kiri
+> node scripts/app-icons.mjs verify
+
+App icon verification passed: transparent corners and visual-safe sizing are present in PNG, ICNS, and ICO assets.
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 1953 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                       0.40 kB │ gzip:   0.27 kB
+dist/assets/RecordingRegionWindow-CS1LJXue.css        0.14 kB │ gzip:   0.13 kB
+dist/assets/ScrollCaptureRegionWindow-Cc1BR_yo.css    0.74 kB │ gzip:   0.34 kB
+dist/assets/ChoiceSelect-B5vocGy1.css                 1.62 kB │ gzip:   0.67 kB
+dist/assets/CountdownWindow-xVy6FRyX.css              1.88 kB │ gzip:   0.78 kB
+dist/assets/LibraryWindow-Cxu52G67.css                2.02 kB │ gzip:   0.75 kB
+dist/assets/PinWindow-DNGVz9FF.css                    2.11 kB │ gzip:   0.78 kB
+dist/assets/text-result-DrmsHuKc.css                  2.14 kB │ gzip:   0.76 kB
+dist/assets/EditorWindow-Dz16FN4L.css                 2.19 kB │ gzip:   0.83 kB
+dist/assets/AnnotationToolbarButton-Bj3gqgoi.css      3.17 kB │ gzip:   0.94 kB
+dist/assets/ScrollCaptureWindow-BxDAnNge.css          3.59 kB │ gzip:   1.00 kB
+dist/assets/OverlayWindow-CydDC7Kj.css                6.53 kB │ gzip:   1.80 kB
+dist/assets/QrOverlay-COgPmypY.css                    9.69 kB │ gzip:   2.34 kB
+dist/assets/SettingsView-pMM6YyRV.css                24.36 kB │ gzip:   4.58 kB
+dist/assets/ViewerWindow-2BehOF_a.css                39.71 kB │ gzip:   7.04 kB
+dist/assets/index-DyxdtZeC.css                       41.58 kB │ gzip:   7.43 kB
+dist/assets/text-result-DECCue9K.js                   0.07 kB │ gzip:   0.08 kB
+dist/assets/RecordingRegionWindow-C_rMuz3m.js         0.16 kB │ gzip:   0.15 kB
+dist/assets/rotate-ccw-DfLsco8f.js                    0.21 kB │ gzip:   0.19 kB
+dist/assets/image-plus-BktDbz8e.js                    0.37 kB │ gzip:   0.26 kB
+dist/assets/grip-vertical-ByTrc2yO.js                 0.37 kB │ gzip:   0.20 kB
+dist/assets/volume-2-CeO60PJS.js                      0.40 kB │ gzip:   0.28 kB
+dist/assets/gif-conversion-DHnRzlAJ.js                0.46 kB │ gzip:   0.25 kB
+dist/assets/viewer-copy-shortcut-BBYkuaZx.js          0.49 kB │ gzip:   0.34 kB
+dist/assets/text-composition-DdDY-FLt.js              0.60 kB │ gzip:   0.36 kB
+dist/assets/providerLabel-BTRiigRB.js                 1.05 kB │ gzip:   0.56 kB
+dist/assets/RippleWindow-CDjvwLik.js                  1.36 kB │ gzip:   0.77 kB
+dist/assets/event-CKAwOiig.js                         1.38 kB │ gzip:   0.67 kB
+dist/assets/ScrollCaptureRegionWindow-Db20KtYr.js     1.75 kB │ gzip:   0.75 kB
+dist/assets/ConfirmWindow-5y-9z33l.js                 2.25 kB │ gzip:   1.07 kB
+dist/assets/CountdownWindow-nzA2FZ7g.js               2.73 kB │ gzip:   1.24 kB
+dist/assets/OcrDialog-D21MguOY.js                     3.10 kB │ gzip:   1.27 kB
+dist/assets/ChoiceSelect-JvOF7xhW.js                  3.91 kB │ gzip:   1.58 kB
+dist/assets/ControlPanelWindow-Cv7sbFZn.js            5.61 kB │ gzip:   2.30 kB
+dist/assets/PinWindow-CiJi546F.js                     6.20 kB │ gzip:   2.30 kB
+dist/assets/ipc-D2zvInYZ.js                           8.29 kB │ gzip:   2.81 kB
+dist/assets/ScrollCaptureWindow-Dqskzfi9.js          10.59 kB │ gzip:   4.05 kB
+dist/assets/KiriIcons-CphDgcVN.js                    12.12 kB │ gzip:   4.58 kB
+dist/assets/window-DdMCzNex.js                       13.37 kB │ gzip:   3.29 kB
+dist/assets/QrOverlay-D4-6rdy3.js                    16.42 kB │ gzip:   5.34 kB
+dist/assets/ToastWindow-CFPAMqLu.js                  17.11 kB │ gzip:   4.80 kB
+dist/assets/EditorWindow-ClULjUbv.js                 26.16 kB │ gzip:   9.04 kB
+dist/assets/SettingsView-Dg8H2Qzd.js                 47.14 kB │ gzip:  13.29 kB
+dist/assets/LibraryWindow-Dvj2GfMW.js                59.92 kB │ gzip:  18.26 kB
+dist/assets/OverlayWindow-BBIzyVf3.js                62.76 kB │ gzip:  19.84 kB
+dist/assets/AnnotationToolbarButton-Da9DyEej.js      92.59 kB │ gzip:  29.07 kB
+dist/assets/ViewerWindow-eq07xbuZ.js                107.32 kB │ gzip:  34.09 kB
+dist/assets/index-QkYfQr5k.js                       541.68 kB │ gzip: 175.18 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.01s
+   Compiling kiri v1.6.27 (E:\项目\Kiri录屏\Kiri\Kiri\src-tauri)
+warning: unused import: `Path`
+ --> src\record.rs:5:17
+  |
+5 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Context`
+  --> src\platform\windows.rs:10:28
+   |
+10 | use anyhow::{anyhow, bail, Context, Result};
+   |                            ^^^^^^^
+
+warning: variant `Window` is never constructed
+  --> src\capture\scroll.rs:29:5
+   |
+25 | pub enum ScrollTarget {
+   |          ------------ variant in this enum
+...
+29 |     Window {
+   |     ^^^^^^
+   |
+   = note: `ScrollTarget` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `export_gif` is never used
+   --> src\gif.rs:289:8
+    |
+289 | pub fn export_gif(video: &Path, max_long_edge: u32, fps: u32) -> Result<(PathBuf, f64)> {
+    |        ^^^^^^^^^^
+
+warning: variants `Unsupported` and `Denied` are never constructed
+  --> src\platform\mod.rs:30:5
+   |
+28 | pub enum MicrophoneAccess {
+   |          ---------------- variants in this enum
+29 |     Authorized,
+30 |     Unsupported,
+   |     ^^^^^^^^^^^
+31 |     Denied,
+   |     ^^^^^^
+   |
+   = note: `MicrophoneAccess` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `TransientWindowPolicy` is never constructed
+  --> src\platform\mod.rs:49:19
+   |
+49 | pub(super) struct TransientWindowPolicy {
+   |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `policy` is never used
+  --> src\platform\mod.rs:58:14
+   |
+57 | impl TransientWindowRole {
+   | ------------------------ method in this implementation
+58 |     const fn policy(self) -> TransientWindowPolicy {
+   |              ^^^^^^
+
+warning: function `window_capture_id` is never used
+   --> src\platform\mod.rs:461:8
+    |
+461 | pub fn window_capture_id(_app: &tauri::AppHandle, _label: &str) -> Option<u32> {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: variants `RegionExclusion` and `PanelExclusion` are never constructed
+  --> src\scroll_capture.rs:39:5
+   |
+30 | enum StartupStage {
+   |      ------------ variants in this enum
+...
+39 |     RegionExclusion,
+   |     ^^^^^^^^^^^^^^^
+...
+43 |     PanelExclusion,
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `StartupStage` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: function `publish` is never used
+   --> src\portal_shortcuts.rs:155:4
+    |
+155 | fn publish(
+    |    ^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\portal_shortcuts\model.rs:19:5
+   |
+17 | pub enum Status {
+   |          ------ variants in this enum
+18 |     Unsupported,
+19 |     Checking,
+   |     ^^^^^^^^
+20 |     Unavailable,
+   |     ^^^^^^^^^^^
+21 |     Ready,
+   |     ^^^^^
+22 |     Connecting,
+   |     ^^^^^^^^^^
+23 |     Active,
+   |     ^^^^^^
+24 |     Declined,
+   |     ^^^^^^^^
+25 |     Failed,
+   |     ^^^^^^
+26 |     Closed,
+   |     ^^^^^^
+   |
+   = note: `Status` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: methods `clear`, `apply`, `bound`, and `any_bound` are never used
+   --> src\portal_shortcuts\model.rs:69:12
+    |
+ 49 | impl Snapshot {
+    | ------------- methods in this implementation
+...
+ 69 |     pub fn clear(&mut self, status: Status) {
+    |            ^^^^^
+...
+ 77 |     pub fn apply(&mut self, shortcuts: Vec<(String, Option<String>)>, version: u32) {
+    |            ^^^^^
+...
+ 97 |     pub fn bound(&self, id: &str) -> bool {
+    |            ^^^^^
+...
+105 |     pub fn any_bound(&self) -> bool {
+    |            ^^^^^^^^^
+
+warning: variants `OpenSettings`, `QuitKiri`, `OpenInputMonitoringSettings`, and `OpenMicrophoneSettings` are never constructed
+   --> src\state.rs:611:5
+    |
+610 | pub enum RecoveryAction {
+    |          -------------- variants in this enum
+611 |     OpenSettings,
+    |     ^^^^^^^^^^^^
+612 |     QuitKiri,
+    |     ^^^^^^^^
+613 |     OpenInputMonitoringSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+614 |     OpenMicrophoneSettings,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RecoveryAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `kiri` (lib) generated 13 warnings (run `cargo fix --lib -p kiri` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 5m 24s
+       Built application at: E:\项目\Kiri录屏\Kiri\Kiri\src-tauri\target\release\kiri.exe
+        Info Patching E:\项目\Kiri录屏\Kiri\Kiri\src-tauri\target\release\kiri.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce E:\项目\Kiri录屏\Kiri\Kiri\src-tauri\target\release\bundle\nsis\Lumen_1.6.27_x64-setup.exe
+    Finished 1 bundle at:
+        E:\项目\Kiri录屏\Kiri\Kiri\src-tauri\target\release\bundle\nsis\Lumen_1.6.27_x64-setup.exe
+

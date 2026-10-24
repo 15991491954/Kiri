@@ -69,7 +69,7 @@ pub async fn export_selected_assets(
             let mut failed = Vec::new();
             for id in parsed {
                 let Some(asset) = library.asset_by_id(&id) else { failed.push(id.to_string()); continue; };
-                if asset.trashed_at.is_some() || asset.ocr_text.is_some() {
+                if asset.trashed_at.is_some() {
                     failed.push(asset.filename.clone()); continue;
                 }
                 match library.readable_asset_url(asset).and_then(|path| File::open(path).map_err(Into::into)) {

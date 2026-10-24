@@ -80,7 +80,7 @@ export function StartupSettingsRow() {
         <span id={descriptionId}>{t(status?.supported === false
           ? "Startup is unavailable for this installation."
           : status?.requiresApproval
-            ? "Not active. Allow Kiri in your system's startup settings."
+            ? "Not active. Allow Lumen in your system's startup settings."
             : "Start in the background without opening the library.")}</span>
         {error && <span className="kiri-storage-error" role="alert">{t(error)}</span>}
       </div>

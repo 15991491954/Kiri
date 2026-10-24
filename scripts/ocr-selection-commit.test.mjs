@@ -34,7 +34,7 @@ test('explicit OCR mode switching reuses a finished selection once',()=>{
  const start=source.indexOf('const switchMode = useCallback('),end=source.indexOf('// --- toolbar placement',start);
  const mode=source.slice(start,end);
  assert.match(mode,/void runOcr\(selectionRef\.current\)/);
- assert.match(mode,/\[completionLock, discardPreparedOcr, discardQr, runOcr\]/);
+ assert.match(mode,/\[completionLock, discardPreparedOcr, discardQr, runOcr, persistCaptureMode\]/);
 });
 
 test('toolbar OCR is explicit, disabled while completing and independent of screenshot completion', () => {

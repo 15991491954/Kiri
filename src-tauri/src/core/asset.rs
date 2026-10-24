@@ -73,13 +73,14 @@ pub struct CaptureAsset {
     pub filename: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub title: Option<String>,
-    /// Recognized text; its image asset is an immutable OCR source snapshot.
+    /// Legacy text from removed OCR-history records. Retained so old libraries
+    /// keep searching and round-tripping it; new captures leave this unset.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ocr_text: Option<String>,
-    /// Original recognition retained after a user correction; absent until edited.
+    /// Legacy original recognition preserved by the removed text editor.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ocr_original_text: Option<String>,
-    /// Saved QR payload; absent in older libraries.
+    /// Legacy payload from removed QR-favorite records.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub qr_text: Option<String>,
     /// User-assigned labels (metadata only, like the Swift roadmap's Tags).
