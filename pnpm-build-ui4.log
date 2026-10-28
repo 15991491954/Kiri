@@ -1,0 +1,12 @@
+
+> lumen@1.6.27 build E:\项目\Kiri录屏\Kiri\Kiri
+> pnpm icons:verify && tsc && vite build
+
+
+> lumen@1.6.27 icons:verify E:\项目\Kiri录屏\Kiri\Kiri
+> node scripts/app-icons.mjs verify
+
+App icon verification passed: transparent corners and visual-safe sizing are present in PNG, ICNS, and ICO assets.
+src/settings/useAppUpdater.ts(3,1): error TS6133: 'getCurrentWindow' is declared but its value is never read.
+src/settings/useAppUpdater.ts(43,10): error TS6133: 'platformResolved' is declared but its value is never read.
+ ELIFECYCLE  Command failed with exit code 2.

@@ -48,13 +48,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     UpdateLayeredWindow, WindowFromPoint, CS_DBLCLKS, EVENT_SYSTEM_FOREGROUND,
     GA_ROOT, GWL_EXSTYLE, GWLP_USERDATA, HWND_BOTTOM, HWND_MESSAGE, HWND_NOTOPMOST, HWND_TOPMOST,
     IDC_ARROW, IDC_SIZENS, IDC_SIZENESW, IDC_SIZENWSE, IDC_SIZEWE, IDC_SIZEALL, MA_ACTIVATE,
-    MA_NOACTIVATE, MF_CHECKED, MF_STRING, PM_NOREMOVE,
+    MA_NOACTIVATE, MF_CHECKED, MF_SEPARATOR, MF_STRING, PM_NOREMOVE,
     SPI_GETMOUSEWHEELROUTING,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
     SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TPM_RIGHTBUTTON, ULW_ALPHA,
     WDA_EXCLUDEFROMCAPTURE, WH_KEYBOARD_LL, WH_MOUSE_LL, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT,
     WINEVENT_SKIPOWNPROCESS, WM_APP, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_NCDESTROY, WM_NCHITTEST, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETTINGCHANGE,
     WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
@@ -87,6 +87,13 @@ const WM_PIN_CAPTURE_GATE: u32 = WM_APP + 48;
 const WM_PIN_NUDGE: u32 = WM_APP + 49;
 
 const BADGE_TIMER: usize = 1;
+/// Re-renders the settled zoom with the sharper growth filter. The wheel path
+/// stays on bilinear so every intermediate step is cheap; this timer fires
+/// after the last step and upgrades the same size to bicubic.
+const QUALITY_TIMER: usize = 2;
+/// How long a zoom must rest before the sharp pass runs. One wheel notch is
+/// roughly 100 ms apart, so this only fires when the gesture has stopped.
+const QUALITY_DELAY_MS: u32 = 160;
 /// The percentage pill stays small: it is a transient readout, not a control,
 /// and a large badge competes with the pin it is reporting on.
 const BADGE_WIDTH_DIP: i32 = 56;
@@ -391,6 +398,12 @@ struct PinState {
     /// kept separately; otherwise a wheel down can never return to exactly
     /// 100% and stops one pixel short (measured as "stuck at 101%").
     zoom: f64,
+    /// Opacity of the whole card, 0.1–1.0, adjusted with Ctrl + wheel.
+    opacity: f64,
+    /// While locked the card keeps its position and size: a pointer drag or an
+    /// arrow key does nothing. Zooming still works, because it changes the
+    /// reference size rather than where the pin lives.
+    locked: bool,
     display_bytes: u64,
     drag: Option<DragState>,
     resize: Option<ResizeState>,
@@ -702,6 +715,8 @@ fn create_pin(app: &AppHandle, spec: PinSpec) -> Result<PinId> {
         scale,
         generation: 0,
         zoom: initial_zoom,
+        opacity: 1.0,
+        locked: false,
         display_bytes: 0,
         drag: None,
         resize: None,
@@ -734,12 +749,18 @@ fn start_first_frame(window: HWND, state: *mut PinState) -> Result<()> {
             state.image.width as i32,
             state.image.height as i32,
             state.decor,
+            state.opacity,
         )?;
         show_pin(window, state);
         return Ok(());
     }
     if !request_frame(window, state) {
-        render_frame_inline(window, state);
+        render_frame_inline(window, state, false);
+    }
+    // A pin that opens larger than 100% (display budget or a clamped frame)
+    // settles into the sharp filter instead of keeping the bilinear frame.
+    if state.frame.width > state.image.width as i32 || state.frame.height > state.image.height as i32 {
+        let _ = unsafe { SetTimer(Some(window), QUALITY_TIMER, QUALITY_DELAY_MS, None) };
     }
     Ok(())
 }
@@ -789,6 +810,17 @@ fn show_pin(window: HWND, state: &mut PinState) {
 // ---------------------------------------------------------------------------
 
 fn request_frame(window: HWND, state: &mut PinState) -> bool {
+    enqueue_frame(window, state, false)
+}
+
+/// Sends the settled-frame render that upgrades the current size to the sharp
+/// growth filter. The live wheel keeps [`request_frame`] so it never waits for
+/// a bicubic pass mid-gesture.
+fn request_sharp_frame(window: HWND, state: &mut PinState) -> bool {
+    enqueue_frame(window, state, true)
+}
+
+fn enqueue_frame(window: HWND, state: &mut PinState, sharp: bool) -> bool {
     let Some(sender) = render_sender() else { return false };
     let job = RenderJob {
         hwnd: window.0 as isize,
@@ -797,6 +829,7 @@ fn request_frame(window: HWND, state: &mut PinState) -> bool {
         image: state.image.clone(),
         width: state.frame.width.max(1) as u32,
         height: state.frame.height.max(1) as u32,
+        sharp,
     };
     if sender.send(job).is_err() {
         log::warn!("[pin] resample worker is unavailable");
@@ -810,10 +843,14 @@ fn request_frame(window: HWND, state: &mut PinState) -> bool {
 /// Only used when the resample worker cannot be started. A pin that never
 /// receives a frame would be invisible yet registered and impossible to close,
 /// which is worse than one blocking frame.
-fn render_frame_inline(window: HWND, state: &mut PinState) {
+fn render_frame_inline(window: HWND, state: &mut PinState, sharp: bool) {
     let width = state.frame.width.max(1) as u32;
     let height = state.frame.height.max(1) as u32;
-    let pixels = resample::resample(&state.image, width, height);
+    let pixels = if sharp {
+        resample::resample_sharp(&state.image, width, height)
+    } else {
+        resample::resample(&state.image, width, height)
+    };
     apply_frame(
         window,
         state,
@@ -848,7 +885,14 @@ fn run_resample_worker(receiver: mpsc::Receiver<RenderJob>) {
             latest.insert(job.hwnd, job);
         }
         for (_, job) in std::mem::take(&mut latest) {
-            let pixels = resample::resample(&job.image, job.width, job.height);
+            let pixels = if job.sharp {
+                resample::resample_sharp(&job.image, job.width, job.height)
+            } else {
+                resample::resample(&job.image, job.width, job.height)
+            };
+            if job.sharp {
+                log::debug!("[pin] sharp frame {}x{}", job.width, job.height);
+            }
             let result = Box::into_raw(Box::new(RenderResult {
                 instance: job.instance,
                 generation: job.generation,
@@ -873,6 +917,8 @@ struct RenderJob {
     image: super::PinImage,
     width: u32,
     height: u32,
+    /// `true` for the settled-frame pass that uses the bicubic growth filter.
+    sharp: bool,
 }
 
 struct RenderResult {
@@ -965,13 +1011,14 @@ fn upload_pin_frame(
     width: i32,
     height: i32,
     decor: PinDecor,
+    opacity: f64,
 ) -> Result<()> {
     if width <= 0 || height <= 0 || photo.len() != width as usize * height as usize * 4 {
         return Err(anyhow!("The pinned image size does not match its pixels."));
     }
     let window_rect = decor.window_rect(PinRect::new(0, 0, width, height));
     upload_layered(window, window_rect.width, window_rect.height, |bits| {
-        compose_pin_frame(bits, window_rect.width, window_rect.height, photo, width, height, decor);
+        compose_pin_frame(bits, window_rect.width, window_rect.height, photo, width, height, decor, opacity);
     })
 }
 
@@ -1013,6 +1060,7 @@ fn compose_pin_frame(
     width: i32,
     height: i32,
     decor: PinDecor,
+    opacity: f64,
 ) {
     let (window_width_px, window_height_px) = (window_width as usize, window_height as usize);
     let (width_px, height_px) = (width as usize, height as usize);
@@ -1124,6 +1172,14 @@ fn compose_pin_frame(
             }
         }
     }
+    if opacity < 0.999 {
+        let factor = opacity.clamp(0.0, 1.0);
+        for pixel in bits.chunks_exact_mut(4) {
+            for channel in pixel.iter_mut() {
+                *channel = (f64::from(*channel) * factor).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1144,6 +1200,10 @@ unsafe extern "system" fn pin_proc(window: HWND, msg: u32, wparam: WPARAM, lpara
                     cursor = PinCursor::Move;
                 } else if let Some(resize) = state.resize.as_ref() {
                     cursor = resize.handle.cursor_description();
+                } else if state.locked {
+                    // A locked card cannot be moved or resized, so it must not
+                    // advertise either with a resize/move cursor.
+                    cursor = PinCursor::Arrow;
                 } else {
                     let mut point = POINT::default();
                     if unsafe { GetCursorPos(&mut point) }.is_ok() {
@@ -1213,6 +1273,14 @@ unsafe extern "system" fn pin_proc(window: HWND, msg: u32, wparam: WPARAM, lpara
             }
             LRESULT(0)
         }
+        WM_LBUTTONDBLCLK => {
+            // The first press already started and ended a click gesture; a
+            // double click is the restore-100% shortcut instead.
+            if !state.is_null() {
+                reset_zoom(window, &mut *state);
+            }
+            LRESULT(0)
+        }
         WM_MOUSEMOVE => {
             if !state.is_null() && ((*state).drag.is_some() || (*state).resize.is_some()) {
                 // A release that happened outside the pin is normally caught by
@@ -1260,6 +1328,8 @@ unsafe extern "system" fn pin_proc(window: HWND, msg: u32, wparam: WPARAM, lpara
                             PostMessageW(Some(window), WM_PIN_CLOSE, WPARAM(0), LPARAM(0))
                         };
                     }
+                    // Ctrl+0 restores 100%, the same result as a double click.
+                    vk if vk == 0x30 && control_is_down() => reset_zoom(window, &mut *state),
                     vk if vk == VK_LEFT.0 as u32 => nudge_pin(window, &mut *state, -1, 0),
                     vk if vk == VK_RIGHT.0 as u32 => nudge_pin(window, &mut *state, 1, 0),
                     vk if vk == VK_UP.0 as u32 => nudge_pin(window, &mut *state, 0, -1),
@@ -1280,7 +1350,11 @@ unsafe extern "system" fn pin_proc(window: HWND, msg: u32, wparam: WPARAM, lpara
                 let delta = ((wparam.0 >> 16) & 0xFFFF) as u16 as i16;
                 let x = (lparam.0 & 0xFFFF) as u16 as i16 as i32;
                 let y = ((lparam.0 >> 16) & 0xFFFF) as u16 as i16 as i32;
-                zoom_pin(window, &mut *state, delta, x, y);
+                if wparam.0 & 0x0008 != 0 {
+                    opacity_pin(window, &mut *state, delta, x, y);
+                } else {
+                    zoom_pin(window, &mut *state, delta, x, y);
+                }
             }
             LRESULT(0)
         }
@@ -1316,6 +1390,12 @@ unsafe extern "system" fn pin_proc(window: HWND, msg: u32, wparam: WPARAM, lpara
                     }
                     2 => close_all_pins(),
                     3 => toggle_topmost(window, &mut *state),
+                    4 => copy_pin_image(&*state),
+                    5 => save_pin_image(&*state),
+                    6 => {
+                        (*state).locked = !(*state).locked;
+                        log::info!("[pin] locked={}", (*state).locked);
+                    }
                     _ => {}
                 }
             }
@@ -1339,6 +1419,21 @@ unsafe extern "system" fn pin_proc(window: HWND, msg: u32, wparam: WPARAM, lpara
             let result = *Box::from_raw(lparam.0 as *mut RenderResult);
             if !state.is_null() {
                 apply_frame(window, &mut *state, result);
+            }
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            // The wheel left the pin at this size: re-render it with the sharp
+            // growth filter. Bilinear already put a frame on screen, so the
+            // upgrade is invisible while it is computed.
+            if wparam.0 == QUALITY_TIMER {
+                let _ = KillTimer(Some(window), QUALITY_TIMER);
+                if !state.is_null() {
+                    let state = &mut *state;
+                    if !request_sharp_frame(window, state) {
+                        render_frame_inline(window, state, true);
+                    }
+                }
             }
             LRESULT(0)
         }
@@ -1386,6 +1481,7 @@ fn apply_frame(window: HWND, state: &mut PinState, result: RenderResult) {
         result.width as i32,
         result.height as i32,
         state.decor,
+        state.opacity,
     ) {
         log::warn!("[pin] frame upload failed: {error}");
         return;
@@ -1458,7 +1554,18 @@ fn nudge_pin(window: HWND, state: &mut PinState, x_units: i32, y_units: i32) {
     if x_units == 0 && y_units == 0 {
         return;
     }
-    let step = (PIN_ARROW_STEP_DIP * state.scale).round().max(1.0) as i32;
+    if state.locked {
+        return;
+    }
+    // Ctrl turns the arrow keys into a one-physical-pixel adjustment, for
+    // aligning a reference against the pixel grid. Without it the step is a
+    // display-independent DIP, and Shift multiplies it.
+    let control = (unsafe { GetAsyncKeyState(VK_CONTROL.0 as i32) }) as u16 & 0x8000 != 0;
+    let step = if control {
+        1
+    } else {
+        (PIN_ARROW_STEP_DIP * state.scale).round().max(1.0) as i32
+    };
     let next = PinRect::new(
         state.frame.x.saturating_add(x_units.saturating_mul(step)),
         state.frame.y.saturating_add(y_units.saturating_mul(step)),
@@ -1490,6 +1597,11 @@ fn begin_drag(window: HWND, state: &mut PinState) {
     // Pointing at a pin brings it above its siblings without activating it.
     raise_pin_window(window, state);
     ACTIVE_PIN.store(window.0 as isize, Ordering::Release);
+    // A locked card keeps its place: the click still selects it for the
+    // keyboard, but neither moving nor resizing may start.
+    if state.locked {
+        return;
+    }
     let mut point = POINT::default();
     if unsafe { GetCursorPos(&mut point) }.is_err() {
         return;
@@ -1653,6 +1765,28 @@ fn stepped_zoom(current: f64, factor: f64) -> f64 {
     }
 }
 
+/// Ctrl + wheel: adjusts the opacity of the whole card in 5% steps.
+fn opacity_pin(window: HWND, state: &mut PinState, delta: i16, cursor_x: i32, cursor_y: i32) {
+    if delta == 0 {
+        return;
+    }
+    let step = f64::from(delta) / 120.0 * 0.05;
+    let next = (state.opacity + step).clamp(0.1, 1.0);
+    if (next - state.opacity).abs() < f64::EPSILON {
+        return;
+    }
+    state.opacity = next;
+    state.generation += 1;
+    if !request_frame(window, state) {
+        render_frame_inline(window, state, false);
+    }
+    let anchor = (
+        (f64::from(cursor_x - state.frame.x) / f64::from(state.frame.width.max(1))).clamp(0.0, 1.0),
+        (f64::from(cursor_y - state.frame.y) / f64::from(state.frame.height.max(1))).clamp(0.0, 1.0),
+    );
+    show_badge_value(state, anchor, (next * 100.0).round() as i64);
+}
+
 fn zoom_pin(window: HWND, state: &mut PinState, delta: i16, cursor_x: i32, cursor_y: i32) {
     if delta == 0 {
         return;
@@ -1692,6 +1826,37 @@ fn zoom_pin(window: HWND, state: &mut PinState, delta: i16, cursor_x: i32, curso
     };
     commit_frame_size(window, state, next, applied_zoom);
     show_badge(state, anchor);
+}
+
+/// Restores 100%: one image pixel per physical screen pixel.
+///
+/// Kept as a separate path from the wheel so a double click or Ctrl+0 always
+/// lands exactly on the intrinsic size instead of stepping towards it, and the
+/// badge reports 100%.
+fn reset_zoom(window: HWND, state: &mut PinState) {
+    let image_width = f64::from(state.image.width.max(1));
+    let current_width = f64::from(state.frame.width.max(1));
+    let factor = image_width / current_width;
+    let next = zoom_frame_within(
+        state.frame,
+        factor,
+        (0.5, 0.5),
+        Some(state.image.aspect()),
+        state.scale,
+        Some((state.image.width, state.image.height)),
+    );
+    if next == state.frame {
+        show_badge(state, (0.5, 0.5));
+        return;
+    }
+    if commit_frame_size(window, state, next, 1.0) {
+        show_badge(state, (0.5, 0.5));
+    }
+}
+
+/// True when the Ctrl key is held down for the current key message.
+fn control_is_down() -> bool {
+    (unsafe { GetAsyncKeyState(VK_CONTROL.0 as i32) }) as u16 & 0x8000 != 0
 }
 
 /// Applies a new photo rectangle, shared by wheel zoom and edge resizing.
@@ -1750,7 +1915,15 @@ fn commit_frame_size(window: HWND, state: &mut PinState, next: PinRect, zoom: f6
     let app = state.app.clone();
     with_pins(&app, |pins| pins.set_frame(&label, next));
     if !request_frame(window, state) {
-        render_frame_inline(window, state);
+        render_frame_inline(window, state, false);
+    }
+    // Upgrade the resting size to the sharp growth filter once the gesture
+    // stops. Re-arming the same timer id on every step means only the last
+    // size is re-rendered, and a live wheel never waits for a bicubic pass.
+    // Shrinking shares the fast path's box filter, so it has nothing to
+    // upgrade.
+    if next.width > state.image.width as i32 || next.height > state.image.height as i32 {
+        let _ = unsafe { SetTimer(Some(window), QUALITY_TIMER, QUALITY_DELAY_MS, None) };
     }
     true
 }
@@ -1876,21 +2049,26 @@ fn show_menu(window: HWND, state: &mut PinState, lparam: LPARAM) {
     }
     let (x, y) = (point.x, point.y);
     let checked = if state.wants_topmost { MF_CHECKED } else { MENU_ITEM_FLAGS(0) };
+    let locked = if state.locked { MF_CHECKED } else { MENU_ITEM_FLAGS(0) };
     let language = crate::state::load_language(&state.app);
-    let (close, close_all, pin_on_top) = menu_labels(&language);
+    let labels = menu_labels(&language);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return };
-        let close: Vec<u16> = close.encode_utf16().chain(std::iter::once(0)).collect();
-        let close_all: Vec<u16> = close_all.encode_utf16().chain(std::iter::once(0)).collect();
-        let pin_on_top: Vec<u16> = pin_on_top.encode_utf16().chain(std::iter::once(0)).collect();
-        let _ = AppendMenuW(menu, MF_STRING, 1, windows::core::PCWSTR(close.as_ptr()));
-        let _ = AppendMenuW(menu, MF_STRING, 2, windows::core::PCWSTR(close_all.as_ptr()));
-        let _ = AppendMenuW(
-            menu,
-            MF_STRING | checked,
-            3,
-            windows::core::PCWSTR(pin_on_top.as_ptr()),
-        );
+        let wide = |text: &str| -> Vec<u16> {
+            text.encode_utf16().chain(std::iter::once(0)).collect()
+        };
+        let append = |flags: MENU_ITEM_FLAGS, id: usize, text: &str| {
+            let text = wide(text);
+            let _ = AppendMenuW(menu, flags, id, windows::core::PCWSTR(text.as_ptr()));
+        };
+        append(MF_STRING, 4, labels.copy);
+        append(MF_STRING, 5, labels.save);
+        append(MF_SEPARATOR, 0, "");
+        append(MF_STRING | checked, 3, labels.pin_on_top);
+        append(MF_STRING | locked, 6, labels.lock_position);
+        append(MF_SEPARATOR, 0, "");
+        append(MF_STRING, 1, labels.close);
+        append(MF_STRING, 2, labels.close_all);
         // `TrackPopupMenu` runs a nested message loop on this thread, so the
         // Esc and mouse hooks below are re-entered while the menu is open. A
         // pin is never the foreground window, so that loop receives no
@@ -1907,19 +2085,118 @@ fn show_menu(window: HWND, state: &mut PinState, lparam: LPARAM) {
     }
 }
 
+struct PinMenuLabels {
+    close: &'static str,
+    close_all: &'static str,
+    pin_on_top: &'static str,
+    copy: &'static str,
+    save: &'static str,
+    lock_position: &'static str,
+}
+
 /// Native context-menu labels in the language the rest of Kiri uses.
 ///
 /// The WebView pin renders these through `t()`; a native menu has no i18n
 /// runtime, so it follows the same small-table pattern as the tray menu.
-fn menu_labels(language: &str) -> (&'static str, &'static str, &'static str) {
-    match language {
-        "zh-Hans" => ("关闭", "关闭全部贴图", "保持置顶"),
-        "zh-Hant" => ("關閉", "關閉全部貼圖", "保持置頂"),
-        "ja" => ("閉じる", "すべてのピンを閉じる", "最前面に固定"),
-        "de" => ("Schließen", "Alle Pins schließen", "Im Vordergrund halten"),
-        "fr" => ("Fermer", "Fermer toutes les épingles", "Garder au premier plan"),
-        "ko" => ("닫기", "모든 핀 닫기", "항상 위에 고정"),
-        _ => ("Close", "Close All Pins", "Pin on Top"),
+fn menu_labels(language: &str) -> PinMenuLabels {
+    let (close, close_all, pin_on_top, copy, save, lock_position) = match language {
+        "zh-Hans" => ("关闭", "关闭全部贴图", "保持置顶", "复制图像", "另存为 PNG…", "锁定位置"),
+        "zh-Hant" => ("關閉", "關閉全部貼圖", "保持置頂", "複製影像", "另存為 PNG…", "鎖定位置"),
+        "ja" => ("閉じる", "すべてのピンを閉じる", "最前面に固定", "画像をコピー", "PNG として保存…", "位置を固定"),
+        "de" => ("Schließen", "Alle Pins schließen", "Im Vordergrund halten", "Bild kopieren", "Als PNG speichern…", "Position sperren"),
+        "fr" => ("Fermer", "Fermer toutes les épingles", "Garder au premier plan", "Copier l’image", "Enregistrer en PNG…", "Verrouiller la position"),
+        "ko" => ("닫기", "모든 핀 닫기", "항상 위에 고정", "이미지 복사", "PNG로 저장…", "위치 고정"),
+        _ => ("Close", "Close All Pins", "Pin on Top", "Copy Image", "Save as PNG…", "Lock Position"),
+    };
+    PinMenuLabels { close, close_all, pin_on_top, copy, save, lock_position }
+}
+
+/// Encodes a pin's snapshot as PNG.
+///
+/// `PinImage` holds premultiplied BGRA for layered rendering; PNG and the
+/// clipboard both expect straight RGBA, so every channel is divided back by
+/// the pixel's alpha.
+fn pin_png(image: &super::PinImage) -> Result<Vec<u8>> {
+    let mut rgba = Vec::with_capacity(image.bgra.len());
+    for pixel in image.bgra.chunks_exact(4) {
+        let alpha = u32::from(pixel[3]);
+        let straight = |value: u8| -> u8 {
+            if alpha == 0 {
+                0
+            } else {
+                ((u32::from(value) * 255 + alpha / 2) / alpha).min(255) as u8
+            }
+        };
+        rgba.push(straight(pixel[2]));
+        rgba.push(straight(pixel[1]));
+        rgba.push(straight(pixel[0]));
+        rgba.push(pixel[3]);
+    }
+    let buffer = image::RgbaImage::from_raw(image.width, image.height, rgba)
+        .ok_or_else(|| anyhow!("The pinned image could not be encoded."))?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(buffer)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(|error| anyhow!("The pinned image could not be encoded: {error}"))?;
+    Ok(png.into_inner())
+}
+
+/// Copies the pin's own pixels to the clipboard on a worker thread.
+///
+/// The clipboard can be held by another process for a few milliseconds; doing
+/// that inside the pin's message loop would freeze every other card.
+fn copy_pin_image(state: &PinState) {
+    let image = state.image.clone();
+    let spawned = std::thread::Builder::new()
+        .name("kiri-pin-copy".into())
+        .spawn(move || match pin_png(&image) {
+            Ok(png) => {
+                if let Err(error) = crate::platform::write_image_to_clipboard(&png) {
+                    log::warn!("[pin] clipboard copy failed: {error}");
+                }
+            }
+            Err(error) => log::warn!("[pin] clipboard copy failed: {error}"),
+        });
+    if let Err(error) = spawned {
+        log::warn!("[pin] clipboard copy thread could not start: {error}");
+    }
+}
+
+/// Asks for a destination and writes the pin as PNG.
+fn save_pin_image(state: &PinState) {
+    use tauri_plugin_dialog::DialogExt;
+    let image = state.image.clone();
+    let app = state.app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("kiri-pin-save".into())
+        .spawn(move || {
+            let Ok(png) = pin_png(&image) else {
+                log::warn!("[pin] save failed: the image could not be encoded");
+                return;
+            };
+            let language = crate::core::locale::preferred_language(
+                &crate::state::load_language(&app),
+                &crate::commands::get_locale(),
+            );
+            let filter_label = crate::core::locale::png_filter_label(language).to_string();
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            let destination = app
+                .dialog()
+                .file()
+                .set_file_name(format!("Lumen Pin {stamp}.png"))
+                .add_filter(filter_label, &["png"])
+                .blocking_save_file()
+                .and_then(|path| path.into_path().ok());
+            let Some(path) = destination else { return };
+            if let Err(error) = std::fs::write(&path, &png) {
+                log::warn!("[pin] save failed: {error}");
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("[pin] save thread could not start: {error}");
     }
 }
 
@@ -2389,7 +2666,11 @@ fn apply_capture_gate(active: bool) {
 // ---------------------------------------------------------------------------
 
 fn show_badge(state: &PinState, anchor: (f64, f64)) {
-    let percent = zoom_percent(state.frame, state.image.width);
+    show_badge_value(state, anchor, zoom_percent(state.frame, state.image.width));
+}
+
+/// Shows the transient percentage pill with an explicit value.
+fn show_badge_value(state: &PinState, anchor: (f64, f64), percent: i64) {
     let Some(badge) = ensure_badge(state.scale) else { return };
     let scale = state.scale;
     let margin = (f64::from(BADGE_MARGIN_DIP) * scale).round() as i32;
@@ -2790,6 +3071,7 @@ mod tests {
             width,
             height,
             decor,
+            1.0,
         );
         bits
     }
@@ -2826,6 +3108,30 @@ mod tests {
         let corner = pixel(8, 8);
         assert!(corner[3] < 255, "corner alpha {}", corner[3]);
         assert_ne!(&corner[..3], &[255, 255, 255]);
+    }
+
+    /// Ctrl + wheel lowers the opacity of the whole card, including the glow,
+    /// by scaling the premultiplied frame.
+    #[test]
+    fn opacity_scales_the_premultiplied_frame() {
+        let decor = PinDecor { margin: 4, radius: 2, blur: 4 };
+        let (photo_width, photo_height) = (20, 20);
+        let (window_width, window_height) = (28, 28);
+        let photo = vec![255u8; photo_width * photo_height * 4];
+        let mut bits = vec![0u8; window_width * window_height * 4];
+        compose_pin_frame(
+            &mut bits,
+            window_width as i32,
+            window_height as i32,
+            &photo,
+            photo_width as i32,
+            photo_height as i32,
+            decor,
+            0.5,
+        );
+        let index = ((4 + 10) * window_width + (4 + 10)) * 4;
+        assert_eq!(bits[index + 3], 128, "half opacity keeps half the alpha");
+        assert_eq!(bits[index], 128, "premultiplied colour scales with alpha");
     }
 
     #[test]
@@ -2866,6 +3172,7 @@ mod tests {
             photo_width,
             photo_height,
             decor,
+            1.0
         );
         let over = |x: i32, y: i32, background: u32, channel: usize| -> i32 {
             let index = ((y * window_width + x) * 4) as usize;
@@ -2941,6 +3248,7 @@ mod tests {
             width,
             height,
             decor,
+            1.0,
         );
         let mut output = image::RgbaImage::new(window_width as u32, window_height as u32);
         for y in 0..window_height {
@@ -2967,9 +3275,16 @@ mod tests {
 
     #[test]
     fn menu_labels_cover_supported_languages_and_default_to_english() {
-        assert_eq!(menu_labels("en"), ("Close", "Close All Pins", "Pin on Top"));
-        assert_eq!(menu_labels("zh-Hans").2, "保持置顶");
-        assert_eq!(menu_labels("ja").0, "閉じる");
-        assert_eq!(menu_labels("unknown").1, "Close All Pins");
+        let english = menu_labels("en");
+        assert_eq!(
+            (english.close, english.close_all, english.pin_on_top),
+            ("Close", "Close All Pins", "Pin on Top")
+        );
+        assert_eq!((english.copy, english.save, english.lock_position),
+            ("Copy Image", "Save as PNG…", "Lock Position"));
+        assert_eq!(menu_labels("zh-Hans").pin_on_top, "保持置顶");
+        assert_eq!(menu_labels("zh-Hans").copy, "复制图像");
+        assert_eq!(menu_labels("ja").close, "閉じる");
+        assert_eq!(menu_labels("unknown").close_all, "Close All Pins");
     }
 }

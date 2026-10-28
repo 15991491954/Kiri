@@ -90,6 +90,9 @@ export function PinWindow({ id }: { id: string }) {
   const [onTop, setOnTop] = useState(true);
   const [busy, setBusy] = useState(false);
   const topState = useRef({onTop: true, generation: 0, busy: false});
+  const [locked, setLocked] = useState(false);
+  const lockedRef = useRef(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [error, setError] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -121,6 +124,8 @@ export function PinWindow({ id }: { id: string }) {
     // repeated here.
     return () => window.removeEventListener("wheel", stopPageZoom);
   }, []);
+  const menuRef = useRef(false);
+  menuRef.current = !!menu;
   const showZoom = (size: { width: number; height: number }) => {
     // 100% means one image pixel per physical screen pixel, so the reference is
     // the intrinsic bitmap width. A pin opened on a Retina display starts at
@@ -147,6 +152,23 @@ export function PinWindow({ id }: { id: string }) {
     gesture.pending = { factor: (gesture.pending?.factor ?? 1) * factor, anchorX, anchorY };
     void applyZoom(gesture);
   };
+  // Ctrl+0 and a double click restore one image pixel per physical pixel.
+  // The native Windows pin implements the same shortcut; this stays for the
+  // WebView pin used on macOS and Linux.
+  const resetZoom = async () => {
+    const image = imageSize.current;
+    if (!image) return;
+    try {
+      const size = await getCurrentWindow().innerSize();
+      const factor = image.width / Math.max(1, size.width);
+      if (Math.abs(factor - 1) < 0.005) {
+        showZoom(size);
+        return;
+      }
+      const next = await api.zoomPin(factor, 0.5, 0.5, image.width, image.height);
+      showZoom(next);
+    } catch { /* the window may already be closing */ }
+  };
   const takeOverFrame = () => {
     // A drag or corner resize owns the frame from here on; a queued wheel step
     // would otherwise move the window out from under the pointer that grabbed it.
@@ -160,6 +182,17 @@ export function PinWindow({ id }: { id: string }) {
   }, [id]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menuRef.current) {
+        // Escape dismisses the context menu without closing the pin.
+        event.preventDefault();
+        setMenu(null);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === "0") {
+        event.preventDefault();
+        void resetZoom();
+        return;
+      }
       if (event.key === "Escape" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w")) {
         event.preventDefault(); void getCurrentWindow().close();
       }
@@ -185,6 +218,22 @@ export function PinWindow({ id }: { id: string }) {
     }).catch(() => {});
     return () => { disposed = true; unlisten?.(); };
   }, []);
+  const toggleLock = () => {
+    lockedRef.current = !lockedRef.current;
+    setLocked(lockedRef.current);
+    if (lockedRef.current) {
+      // A gesture in progress must not keep moving a card that is now locked.
+      if (moveGesture.current) {
+        moveGesture.current.cancelled = true;
+        moveGesture.current.pending = null;
+        moveGesture.current = null;
+      }
+      if (resizeGesture.current) {
+        resizeGesture.current.pending = null;
+        resizeGesture.current = null;
+      }
+    }
+  };
   const toggleTop = async () => {
     const state = topState.current;
     if (state.busy) return;
@@ -227,10 +276,14 @@ export function PinWindow({ id }: { id: string }) {
   };
   return <div className="pin-window" aria-label={t("Screenshot Reference")}
     onWheel={handleWheel}
-    onContextMenu={event => event.preventDefault()}
+    onContextMenu={event => {
+      event.preventDefault();
+      setMenu({ x: event.clientX, y: event.clientY });
+    }}
     onPointerDown={() => {
       // Pins are all topmost; pointing at one brings it above its siblings.
       void api.raisePin().catch(() => {});
+      setMenu(null);
     }}>
     <div className="pin-window__actions" onPointerDown={event => event.stopPropagation()}>
       <button className="kiri-pin-action" type="button" disabled={busy}
@@ -242,8 +295,13 @@ export function PinWindow({ id }: { id: string }) {
     {error && <p className="pin-window__error" role="alert">{t("Could not change window pinning on this desktop.")}</p>}
     {zoomHint && <div className="pin-window__zoom" role="status"
       data-corner={zoomHint.corner}>{zoomHint.percent}%</div>}
-    <main className="pin-window__image" onPointerDown={event => {
+    <main className="pin-window__image" onDoubleClick={event => {
+      // Double click restores 100%; the first click already selected the pin.
+      event.preventDefault();
+      void resetZoom();
+    }} onPointerDown={event => {
       if (event.button !== 0) return;
+      if (lockedRef.current) return;
       takeOverFrame();
       if (!/Macintosh|Mac OS X|Windows/i.test(navigator.userAgent)) {
         void getCurrentWindow().startDragging().catch(() => {});
@@ -296,6 +354,7 @@ export function PinWindow({ id }: { id: string }) {
     <div className="pin-window__resize" aria-hidden="true" onPointerDown={event => {
         event.stopPropagation();
         if (event.button !== 0) return;
+        if (lockedRef.current) return;
         takeOverFrame();
         event.currentTarget.setPointerCapture(event.pointerId);
         const gesture: ResizeGesture = { pointerId: event.pointerId, x: event.screenX, y: event.screenY,
@@ -318,5 +377,33 @@ export function PinWindow({ id }: { id: string }) {
         resizeGesture.current = null;
         void applyResize(gesture);
       }} onPointerCancel={() => { resizeGesture.current = null; }} />
+    {menu && <div className="pin-window__menu" role="menu"
+      style={{
+        left: Math.max(0, Math.min(menu.x, window.innerWidth - 180)),
+        top: Math.max(0, Math.min(menu.y, window.innerHeight - 168)),
+      }}
+      onPointerDown={event => event.stopPropagation()}
+      onContextMenu={event => event.preventDefault()}>
+      <button type="button" role="menuitem" onClick={() => {
+        setMenu(null);
+        void api.copyAsset(id).catch(() => {});
+      }}>{t("Copy")}</button>
+      <button type="button" role="menuitem" onClick={() => {
+        setMenu(null);
+        void resetZoom();
+      }}>{t("Reset")} 100%</button>
+      <button type="button" role="menuitem" onClick={() => {
+        setMenu(null);
+        toggleLock();
+      }}>{t(locked ? "Unlock Position" : "Lock Position")}</button>
+      <button type="button" role="menuitem" onClick={() => {
+        setMenu(null);
+        void toggleTop();
+      }}>{t(onTop ? "Unpin" : "Pin on Top")}</button>
+      <button type="button" role="menuitem" onClick={() => {
+        setMenu(null);
+        void getCurrentWindow().close();
+      }}>{t("Close")}</button>
+    </div>}
   </div>;
 }

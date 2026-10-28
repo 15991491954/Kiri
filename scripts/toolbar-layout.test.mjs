@@ -16,12 +16,17 @@ test("800×600 bottom-right region leaves a measured wrapped toolbar above the s
   assert.equal(position.top + size.height, selection.y - 10);
 });
 
-test("wide displays retain the centered row below the selection", () => {
+test("wide displays right-align the row below the selection", () => {
   assert.deepEqual(captureToolbarPosition(
     { x: 500, y: 200, width: 500, height: 150 },
     { x: 0, y: 0, width: 1512, height: 982 },
     { width: 810, height: 48 },
-  ), { left: 345, top: 360 });
+  ), { left: 190, top: 360 });
+  // Right-aligned: the toolbar's right edge meets the selection's right edge.
+  const selection = { x: 500, y: 200, width: 500, height: 150 };
+  const size = { width: 810, height: 48 };
+  const position = captureToolbarPosition(selection, { x: 0, y: 0, width: 1512, height: 982 }, size);
+  assert.equal(position.left + size.width, selection.x + selection.width);
 });
 
 test("all corners remain inside logical viewport bounds after height changes", () => {

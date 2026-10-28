@@ -305,6 +305,21 @@ pub fn clear_image_cache(app: AppHandle) -> Result<usize, String> {
     Ok(removed)
 }
 
+/// Localized confirmation for the tray's "clear image cache" action.
+pub(crate) fn cache_cleared_message(locale: &str, removed: usize) -> String {
+    let language = crate::core::locale::preferred_language("", locale);
+    let template = match language {
+        "zh-Hans" => "已清理图片缓存（%d 张）",
+        "zh-Hant" => "已清理圖片快取（%d 張）",
+        "ja" => "画像キャッシュを削除しました（%d 件）",
+        "de" => "Bildcache geleert (%d)",
+        "ko" => "이미지 캐시를 정리했습니다 (%d개)",
+        "fr" => "Cache d’images vidé (%d)",
+        _ => "Image cache cleared (%d)",
+    };
+    template.replace("%d", &removed.to_string())
+}
+
 fn with_asset_mutation(
     app: &AppHandle,
     id: &str,
@@ -2273,7 +2288,10 @@ fn overlay_label_for(display_index: usize) -> String {
     }
 }
 
-fn capture_context(session: &CaptureSession, display_index: usize) -> CaptureContextDto {
+fn capture_context(
+    session: &CaptureSession,
+    display_index: usize,
+) -> CaptureContextDto {
     let display = session
         .displays
         .get(display_index)
@@ -2471,6 +2489,25 @@ pub fn set_capture_mode(app: AppHandle, mode: String) -> Result<(), String> {
         return Err(error.to_string());
     }
     Ok(())
+}
+
+/// Share the mode one overlay picked with the other displays of the same
+/// capture. Kept separate from the persisted preference: a peer that never
+/// changed its own mode must not clobber the user's choice, but every visible
+/// overlay should still show the same mode.
+#[tauri::command]
+pub fn sync_capture_mode(app: AppHandle, mode: String) -> Result<(), String> {
+    let parsed = crate::state::parse_capture_mode(&mode)
+        .ok_or_else(|| format!("Unknown capture mode: {mode}"))?;
+    {
+        let state = app.state::<AppState>();
+        let mut capture = state.capture.lock().unwrap();
+        if let Some(session) = capture.session.as_mut() {
+            session.initial_mode = parsed;
+        }
+    }
+    app.emit("capture-mode-changed", mode)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -7305,6 +7342,18 @@ pub fn quit_app(app: AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod command_security_tests {
+    #[test]
+    fn cache_cleared_message_localizes_the_count() {
+        assert_eq!(
+            super::cache_cleared_message("zh-Hans", 3),
+            "已清理图片缓存（3 张）"
+        );
+        assert_eq!(
+            super::cache_cleared_message("en-US", 0),
+            "Image cache cleared (0)"
+        );
+    }
+
     use super::{
         capture_failure_requires_global_error, cleanup_finalization_files, commit_editor_update,
         complete_library_deletion, crop_annotation_source, crop_editor_source,

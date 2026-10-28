@@ -12,9 +12,15 @@ export function modeForKey(key) {
   return MODE_KEYS[key] ?? null;
 }
 
-/** Phases where changing mode cannot destroy in-progress annotation work. */
+/** Phases where changing mode cannot destroy in-progress annotation work.
+ *
+ * A finished OCR result or its consent prompt is a read-only surface: leaving
+ * it must stay possible without closing the capture, so the mode selector and
+ * the wheel keep working there.
+ */
 export function canSwitchMode(phase) {
-  return phase === "mode-select" || phase === "selecting" || phase === "record-options";
+  return phase === "mode-select" || phase === "selecting" || phase === "record-options"
+    || phase === "ocr-result" || phase === "ocr-consent";
 }
 
 /** Cycle one step through MODE_ORDER; direction 0 or an unknown mode is a no-op. */

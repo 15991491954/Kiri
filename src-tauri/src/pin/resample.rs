@@ -5,6 +5,12 @@
 //! continuous wheel zoom cannot use it. These routines are band-free (every
 //! output row is computed independently, so parallel chunks are bit-identical
 //! to a single thread) and allocate exactly one output image.
+//!
+//! Two growth filters exist: [`resample`] uses bilinear weights because a
+//! wheel burst needs every intermediate frame cheaply, and
+//! [`resample_sharp`] uses a Catmull-Rom bicubic for the settled frame, where
+//! the one-time cost buys text and one-pixel lines that stay crisp instead of
+//! fading into a soft ramp. Both share the same coverage-weighted shrink.
 
 use std::sync::Arc;
 
@@ -24,8 +30,10 @@ pub fn worker_threads() -> usize {
 /// Scales `source` to the requested size.
 ///
 /// At 1:1 the caller's own buffer is returned without touching a pixel, which
-/// is what makes 100% sharp and free. Shrinking on both axes uses a box filter
-/// (bilinear would skip source pixels and alias text); growing uses bilinear.
+/// is what makes 100% sharp and free. Shrinking on both axes uses a
+/// coverage-weighted box filter, so a mild reduction keeps text edges instead
+/// of averaging them with an uncovered neighbour (bilinear would skip source
+/// pixels and alias text); growing uses bilinear.
 pub fn resample(source: &PinImage, width: u32, height: u32) -> Arc<[u8]> {
     resample_with_threads(source, width, height, worker_threads())
 }
@@ -48,6 +56,121 @@ pub fn resample_with_threads(
         bilinear(source, width, height, threads)
     };
     Arc::from(pixels)
+}
+
+/// Scales `source` to the requested size with the settled-frame growth filter.
+///
+/// Shrinking and the 1:1 fast path are identical to [`resample`]; growth uses
+/// Catmull-Rom bicubic so a zoomed pin keeps text stems and one-pixel lines
+/// near their source contrast. Bilinear leaves a soft two-pixel ramp at 200%,
+/// which reads as "the pin got blurry as soon as I zoomed in".
+pub fn resample_sharp(source: &PinImage, width: u32, height: u32) -> Arc<[u8]> {
+    resample_sharp_with_threads(source, width, height, worker_threads())
+}
+
+pub fn resample_sharp_with_threads(
+    source: &PinImage,
+    width: u32,
+    height: u32,
+    threads: usize,
+) -> Arc<[u8]> {
+    let width = width.max(1);
+    let height = height.max(1);
+    if width == source.width && height == source.height {
+        return Arc::clone(&source.bgra);
+    }
+    let threads = threads.max(1);
+    let pixels = if width <= source.width && height <= source.height {
+        box_reduce(source, width, height, threads)
+    } else {
+        bicubic(source, width, height, threads)
+    };
+    Arc::from(pixels)
+}
+
+/// Catmull-Rom weights for one axis, fixed point and summing to exactly 256.
+///
+/// The four taps straddle the sample point. Redistributing the rounding error
+/// onto the largest weight keeps a uniform surface uniform, which matters for
+/// premultiplied alpha: a sum that drifts by one unit per pixel shows up as a
+/// faint band on flat fills.
+fn catmull_rom_weights(fraction: f64) -> [i32; 4] {
+    let mut weights = [0i32; 4];
+    let mut sum = 0i32;
+    for (index, distance) in [fraction + 1.0, fraction, 1.0 - fraction, 2.0 - fraction]
+        .into_iter()
+        .enumerate()
+    {
+        let distance = distance.abs();
+        let value = if distance <= 1.0 {
+            1.5 * distance.powi(3) - 2.5 * distance.powi(2) + 1.0
+        } else if distance < 2.0 {
+            -0.5 * distance.powi(3) + 2.5 * distance.powi(2) - 4.0 * distance + 2.0
+        } else {
+            0.0
+        };
+        weights[index] = (value * 256.0).round() as i32;
+        sum += weights[index];
+    }
+    let largest = weights
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, weight)| weight.abs())
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    weights[largest] += 256 - sum;
+    weights
+}
+
+/// Four clamped source indices and fixed-point weights for one output cell.
+fn bicubic_taps(
+    target: usize,
+    target_len: usize,
+    source_len: usize,
+) -> ([usize; 4], [i32; 4]) {
+    let center = (target as f64 + 0.5) * source_len as f64 / target_len as f64 - 0.5;
+    let base = center.floor();
+    let fraction = (center - base).clamp(0.0, 1.0);
+    let last = source_len.saturating_sub(1) as i64;
+    let indices = [base as i64 - 1, base as i64, base as i64 + 1, base as i64 + 2]
+        .map(|index| index.clamp(0, last) as usize);
+    (indices, catmull_rom_weights(fraction))
+}
+
+fn bicubic(source: &PinImage, width: u32, height: u32, threads: usize) -> Vec<u8> {
+    let (source_width, source_height) = (source.width as usize, source.height as usize);
+    let (target_width, target_height) = (width as usize, height as usize);
+    let columns: Vec<([usize; 4], [i32; 4])> = (0..target_width)
+        .map(|x| bicubic_taps(x, target_width, source_width))
+        .collect();
+    let bytes = source.bgra.as_ref();
+    let mut out = vec![0u8; target_width * target_height * 4];
+    for_each_row(&mut out, target_width * 4, threads, |y, row| {
+        let (rows, vertical) = bicubic_taps(y, target_height, source_height);
+        for (x, (columns, horizontal)) in columns.iter().enumerate() {
+            let mut accumulator = [0i32; 4];
+            for (row_index, weight_y) in rows.iter().zip(vertical) {
+                let line = &bytes[row_index * source_width * 4..(row_index + 1) * source_width * 4];
+                for (column, weight_x) in columns.iter().zip(horizontal) {
+                    let weight = weight_y * weight_x;
+                    let index = column * 4;
+                    for channel in 0..4 {
+                        accumulator[channel] += i32::from(line[index + channel]) * weight;
+                    }
+                }
+            }
+            // Both axes sum to 256, so the product sums to 2^16. Overshoot is
+            // clamped: a bicubic ring must never raise a colour channel above
+            // its alpha, or the desktop adds light around the edge.
+            let alpha = (((accumulator[3] + 32768) >> 16).clamp(0, 255)) as u8;
+            row[x * 4 + 3] = alpha;
+            for channel in 0..3 {
+                let value = (((accumulator[channel] + 32768) >> 16).clamp(0, 255)) as u8;
+                row[x * 4 + channel] = value.min(alpha);
+            }
+        }
+    });
+    out
 }
 
 /// Runs `render` for every output row, split into at most `threads` contiguous
@@ -80,46 +203,77 @@ fn for_each_row(
     });
 }
 
-/// Inclusive source span covered by one destination cell, never empty.
-fn source_span(index: usize, source_len: usize, target_len: usize) -> (usize, usize) {
-    let start = index * source_len / target_len;
-    let end = ((index + 1) * source_len).div_ceil(target_len);
-    let end = end.clamp(start + 1, source_len);
-    (start.min(source_len - 1), end)
+/// Fixed-point precision of one coverage weight. Powers of two keep the
+/// integer accumulation exact enough that a uniform surface stays uniform.
+const COVERAGE_SCALE: f64 = 1024.0;
+
+/// One destination cell's source coverage: the first source index and how much
+/// of each following source pixel the cell actually covers.
+///
+/// A box filter that rounds the span outwards includes a fully covered extra
+/// source pixel whenever the ratio is just below 1 (for example 90%), which
+/// averages a sharp text edge with its neighbour and reads as blur. Weighting
+/// each source pixel by the covered fraction keeps a 90% pin nearly as crisp as
+/// 100%, while an exact 50% still averages two pixels as before.
+#[derive(Debug)]
+struct CoverageSpan {
+    start: usize,
+    weights: Vec<u32>,
+    total: u64,
+}
+
+fn coverage_span(index: usize, source_len: usize, target_len: usize) -> CoverageSpan {
+    let start_f = index as f64 * source_len as f64 / target_len as f64;
+    let end_f = (index + 1) as f64 * source_len as f64 / target_len as f64;
+    let first = (start_f.floor() as usize).min(source_len - 1);
+    let last = (end_f.ceil() as usize).clamp(first + 1, source_len);
+    let mut weights = Vec::with_capacity(last - first);
+    let mut total = 0u64;
+    for source in first..last {
+        let covered = end_f.min((source + 1) as f64) - start_f.max(source as f64);
+        let weight = (covered * COVERAGE_SCALE).round().clamp(0.0, COVERAGE_SCALE) as u32;
+        weights.push(weight);
+        total += u64::from(weight);
+    }
+    // Rounding can zero every edge weight for a cell narrower than one source
+    // pixel. Fall back to the containing pixel so the cell is never empty.
+    if total == 0 {
+        weights.clear();
+        weights.push(COVERAGE_SCALE as u32);
+        total = COVERAGE_SCALE as u64;
+    }
+    CoverageSpan { start: first, weights, total }
 }
 
 fn box_reduce(source: &PinImage, width: u32, height: u32, threads: usize) -> Vec<u8> {
     let (source_width, source_height) = (source.width as usize, source.height as usize);
     let (target_width, target_height) = (width as usize, height as usize);
     let mut out = vec![0u8; target_width * target_height * 4];
-    let spans: Vec<(usize, usize)> = (0..target_width)
-        .map(|x| source_span(x, source_width, target_width))
+    let spans: Vec<CoverageSpan> = (0..target_width)
+        .map(|x| coverage_span(x, source_width, target_width))
         .collect();
     let bytes = source.bgra.as_ref();
     for_each_row(&mut out, target_width * 4, threads, |y, row| {
-        let (start_y, end_y) = source_span(y, source_height, target_height);
-        let row_count = (end_y - start_y) as u32;
-        let mut accumulator = vec![0u32; target_width * 4];
-        for source_y in start_y..end_y {
-            let line = &bytes[source_y * source_width * 4..(source_y + 1) * source_width * 4];
-            for (target_x, &(start_x, end_x)) in spans.iter().enumerate() {
-                let slot = target_x * 4;
-                for source_x in start_x..end_x {
+        let vertical = coverage_span(y, source_height, target_height);
+        for (target_x, horizontal) in spans.iter().enumerate() {
+            let mut accumulator = [0u64; 4];
+            for (offset_y, weight_y) in vertical.weights.iter().enumerate() {
+                let source_y = vertical.start + offset_y;
+                let line = &bytes[source_y * source_width * 4..(source_y + 1) * source_width * 4];
+                for (offset_x, weight_x) in horizontal.weights.iter().enumerate() {
+                    let source_x = horizontal.start + offset_x;
+                    let weight = u64::from(*weight_y) * u64::from(*weight_x);
                     let index = source_x * 4;
-                    accumulator[slot] += u32::from(line[index]);
-                    accumulator[slot + 1] += u32::from(line[index + 1]);
-                    accumulator[slot + 2] += u32::from(line[index + 2]);
-                    accumulator[slot + 3] += u32::from(line[index + 3]);
+                    for channel in 0..4 {
+                        accumulator[channel] += u64::from(line[index + channel]) * weight;
+                    }
                 }
             }
-        }
-        for target_x in 0..target_width {
-            let (start_x, end_x) = spans[target_x];
-            let divisor = row_count * (end_x - start_x) as u32;
+            let divisor = vertical.total * horizontal.total;
             let half = divisor / 2;
             for channel in 0..4 {
-                let slot = target_x * 4 + channel;
-                row[slot] = ((accumulator[slot] + half) / divisor).min(255) as u8;
+                row[target_x * 4 + channel] =
+                    ((accumulator[channel] + half) / divisor).min(255) as u8;
             }
         }
     });
@@ -208,6 +362,34 @@ mod tests {
     }
 
     #[test]
+    fn mild_shrink_keeps_a_single_pixel_line_sharp() {
+        // 100 -> 90 used to average each output cell with a fully covered
+        // extra neighbour, halving a one-pixel white line. Coverage weighting
+        // must keep its brightness close to the source.
+        let mut bytes = vec![0u8; 100 * 4];
+        for channel in 0..4 {
+            bytes[10 * 4 + channel] = 255;
+        }
+        let source = PinImage::new(100, 1, bytes).unwrap();
+        let scaled = resample(&source, 90, 1);
+        let max = scaled.chunks_exact(4).map(|pixel| pixel[0]).max().unwrap();
+        let lit = scaled.chunks_exact(4).filter(|pixel| pixel[0] > 0).count();
+        assert!(max >= 220, "brightness dropped to {max}");
+        assert!(lit <= 2, "the line was smeared over {lit} output pixels");
+    }
+
+    #[test]
+    fn shrinking_keeps_the_global_average_brightness() {
+        let source = image(9, 1, &[[90, 90, 90, 255]; 9]);
+        for width in [8u32, 7, 5, 3] {
+            let scaled = resample(&source, width, 1);
+            for pixel in scaled.chunks_exact(4) {
+                assert_eq!(pixel[0], 90, "{width}px");
+            }
+        }
+    }
+
+    #[test]
     fn a_uniform_surface_stays_uniform_at_any_size() {
         let source = image(2, 2, &[[10, 20, 30, 255]; 4]);
         for (width, height) in [(4, 4), (1, 1), (200, 3)] {
@@ -269,6 +451,68 @@ mod tests {
         assert_eq!(at(3, 0), &[0, 255, 0, 255]);
         assert_eq!(at(0, 3), &[0, 0, 255, 255]);
         assert_eq!(at(3, 3), &[255, 255, 0, 255]);
+    }
+
+    #[test]
+    fn sharp_upscaling_keeps_a_one_pixel_line_brighter_than_bilinear() {
+        // A 200% zoom must not smear a one-pixel stem into a half-bright ramp.
+        let mut bytes = Vec::new();
+        for index in 0..8u8 {
+            let value = if index == 3 { 255 } else { 0 };
+            bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+        let source = PinImage::new(8, 1, bytes).unwrap();
+        let soft = resample(&source, 16, 1);
+        let sharp = resample_sharp(&source, 16, 1);
+        let peak = |pixels: &[u8]| pixels.chunks_exact(4).map(|pixel| pixel[0]).max().unwrap();
+        assert!(peak(&sharp) > peak(&soft), "sharp {} <= soft {}", peak(&sharp), peak(&soft));
+        assert!(peak(&sharp) >= 210, "sharp peak dropped to {}", peak(&sharp));
+    }
+
+    #[test]
+    fn sharp_upscaling_keeps_uniform_surfaces_uniform() {
+        let source = image(2, 2, &[[10, 20, 30, 255]; 4]);
+        for (width, height) in [(5, 5), (200, 3), (7, 13)] {
+            let scaled = resample_sharp(&source, width, height);
+            for pixel in scaled.chunks_exact(4) {
+                assert_eq!(pixel, &[10, 20, 30, 255], "{width}x{height}");
+            }
+        }
+    }
+
+    #[test]
+    fn sharp_upscaling_preserves_the_premultiplied_invariant() {
+        let mut bytes = Vec::new();
+        for index in 0..64u32 {
+            let alpha = (index * 4) as u8;
+            bytes.extend_from_slice(&[alpha / 2, alpha / 3, alpha / 4, alpha]);
+        }
+        let source = PinImage::new(8, 8, bytes).unwrap();
+        for (width, height) in [(17, 17), (64, 8), (33, 41)] {
+            let scaled = resample_sharp(&source, width, height);
+            for pixel in scaled.chunks_exact(4) {
+                assert!(pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3]);
+            }
+        }
+    }
+
+    #[test]
+    fn sharp_parallel_rows_are_bit_identical_to_a_single_thread() {
+        let source = gradient(97, 61);
+        for (width, height) in [(193, 122), (383, 244), (120, 300)] {
+            let single = resample_sharp_with_threads(&source, width, height, 1);
+            let parallel = resample_sharp_with_threads(&source, width, height, 4);
+            assert_eq!(single.as_ref(), parallel.as_ref(), "{width}x{height}");
+        }
+    }
+
+    #[test]
+    fn sharp_one_to_one_and_shrinking_match_the_fast_path() {
+        let source = gradient(64, 48);
+        assert!(Arc::ptr_eq(&resample_sharp(&source, 64, 48), &source.bgra));
+        let soft = resample(&source, 37, 28);
+        let sharp = resample_sharp(&source, 37, 28);
+        assert_eq!(soft.as_ref(), sharp.as_ref());
     }
 
     #[test]

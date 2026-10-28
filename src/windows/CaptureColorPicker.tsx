@@ -7,7 +7,8 @@ import "./capture-color.css";
 
 const PREVIEW_PIXELS = 15;
 const CENTER_PIXEL = Math.floor(PREVIEW_PIXELS / 2);
-const PANEL_SIZE = { width: 184, height: 276 };
+// Compact loupe: the panel must not cover the text the user is sampling from.
+const PANEL_SIZE = { width: 152, height: 188 };
 
 type ColorSample = { point: Point; pixel: Point; hex: string; preview: ImageData };
 type CopyFeedback = { hex: string; failed: boolean };

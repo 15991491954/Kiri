@@ -134,15 +134,15 @@ export function MacTitlebar({ title, detail }: { title: string; detail?: string 
       </div>
       <div className="kiri-titlebar__spacer" />
       <div className="kiri-titlebar__lights" role="group" aria-label={t("Window controls")}>
-        <button type="button" className="kiri-window-light kiri-window-light--close"
-          aria-label={t("Close")} title={t("Close")}
-          onClick={() => void appWindow.close().catch(() => {})}><span aria-hidden="true">×</span></button>
         <button type="button" className="kiri-window-light kiri-window-light--minimize"
           aria-label={t("Minimize")} title={t("Minimize")}
           onClick={() => void appWindow.minimize().catch(() => {})}><span aria-hidden="true">−</span></button>
         <button type="button" className="kiri-window-light kiri-window-light--zoom"
           aria-label={t(maximized ? "Restore" : "Zoom")} title={t(maximized ? "Restore" : "Zoom")}
           onClick={() => void appWindow.toggleMaximize().catch(() => {})}><span aria-hidden="true">+</span></button>
+        <button type="button" className="kiri-window-light kiri-window-light--close"
+          aria-label={t("Close")} title={t("Close")}
+          onClick={() => void appWindow.close().catch(() => {})}><span aria-hidden="true">×</span></button>
       </div>
     </header>
   );

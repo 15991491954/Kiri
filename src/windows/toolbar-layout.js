@@ -37,8 +37,10 @@ export function captureToolbarPosition(selection, bounds, size, sizeControlsOpen
 
   // Place the whole measured stack outside the selection. Clamping only its
   // top used to leave later settings rows across the selection's upper edge.
+  // Below the selection the row right-aligns with the selection's right edge,
+  // putting the Done button just under that bottom-right corner.
   const outside = [
-    { left: centeredLeft, top: selection.y + selection.height + gap },
+    { left: clamp(selection.x + selection.width - size.width, minLeft, maxLeft), top: selection.y + selection.height + gap },
     { left: centeredLeft, top: selection.y - size.height - gap - (sizeControlsOpen ? 38 : 0) },
     { left: selection.x + selection.width + (sizeControlsOpen ? 80 : gap), top: centeredTop },
     { left: selection.x - size.width - gap, top: centeredTop },

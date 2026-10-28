@@ -263,6 +263,7 @@ function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
               {fmt("Version %@", currentVersion ? `v${currentVersion}` : "—")}
             </span>
           </div>
+        </div>
           <div className="kiri-support-actions" role="group" aria-label={t("About")}>
           <button type="button" className="kiri-button kiri-button--secondary"
             disabled={copyState === "copying"} aria-label={t("Copy Info")}
@@ -285,11 +286,6 @@ function AboutSettingsSection({ updater }: { updater: AppUpdater }) {
                 ? t("No cached images to clear")
                 : fmt("%d images removed", cacheState.removed)}
             </span>
-          )}
-          
-            >
-              {t("Open Releases Page")}
-            </button>
           )}
         </div>
       </div>

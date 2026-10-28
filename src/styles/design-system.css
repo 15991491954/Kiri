@@ -31,7 +31,7 @@
   --kiri-elevated-dark: #3a3a3c;
   --kiri-surface-border-dark: rgba(255, 255, 255, 0.14);
   --kiri-hairline-dark: rgba(255, 255, 255, 0.09);
-  --kiri-window-border: rgba(255, 255, 255, 0.18);
+  --kiri-window-border-dark: rgba(255, 255, 255, 0.18);
   --kiri-group-fill-dark: rgba(255, 255, 255, 0.08);
   --kiri-label-dark: #f5f5f7;
   --kiri-secondary-label-dark: #aeaeb2;
@@ -75,6 +75,7 @@
   --kiri-elevated: var(--kiri-elevated-dark);
   --kiri-surface-border: var(--kiri-surface-border-dark);
   --kiri-hairline: var(--kiri-hairline-dark);
+  --kiri-window-border: var(--kiri-window-border-dark);
   --kiri-titlebar: var(--kiri-titlebar-dark);
   --kiri-group-fill: var(--kiri-group-fill-dark);
   --kiri-label: var(--kiri-label-dark);
@@ -199,6 +200,18 @@ textarea {
 }
 html[data-maximized="true"] .library-root { border-radius: 0; clip-path: none; }
 .library-root > .kiri-titlebar { position: absolute; top: 0; left: 0; right: 0; }
+/* Painted above the titlebar and content: the only visible edge of a
+   transparent window, deliberately a light gray line rather than white. */
+.library-root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--kiri-window-border);
+  pointer-events: none;
+  z-index: 200;
+}
+html[data-maximized="true"] .library-root::after { border-radius: 0; }
 .library-sidebar {
   flex: 0 0 210px;
   display: flex;
@@ -211,6 +224,17 @@ html[data-maximized="true"] .library-root { border-radius: 0; clip-path: none; }
 }
 .library-sidebar__brand { display: none; }
 .library-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; position: relative; background: var(--kiri-canvas); }
+/* A soft blue-satin ribbon backdrop keeps the large empty list area from
+   reading as a flat white sheet. The white wash keeps cards and text as the
+   focus; cards and rows stay fully opaque above it, so contrast is unchanged. */
+.library-workspace {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.68)),
+    url("../assets/ui-background-ribbon.jpg");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
 .library-control-panel { z-index: 2; flex: 0 0 auto; background: var(--kiri-canvas); border-bottom: 1px solid var(--kiri-hairline); }
 .library-control-panel__primary { min-height: 54px; padding: 10px var(--kiri-space-page) 8px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; }
 .library-control-panel__search { display: flex; flex: 1 1 auto; min-width: 0; }

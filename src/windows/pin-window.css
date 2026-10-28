@@ -18,7 +18,15 @@
 .pin-window__zoom[data-corner="top-right"] { top: 40px; right: 8px; }
 .pin-window__zoom[data-corner="bottom-left"] { bottom: 8px; left: 8px; }
 .pin-window__zoom[data-corner="bottom-right"] { bottom: 8px; right: 8px; }
-.pin-window__resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; z-index: 2; cursor: nwse-resize; }
-.pin-window__resize::after { content: ""; position: absolute; bottom: 3px; right: 3px; width: 6px; height: 6px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; filter: drop-shadow(0 0 1px #000); opacity: 0; }
+.pin-window__resize { position: absolute; bottom: 0; right: 0; width: 16px; height: 16px; z-index: 2; cursor: nwse-resize; }.pin-window__resize::after { content: ""; position: absolute; bottom: 3px; right: 3px; width: 6px; height: 6px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; filter: drop-shadow(0 0 1px #000); opacity: 0; }
 .pin-window:hover .pin-window__resize::after { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .pin-window__actions { transition: none; } }
+/* Right-click menu. It is positioned in viewport coordinates and kept inside
+   the pin, since the window is exactly the size of the image. */
+.pin-window__menu { position: absolute; z-index: 4; display: flex; flex-direction: column; min-width: 168px;
+  padding: 4px; border: 1px solid var(--kiri-surface-border); border-radius: 8px;
+  background: var(--kiri-card); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
+.pin-window__menu button { border: 0; border-radius: 5px; background: transparent; color: var(--kiri-label);
+  padding: 6px 10px; font: inherit; font-size: 12px; text-align: left; cursor: default; }
+.pin-window__menu button:hover { background: var(--kiri-group-fill); }
+.pin-window__menu button:focus-visible { outline: 2px solid var(--kiri-label); outline-offset: 1px; }

@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   api,
+  onCaptureModeChanged,
   DEFAULT_RECORDING_OPTIONS,
   type CaptureContextDto,
   type PlatformCapabilitiesDto,
@@ -592,6 +593,17 @@ export function OverlayWindow() {
     discardQr();
     void api.cancelCapture().catch(() => {});
   }, [discardPreparedOcr, discardQr]);
+
+  // The X on the recognized-text panel dismisses that result, not the capture.
+  // The region and the current mode stay, so the toolbar (screenshot/record)
+  // or a fresh drag can follow without losing the session.
+  const dismissOcrResult = useCallback(() => {
+    discardPreparedOcr();
+    setOcrText("");
+    setOcrFailed(false);
+    setPhase("selecting");
+    phaseRef.current = "selecting";
+  }, [discardPreparedOcr]);
 
   // A confirmed capture leaves this overlay to close itself. The WebView close
   // needs `core:window:allow-close` for its label, and every display owns a
@@ -1276,15 +1288,15 @@ export function OverlayWindow() {
     [],
   );
 
-  const switchMode = useCallback(
-    (next: Mode) => {
-      if (completionLock.locked) return;
-      if (next === modeRef.current) return;
+  // One display's mode choice applied to this overlay. `runSelectionOcr` is
+  // false for a peer display: it must follow the shared mode without starting
+  // recognition on a leftover region the user did not act on.
+  const adoptMode = useCallback(
+    (next: Mode, runSelectionOcr: boolean) => {
       discardPreparedOcr();
       discardQr();
       modeRef.current = next;
       setMode(next);
-      persistCaptureMode(next);
       setSizeControlsOpen(false);
       setPhase("selecting");
       setDrag(null);
@@ -1295,18 +1307,20 @@ export function OverlayWindow() {
       setOcrText("");
       setOcrFailed(false);
       setTool("select");
+      const current = selectionRef.current;
+      const hasSelection = !!current && isValidSelection(current, 3);
       if (next === "ocr") {
-        // Reuse the finished crop once, without a render effect watching live
-        // selection changes during a new OCR drag.
-        if (selectionRef.current && isValidSelection(selectionRef.current, 3)) {
-          void runOcr(selectionRef.current);
-        } else {
+        if (runSelectionOcr && hasSelection && current) {
+          // Reuse the finished crop once, without a render effect watching
+          // live selection changes during a new OCR drag.
+          void runOcr(current);
+        } else if (!hasSelection) {
           setSelection(null);
         }
-      } else if (next === "record" && selectionRef.current) {
+      } else if (next === "record" && hasSelection) {
         // Existing region + record mode → show the recording options.
         setPhase("record-options");
-      } else if (next === "screenshot" && selectionRef.current) {
+      } else if (next === "screenshot" && hasSelection) {
         // Existing region + screenshot → toolbar re-appears (selecting).
         setPhase("selecting");
       } else {
@@ -1315,8 +1329,50 @@ export function OverlayWindow() {
       // With a valid region: screenshot re-shows the toolbar (selecting
       // phase with a selection); record shows the options popover.
     },
-    [completionLock, discardPreparedOcr, discardQr, runOcr, persistCaptureMode],
+    [discardPreparedOcr, discardQr, runOcr],
   );
+
+  const switchMode = useCallback(
+    (next: Mode) => {
+      if (completionLock.locked) return;
+      if (next === modeRef.current) return;
+      adoptMode(next, true);
+      persistCaptureMode(next);
+      // Every display of this capture shows the same mode; the persisted
+      // preference stays a separate, debounced write.
+      void api.syncCaptureMode(next).catch(() => {});
+    },
+    [adoptMode, completionLock, persistCaptureMode],
+  );
+
+  const applyRemoteMode = useCallback(
+    (next: Mode) => {
+      if (next === modeRef.current) return;
+      adoptMode(next, false);
+    },
+    [adoptMode],
+  );
+
+  // A peer display broadcasts the mode it picked; follow it without writing
+  // the preference or starting OCR on this display's leftover region.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void onCaptureModeChanged((next) => {
+      if (disposed) return;
+      if (next !== "screenshot" && next !== "record" && next !== "ocr") return;
+      if (completionLock.locked) return;
+      if (!canSwitchMode(phaseRef.current)) return;
+      applyRemoteMode(next);
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [applyRemoteMode, completionLock]);
 
   // --- mode switching without moving the pointer ---
   // Digits pick a mode outright; the wheel cycles them in place. Both only
@@ -1344,7 +1400,8 @@ export function OverlayWindow() {
         e.target instanceof Element &&
         e.target.closest(
           ".kiri-mode-select, .kiri-capture-toolbar, .kiri-record-options, " +
-            ".kiri-capture-tool-options, .kiri-capture-dimension, .kiri-color-picker",
+            ".kiri-capture-tool-options, .kiri-capture-dimension, .kiri-color-picker, " +
+            ".kiri-ocr-panel",
         )
       ) return;
       const result = wheelModeStep(
@@ -1658,7 +1715,7 @@ export function OverlayWindow() {
       {/* Mode selector — ALWAYS visible (spec §1.2: never hidden), so the
           mode can be switched at any point: before/during selection and
           after a region is chosen (spec §2.4 changeCaptureMode). */}
-      {!committing && phase !== "ocr-result" && phase !== "qr-result" && (
+      {!committing && phase !== "qr-result" && (
         <>
           <div
             ref={modeSelectorRef}
@@ -1762,7 +1819,7 @@ export function OverlayWindow() {
           onCopy={() => {
             void api.copyText(ocrText).catch(() => {});
           }}
-          onClose={cancel}
+          onClose={dismissOcrResult}
         />
       )}
       {phase === "ocr-consent" && preparedOcr?.profile && (
@@ -2055,7 +2112,7 @@ function OcrPanel(props: {
   return (
     <div
       ref={panelRef}
-      className="kiri-hud"
+      className="kiri-hud kiri-ocr-panel"
       onPointerDown={(e) => e.stopPropagation()}
       style={{
         position: "absolute",

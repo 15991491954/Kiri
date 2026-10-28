@@ -1,8 +1,8 @@
 .kiri-color-picker {
   position: absolute;
   z-index: 40;
-  width: 184px;
-  height: 276px;
+  width: 152px;
+  height: 188px;
   box-sizing: border-box;
   overflow: hidden;
   pointer-events: none;
@@ -11,12 +11,12 @@
   border-radius: 8px;
   background: var(--kiri-card);
   color: var(--kiri-label);
-  font: 12px/1.4 var(--kiri-font-ui);
+  font: 11px/1.4 var(--kiri-font-ui);
 }
 
 .kiri-color-picker-preview {
   position: relative;
-  height: 182px;
+  height: 116px;
   overflow: hidden;
   background: var(--kiri-group-fill);
   border-bottom: 1px solid var(--kiri-surface-border);
@@ -24,8 +24,8 @@
 
 .kiri-color-picker-preview canvas {
   position: absolute;
-  width: 180px;
-  height: 180px;
+  width: 114px;
+  height: 114px;
   top: 1px;
   left: 50%;
   transform: translateX(-50%);
@@ -51,18 +51,18 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   transform: translate(-50%, -50%);
   box-sizing: border-box;
   border: 1px solid #fff;
   outline: 1px solid #111;
 }
 
-.kiri-color-picker-values { padding: 9px 10px; }
-.kiri-color-picker-values > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.kiri-color-picker-values { padding: 6px 9px; }
+.kiri-color-picker-values > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
 .kiri-color-picker-values span { color: var(--kiri-secondary-label); }
-.kiri-color-picker-values output { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
-.kiri-color-picker-values i { width: 10px; height: 10px; border: 1px solid #888; border-radius: 2px; }
-.kiri-color-picker-values p { margin: 6px 0 0; color: var(--kiri-secondary-label); font-size: 11px; }
+.kiri-color-picker-values output { display: flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+.kiri-color-picker-values i { width: 9px; height: 9px; border: 1px solid #888; border-radius: 2px; }
+.kiri-color-picker-values p { margin: 4px 0 0; color: var(--kiri-secondary-label); font-size: 10px; }
 .kiri-color-picker-values p[data-failed] { color: var(--kiri-coral); }

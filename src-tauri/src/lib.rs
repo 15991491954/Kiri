@@ -302,6 +302,7 @@ pub fn run() {
             commands::paste_clipboard_image,
             commands::start_capture,
             commands::set_capture_mode,
+            commands::sync_capture_mode,
             commands::authorize_screenshot,
             commands::cancel_capture,
             commands::close_capture_overlay,
@@ -641,31 +642,39 @@ fn linux_recording_action(app: &tauri::AppHandle, stop: bool) {
     });
 }
 
-/// Menu-bar (macOS) / tray (Windows) icon with Capture, Open Library, and Quit.
+/// Menu-bar (macOS) / tray (Windows) icon with the direct capture entries.
 /// The library window and global shortcut remain the primary entry points.
 const MAIN_TRAY_ID: &str = "main-tray";
-
-fn tray_menu_entries(language: &str) -> [(&'static str, &'static str); 3] {
-    let (open_label, capture_label, quit_label) = tray_labels(language);
-    [
-        ("open-library", open_label),
-        ("capture", capture_label),
-        ("quit", quit_label),
-    ]
-}
 
 fn build_tray_menu(
     app: &tauri::AppHandle,
     language: &str,
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItem};
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
-    let [(open_id, open_label), (capture_id, capture_label), (quit_id, quit_label)] =
-        tray_menu_entries(language);
-    let open_library = MenuItem::with_id(app, open_id, open_label, true, None::<&str>)?;
-    let capture = MenuItem::with_id(app, capture_id, capture_label, true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, quit_id, quit_label, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open_library, &capture, &quit])?;
+    let entries = tray_menu_entries(language);
+    let mut items: Vec<MenuItem<tauri::Wry>> = Vec::with_capacity(entries.len());
+    for (id, label) in &entries {
+        items.push(MenuItem::with_id(app, *id, *label, true, None::<&str>)?);
+    }
+    // Groups: capture tools, library, maintenance, quit.
+    let after_capture = PredefinedMenuItem::separator(app)?;
+    let before_clear = PredefinedMenuItem::separator(app)?;
+    let before_quit = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &items[0],
+            &items[1],
+            &items[2],
+            &after_capture,
+            &items[3],
+            &before_clear,
+            &items[4],
+            &before_quit,
+            &items[5],
+        ],
+    )?;
     #[cfg(target_os = "linux")]
     {
         let (pause_label, stop_label) = match language {
@@ -677,8 +686,8 @@ fn build_tray_menu(
             "fr" => ("Suspendre / reprendre l’enregistrement", "Arrêter l’enregistrement"),
             _ => ("Pause / Resume Recording", "Stop Recording"),
         };
-        menu.insert(&MenuItem::with_id(app, "pause-recording", pause_label, true, None::<&str>)?, 2)?;
-        menu.insert(&MenuItem::with_id(app, "stop-recording", stop_label, true, None::<&str>)?, 3)?;
+        menu.insert(&MenuItem::with_id(app, "pause-recording", pause_label, true, None::<&str>)?, 3)?;
+        menu.insert(&MenuItem::with_id(app, "stop-recording", stop_label, true, None::<&str>)?, 4)?;
     }
     Ok(menu)
 }
@@ -726,6 +735,43 @@ fn install_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             "capture" => {
                 schedule_capture_start(app, "tray");
+            }
+            "pin-clipboard" => {
+                // Clipboard reads and native pin creation are both blocking.
+                let target = app.clone();
+                std::mem::drop(tauri::async_runtime::spawn(async move {
+                    if let Err(error) = commands::paste_as_pin(target.clone()).await {
+                        log::warn!("[tray] paste pin failed: {error}");
+                        state::emit_notice(&target, error, "exclamationmark.triangle.fill".into());
+                    }
+                }));
+            }
+            "record" => {
+                schedule_capture_mode(app, "tray-record", state::CaptureMode::Record);
+            }
+            "clear-image-cache" => {
+                // Deleting cached images touches the disk; never do that inside
+                // the tray callback, which runs on the main thread.
+                let target = app.clone();
+                std::thread::Builder::new()
+                    .name("kiri-tray-cache-clear".into())
+                    .spawn(move || match commands::clear_image_cache(target.clone()) {
+                        Ok(removed) => {
+                            log::info!("[tray] cleared {removed} cached image(s)");
+                            if removed > 0 {
+                                state::emit_notice(
+                                    &target,
+                                    commands::cache_cleared_message(&commands::get_locale(), removed),
+                                    "checkmark.circle.fill".into(),
+                                );
+                            }
+                        }
+                        Err(error) => log::warn!("[tray] image cache clear failed: {error}"),
+                    })
+                    .map(|_| ())
+                    .unwrap_or_else(|error| {
+                        log::warn!("[tray] image cache clear thread failed: {error}");
+                    });
             }
             #[cfg(target_os = "linux")]
             "pause-recording" => linux_recording_action(app, false),
@@ -913,8 +959,8 @@ where
         .spawn(task)
 }
 
-fn tray_labels(language: &str) -> (&'static str, &'static str, &'static str) {
-    match language {
+fn tray_labels(language: &str) -> TrayLabels {
+    let (open, capture, quit) = match language {
         "zh-Hans" => ("打开素材库", "截图 / 录屏", "退出 Lumen"),
         "ja" => ("ライブラリを開く", "キャプチャ", "Lumen を終了"),
         "zh-Hant" => ("開啟素材庫", "截圖 / 錄影", "結束 Lumen"),
@@ -922,7 +968,38 @@ fn tray_labels(language: &str) -> (&'static str, &'static str, &'static str) {
         "ko" => ("라이브러리 열기", "캡처", "Lumen 종료"),
         "fr" => ("Ouvrir la bibliothèque", "Capturer", "Quitter Lumen"),
         _ => ("Open Library", "Capture", "Quit Lumen"),
-    }
+    };
+    let (pin, record, clear) = match language {
+        "zh-Hans" => ("贴图（剪贴板）", "开始录屏", "清理图片缓存"),
+        "ja" => ("ピン（クリップボード）", "録画を開始", "画像キャッシュを消去"),
+        "zh-Hant" => ("貼圖（剪貼簿）", "開始錄影", "清理圖片快取"),
+        "de" => ("Pin (Zwischenablage)", "Aufnahme starten", "Bildcache leeren"),
+        "ko" => ("핀 (클립보드)", "녹화 시작", "이미지 캐시 지우기"),
+        "fr" => ("Épingler (presse-papiers)", "Démarrer l’enregistrement", "Vider le cache d’images"),
+        _ => ("Pin from Clipboard", "Start Recording", "Clear Image Cache"),
+    };
+    TrayLabels { open, capture, pin, record, clear, quit }
+}
+
+struct TrayLabels {
+    open: &'static str,
+    capture: &'static str,
+    pin: &'static str,
+    record: &'static str,
+    clear: &'static str,
+    quit: &'static str,
+}
+
+fn tray_menu_entries(language: &str) -> Vec<(&'static str, &'static str)> {
+    let labels = tray_labels(language);
+    vec![
+        ("capture", labels.capture),
+        ("pin-clipboard", labels.pin),
+        ("record", labels.record),
+        ("open-library", labels.open),
+        ("clear-image-cache", labels.clear),
+        ("quit", labels.quit),
+    ]
 }
 
 #[cfg(test)]
@@ -1014,19 +1091,19 @@ mod tests {
 
     #[test]
     fn tray_labels_cover_supported_languages_and_default_to_english() {
-        assert_eq!(tray_labels("en"), ("Open Library", "Capture", "Quit Lumen"));
-        assert_eq!(
-            tray_labels("zh-Hans"),
-            ("打开素材库", "截图 / 录屏", "退出 Lumen")
-        );
-        assert_eq!(
-            tray_labels("ja"),
-            ("ライブラリを開く", "キャプチャ", "Lumen を終了")
-        );
-        assert_eq!(
-            tray_labels("unknown"),
-            ("Open Library", "Capture", "Quit Lumen")
-        );
+        let english = tray_labels("en");
+        assert_eq!((english.open, english.capture, english.quit),
+            ("Open Library", "Capture", "Quit Lumen"));
+        let chinese = tray_labels("zh-Hans");
+        assert_eq!((chinese.open, chinese.capture, chinese.quit),
+            ("打开素材库", "截图 / 录屏", "退出 Lumen"));
+        assert_eq!(chinese.pin, "贴图（剪贴板）");
+        assert_eq!(chinese.record, "开始录屏");
+        assert_eq!(chinese.clear, "清理图片缓存");
+        let japanese = tray_labels("ja");
+        assert_eq!((japanese.open, japanese.capture, japanese.quit),
+            ("ライブラリを開く", "キャプチャ", "Lumen を終了"));
+        assert_eq!(tray_labels("unknown").clear, "Clear Image Cache");
     }
 
     #[test]
@@ -1080,8 +1157,11 @@ mod tests {
         let english = tray_menu_entries("en");
         let chinese = tray_menu_entries("zh-Hans");
         let japanese = tray_menu_entries("ja");
-        assert_eq!(english.map(|(id, _)| id), chinese.map(|(id, _)| id));
-        assert_eq!(english.map(|(id, _)| id), japanese.map(|(id, _)| id));
+        assert_eq!(english.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            chinese.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+        assert_eq!(english.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            japanese.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+        assert_eq!(english.len(), 6);
         for index in 0..english.len() {
             assert_ne!(english[index].1, chinese[index].1);
             assert_ne!(english[index].1, japanese[index].1);

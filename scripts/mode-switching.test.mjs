@@ -21,11 +21,11 @@ test("digits 1, 2 and 3 select screenshot, record and OCR", () => {
   assert.equal(modeForKey(undefined), null);
 });
 
-test("mode keys stay inert while annotations or results own the overlay", () => {
-  for (const phase of ["mode-select", "selecting", "record-options"]) {
+test("mode keys keep working on read-only result and consent surfaces", () => {
+  for (const phase of ["mode-select", "selecting", "record-options", "ocr-result", "ocr-consent"]) {
     assert.equal(canSwitchMode(phase), true);
   }
-  for (const phase of ["annotating", "ocr-consent", "ocr-result", "qr-result", "ocr-preparing"]) {
+  for (const phase of ["annotating", "qr-result", "ocr-preparing"]) {
     assert.equal(canSwitchMode(phase), false);
   }
 });

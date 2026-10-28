@@ -379,6 +379,8 @@ export const api = {
   startCapture: () => invoke<CaptureContextDto>("start_capture"),
   setCaptureMode: (mode: "screenshot" | "record" | "ocr") =>
     invoke<void>("set_capture_mode", { mode }),
+  syncCaptureMode: (mode: "screenshot" | "record" | "ocr") =>
+    invoke<void>("sync_capture_mode", { mode }),
   cancelCapture: () => invoke<void>("cancel_capture"),
   /**
    * Closes the calling capture overlay when the WebView may not do it itself.
@@ -549,6 +551,11 @@ export function onError(handler: (error: ErrorDto) => void): Promise<UnlistenFn>
 
 export function onLibraryChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("library-changed", handler);
+}
+
+/** Another display's overlay picked a capture mode during the same capture. */
+export function onCaptureModeChanged(handler: (mode: string) => void): Promise<UnlistenFn> {
+  return listen<string>("capture-mode-changed", (event) => handler(event.payload));
 }
 
 export function onCaptureShortcutConfirmed(handler: () => void): Promise<UnlistenFn> {

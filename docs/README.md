@@ -239,3 +239,8 @@ development.
 
 - [`adr/0118-pin-windows-and-clipboard-pins.md`](adr/0118-pin-windows-and-clipboard-pins.md) — Windows-native pinned images that drag by the image and zoom under the wheel, screenshots and clipboard pins, pointer-targeted Escape, and memory-only clipboard pins.
 - [dr/0119-lumen-identity-and-macos-shell.md](adr/0119-lumen-identity-and-macos-shell.md) — the Lumen display identity, a macOS-style undecorated shell with traffic lights and a source-list sidebar, F1/F2/F3 defaults with migration, and a recordings-only library.
+- [`adr/0120-pin-menu-and-remembered-region.md`](adr/0120-pin-menu-and-remembered-region.md) — the pin context menu (copy, save, lock), 100% reset, one-pixel nudging, the per-display remembered capture region, and direct tray entries.
+- [dr/0121-pin-downscale-coverage.md](adr/0121-pin-downscale-coverage.md) — coverage-weighted downscaling that keeps zoomed-out pins sharp instead of averaging with uncovered source pixels.
+- [`adr/0122-pin-sharp-growth.md`](adr/0122-pin-sharp-growth.md) — bilinear for live wheel steps and a settled Catmull-Rom bicubic pass, so zooming in re-sharpens instead of staying soft.
+- [`adr/0123-capture-overlay-result-and-loupe.md`](adr/0123-capture-overlay-result-and-loupe.md) — a compact color loupe, no remembered capture region (supersedes that part of ADR 0120), and an OCR result the user can dismiss or switch away from without ending the capture.
+- [`adr/0124-shared-capture-mode.md`](adr/0124-shared-capture-mode.md) — one capture mode shared by every display overlay, without letting a passive peer start OCR or clobber the persisted preference.

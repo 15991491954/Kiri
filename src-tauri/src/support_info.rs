@@ -57,10 +57,18 @@ fn line(value: &str) -> String {
         .collect()
 }
 
+/// True when the executable sits next to the portable marker file.
+fn is_portable_build() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("kiri.portable")))
+        .is_some_and(|marker| marker.is_file())
+}
+
 fn package_kind() -> &'static str {
     #[cfg(windows)]
     {
-        if crate::updates::is_portable_build() {
+        if is_portable_build() {
             "Windows portable"
         } else {
             "Windows app"

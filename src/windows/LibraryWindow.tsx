@@ -144,6 +144,13 @@ export function LibraryWindow() {
   // Card id → DOM element, registered while rendering, used for hit tests.
   const cardElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  // Total bytes of the loaded library, shown beside the item count. Media the
+  // backend reports without a size (a pending import) contributes nothing.
+  const libraryBytes = useMemo(
+    () => assets.reduce((sum, asset) => sum + (asset.fileSize ?? 0), 0),
+    [assets],
+  );
+
   // View-layer filters shared by Library and Trash, applied on top of the
   // backend text search.
   const filteredAssets = useMemo(() => {
@@ -946,7 +953,12 @@ export function LibraryWindow() {
             ? t("Unavailable")
             : libraryMigrating
               ? t("Moving…")
-              : fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length)}
+              : [
+                  fmt(assets.length === 1 ? "%d capture" : "%d captures", assets.length),
+                  formatFileSize(libraryBytes)
+                    ? fmt("Library size: %@", formatFileSize(libraryBytes)!)
+                    : null,
+                ].filter(Boolean).join(" · ")}
       />
       <WindowResizeEdges />
       {mediaDrop&&<div className="library-media-drop">{t("Drop a video to import")}</div>}
